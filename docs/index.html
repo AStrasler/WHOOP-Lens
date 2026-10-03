@@ -1,30 +1,76 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow">
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#000000">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://evoiwauqplbcecumiwqn.supabase.co; base-uri 'none'; form-action 'none'; object-src 'none'">
-<title>Connect your WHOOP · Codex WHOOP</title>
+<title>Connect your WHOOP · WHOOP Lens</title>
 <meta name="description" content="Securely connect your WHOOP account and approve access for ChatGPT and Codex.">
-<link rel="icon" href="/codex-whoop/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/codex-whoop/logo.jpg" type="image/jpeg">
+<link rel="apple-touch-icon" href="/codex-whoop/logo.jpg">
 <link rel="stylesheet" href="/codex-whoop/style.css">
-<script type="module" src="/codex-whoop/app.mjs"></script></head>
-<body><main><header><div class="brand"><span class="mark" aria-hidden="true">W</span> CODEX WHOOP</div>
-<h1 id="heading">Your data.<br>Your permission.</h1><p id="intro">Connect your WHOOP account to ChatGPT and Codex. You decide which apps can access your data.</p></header>
+<script type="module" src="/codex-whoop/app.mjs"></script>
+</head>
+<body>
+<main>
+<header>
+<div class="brand">
+<img class="mark" src="/codex-whoop/logo.jpg" width="72" height="72" alt="">
+<span class="wordmark">WHOOP Lens</span>
+</div>
+<h1 id="heading">Your data.<br>Your permission.</h1>
+<p id="intro">Connect your WHOOP account to ChatGPT and Codex. You decide which apps can access your data.</p>
+</header>
 <div id="message" role="status" aria-live="polite"></div>
 <div class="card">
-<form id="login"><h2>Sign in</h2><p>Sign in with your own Supabase user. Each person uses their own account.</p>
-<label for="email">Email address</label><input id="email" type="email" autocomplete="username" required maxlength="254">
-<label for="password">Password</label><input id="password" type="password" autocomplete="current-password" required maxlength="1024">
-<button class="wide" type="submit">Sign in securely</button><p class="note">Your password goes directly to Supabase. This page does not store your sign-in session.</p></form>
-<section id="consent" hidden><p class="eyebrow">App requesting access</p><h2 id="client-name"></h2>
+<form id="login">
+<h2>Sign in</h2>
+<p>Sign in with your own Supabase user. Each person uses their own account.</p>
+<label for="email">Email address</label>
+<input id="email" type="email" autocomplete="username" required maxlength="254">
+<label for="password">Password</label>
+<input id="password" type="password" autocomplete="current-password" required maxlength="1024">
+<button class="wide" type="submit">Sign in securely</button>
+<p class="note">Your password goes directly to Supabase. This page does not store your sign-in session.</p>
+</form>
+<section id="consent" hidden>
+<p class="eyebrow">App requesting access</p>
+<h2 id="client-name"></h2>
 <p>Approving lets this app use your connected WHOOP account to read your profile, body measurements, recovery, sleep, cycles, and workouts.</p>
-<p class="eyebrow">Requested sign-in permissions</p><p id="permissions"></p>
-<p class="eyebrow">Return address</p><p id="redirect"></p>
+<p class="eyebrow">Requested sign-in permissions</p>
+<p id="permissions"></p>
+<p class="eyebrow">Return address</p>
+<p id="redirect"></p>
 <p class="note">Approve only if you started this connection and recognize the app and its return address.</p>
-<div class="actions"><button id="approve" type="button">Approve access</button><button id="deny" class="secondary" type="button">Deny</button></div></section>
-<section id="connection" hidden><h2>WHOOP connection</h2><p id="connection-status">Checking your connection…</p>
-<button id="connect" type="button" hidden>Connect WHOOP</button><hr>
-<p class="eyebrow">Remote MCP address</p><code id="endpoint"></code><p class="note">Use this address when adding the integration to ChatGPT or Codex after setup is complete.</p></section>
-<div id="account" hidden><p id="signed-in"></p><div class="actions"><button id="retry" class="secondary" type="button">Refresh</button><button id="signout" class="secondary" type="button">Sign out</button></div></div>
-</div><footer>Independent personal integration. Not affiliated with WHOOP.<br><a href="https://github.com/AStrasler/codex-whoop/blob/main/Privacy.md" target="_blank" rel="noopener noreferrer">Privacy statement</a></footer>
+<div class="actions">
+<button id="approve" type="button">Approve access</button>
+<button id="deny" class="secondary" type="button">Deny</button>
+</div>
+</section>
+<section id="connection" hidden>
+<h2>WHOOP connection</h2>
+<p id="connection-status">Checking your connection…</p>
+<button id="connect" type="button" hidden>Connect WHOOP</button>
+<hr>
+<p class="eyebrow">Remote MCP address</p>
+<code id="endpoint"></code>
+<p class="note">Use this address when adding the integration to ChatGPT or Codex after setup is complete.</p>
+</section>
+<div id="account" hidden>
+<p id="signed-in"></p>
+<div class="actions">
+<button id="retry" class="secondary" type="button">Refresh</button>
+<button id="signout" class="secondary" type="button">Sign out</button>
+</div>
+</div>
+</div>
+<footer>Independent personal integration. Not affiliated with WHOOP.<br>
+<a href="https://github.com/AStrasler/codex-whoop/blob/main/Privacy.md" target="_blank" rel="noopener noreferrer">Privacy statement</a>
+</footer>
 <noscript><p>Enable JavaScript to sign in and review app permissions.</p></noscript>
-</main></body></html>
+</main>
+</body>
+</html>
