@@ -6,7 +6,7 @@ const url = Deno.env.get("SUPABASE_URL")!;
 const service = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const db = createClient(url, service);
 const encKey = Deno.env.get("WHOOP_TOKEN_ENCRYPTION_KEY")!;
-const pagesApp = "https://astrasler.github.io/codex-whoop/";
+const pagesApp = "https://astrasler.github.io/WHOOP-Lens/";
 const whoopRedirectUri = "https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/callback";
 const whoopScopes = "offline read:profile read:body_measurement read:recovery read:sleep read:workout read:cycles";
 const maxRetryWaitMs = 60_000;
@@ -381,7 +381,7 @@ Deno.serve(async (req) => {
       }
       return json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: "Unsupported MCP method" } }, 400);
     }
-    return json({ ok: true, service: "codex-whoop" });
+    return json({ ok: true, service: "whoop-lens" });
   } catch {
     return json({ error: "Request failed" }, 500);
   }
