@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { openaiAppsChallengeResponse } from "./challenge.mjs";
 
 // Runtime secrets come from the Supabase function environment. Do not hardcode them.
 const url = Deno.env.get("SUPABASE_URL")!;
@@ -225,6 +226,9 @@ Deno.serve(async (req) => {
   try {
     if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
     const u = new URL(req.url);
+    if (req.method === "GET" && u.pathname.endsWith("/.well-known/openai-apps-challenge")) {
+      return openaiAppsChallengeResponse(Deno.env.get("OPENAI_APPS_CHALLENGE"));
+    }
     if (u.pathname.endsWith("/.well-known/oauth-protected-resource")) {
       return json({
         resource: "https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/mcp",

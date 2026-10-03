@@ -18,7 +18,7 @@ The GitHub Pages site is the sign-in and consent screen. Supabase Auth handles t
 
 Data returned to ChatGPT or Codex is processed by OpenAI under your OpenAI account settings and the OpenAI privacy policy: https://openai.com/policies/privacy-policy/.
 
-WHOOP data and Samsung Health records are not sold and are not used for advertising. This privacy statement is hosted on GitHub. WHOOP records, Samsung Health records, credentials, and access tokens are not published in the git repository.
+WHOOP data and Samsung Health records are not sold and are not used for advertising. This privacy statement is published at https://astrasler.github.io/WHOOP-Lens/privacy/. WHOOP records, Samsung Health records, credentials, and access tokens are not published in the git repository.
 
 ## Credentials, retention, and revocation
 

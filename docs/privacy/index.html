@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#000000">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>Privacy statement · WHOOP Lens</title>
+<meta name="description" content="How WHOOP Lens handles WHOOP data, Samsung Health records, and answers already returned to ChatGPT.">
+<link rel="icon" href="/WHOOP-Lens/logo.jpg" type="image/jpeg">
+<link rel="apple-touch-icon" href="/WHOOP-Lens/logo.jpg">
+<link rel="stylesheet" href="/WHOOP-Lens/style.css">
+</head>
+<body>
+<main class="doc">
+<header>
+<div class="brand">
+<img class="mark" src="/WHOOP-Lens/logo.jpg" width="72" height="72" alt="">
+<span class="wordmark">WHOOP Lens</span>
+</div>
+<h1>Privacy statement</h1>
+<p class="note">Last updated: October 3, 2026</p>
+</header>
+<p>WHOOP Lens is a hosted plugin that lets a person connect their own WHOOP account so ChatGPT and Codex can read that person's data with their permission. Each person signs in with their own Supabase user. The project is operated by Aaron Strasler. It is not affiliated with WHOOP.</p>
+<h2>Data accessed and purpose</h2>
+<p>With your authorization, the plugin reads WHOOP recovery, sleep, physiological cycles and strain, workouts, profile information, and body measurements. The WHOOP connection requests read scopes only (<code>read:profile</code>, <code>read:body_measurement</code>, <code>read:recovery</code>, <code>read:sleep</code>, <code>read:workout</code>, and <code>read:cycles</code>), plus <code>offline</code> so access can be refreshed.</p>
+<p>If Samsung Health records have been uploaded for your Supabase user, the plugin can also read those stored records, such as sleep, heart rate, blood oxygen, steps, activity, exercise, body composition, skin temperature, energy score, blood pressure, and profile. Samsung Health records are kept separate from WHOOP data.</p>
+<p>This information is used to answer your questions and produce the summaries you request in ChatGPT or Codex.</p>
+<h2>Processing and sharing</h2>
+<p>The GitHub Pages site is the sign-in and consent screen. Supabase Auth handles that sign-in. The Supabase edge function <code>whoop-mcp</code> exchanges and refreshes WHOOP tokens, calls the WHOOP API, and reads Samsung Health records stored for your user. That processing runs on Supabase, not only on your computer.</p>
+<p>Data returned to ChatGPT or Codex is processed by OpenAI under your OpenAI account settings and the OpenAI privacy policy: <a href="https://openai.com/policies/privacy-policy/">https://openai.com/policies/privacy-policy/</a>.</p>
+<p>WHOOP data and Samsung Health records are not sold and are not used for advertising. This privacy statement is published at <a href="https://astrasler.github.io/WHOOP-Lens/privacy/">https://astrasler.github.io/WHOOP-Lens/privacy/</a>. WHOOP records, Samsung Health records, credentials, and access tokens are not published in the git repository.</p>
+<h2>Credentials, retention, and revocation</h2>
+<p>WHOOP access and refresh tokens are encrypted per Supabase user and stored in Supabase so the plugin can read WHOOP and refresh authorization. They are not stored only on your computer. The Pages app does not put your Supabase session in browser storage.</p>
+<p>You can revoke the plugin in your WHOOP account settings. Revocation stops future authorized WHOOP access. It does not automatically delete information already included in ChatGPT or Codex conversations. Conversations remain subject to your OpenAI settings and controls.</p>
+<p>Sign out of the Pages app to end the in-memory Supabase session. Disabling a Supabase user through the optional <code>whoop_members</code> kill switch stops that user from calling the plugin. A valid Supabase user is otherwise allowed.</p>
+<h2>Contact</h2>
+<p>For privacy questions, contact Aaron Strasler at the contact email specified in the WHOOP developer application.</p>
+<h2>Changes</h2>
+<p>This statement will be updated if the plugin's data handling changes.</p>
+<footer>
+<a href="/WHOOP-Lens/">Sign in</a><br>
+Independent personal integration. Not affiliated with WHOOP.<br>
+<a href="/WHOOP-Lens/privacy/">Privacy statement</a> · <a href="/WHOOP-Lens/terms/">Terms</a> · <a href="/WHOOP-Lens/support/">Support</a>
+</footer>
+</main>
+</body>
+</html>

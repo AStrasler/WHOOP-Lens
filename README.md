@@ -10,7 +10,7 @@ WHOOP requests are handled by the Supabase edge function `whoop-mcp`. Its source
 
 WHOOP access and refresh tokens are encrypted per Supabase user and stored in Supabase. They are not stored only in the browser. The Pages app keeps the Supabase sign-in session in memory for the open tab.
 
-Runtime secrets stay in the Supabase function environment. Do not commit tokens, WHOOP credentials, or service keys.
+Runtime secrets stay in the Supabase function environment. Do not commit tokens, WHOOP credentials, or service keys. When OpenAI issues a domain-verification token, set `OPENAI_APPS_CHALLENGE` in that environment. A GET to `/.well-known/openai-apps-challenge` returns that value as plain text. If the variable is missing, the route returns 404.
 
 ## WHOOP access
 
@@ -24,4 +24,13 @@ Connecting WHOOP requests these read scopes: `read:profile`, `read:body_measurem
 
 Revoke the integration in your WHOOP account settings to stop future WHOOP reads. Revocation does not delete information already returned to ChatGPT or Codex. Sign out of the Pages app to drop the in-memory Supabase session. A Supabase user can also be disabled with the optional `whoop_members` kill switch; a valid Supabase user is otherwise allowed.
 
-See [Privacy.md](Privacy.md) for how data is handled.
+See the [privacy statement](https://astrasler.github.io/WHOOP-Lens/privacy/) for how data is handled. The same text is in [Privacy.md](Privacy.md).
+
+## Public listing
+
+These are the public addresses for someone connecting the ChatGPT plugin:
+
+- Website: https://astrasler.github.io/WHOOP-Lens/
+- Privacy: https://astrasler.github.io/WHOOP-Lens/privacy/
+- Terms: https://astrasler.github.io/WHOOP-Lens/terms/
+- Support: https://astrasler.github.io/WHOOP-Lens/support/
