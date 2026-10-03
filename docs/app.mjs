@@ -27,8 +27,13 @@ if (authorizationId) {
   message("No authorization request was provided. Start the connection from ChatGPT or Codex.", true);
   byId("login").hidden = true;
 }
+const linkedEmail = params.get("linked_email");
+const linkedAccount = linkedEmail && /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/.test(linkedEmail) && linkedEmail.length <= 254
+  ? linkedEmail : "";
 if (params.get("connected") === "1") {
-  message("Returned from WHOOP. Sign in to check that your account is connected.");
+  message(linkedAccount
+    ? "WHOOP is linked to the Supabase user " + linkedAccount + ". Sign in with that account to confirm the connection."
+    : "Returned from WHOOP. Sign in to check that your account is connected.");
 }
 byId("endpoint").textContent = MCP_URL + "/mcp";
 byId("login").addEventListener("submit", event => {
@@ -61,7 +66,7 @@ async function loadSignedIn() {
     return;
   }
   byId("client-name").textContent = details.client?.name || "Unnamed app";
-  byId("redirect").textContent = safeRedirect(details.redirect_uri);
+  byId("redirect").textContent = new URL(safeRedirect(details.redirect_uri)).origin;
   byId("permissions").textContent = details.scope?.trim() || "No additional identity scopes requested";
 }
 async function checkConnection() {
@@ -72,18 +77,21 @@ async function checkConnection() {
   byId("connect").hidden = false;
 }
 byId("retry").addEventListener("click", () => handle(loadSignedIn));
+function assignApproved(value) {
+  location.assign(safeRedirect(value));
+}
 byId("approve").addEventListener("click", () => handle(async () => {
   const target = existingRedirect || (await auth.decide(authorizationId, "approve")).redirect_url;
-  location.assign(safeRedirect(target));
+  assignApproved(target);
 }));
 byId("deny").addEventListener("click", () => handle(async () => {
   const data = await auth.decide(authorizationId, "deny");
-  location.assign(safeRedirect(data.redirect_url));
+  assignApproved(data.redirect_url);
 }));
 byId("connect").addEventListener("click", () => handle(async () => {
   const data = await auth.connect();
   const url = new URL(data.authorization_url);
-  if (url.origin !== "https://api.prod.whoop.com" || url.pathname !== "/oauth/oauth2/auth") {
+  if (url.username || url.password || url.protocol !== "https:" || url.origin !== "https://api.prod.whoop.com" || url.pathname !== "/oauth/oauth2/auth") {
     throw new Error("The server returned an unexpected WHOOP sign-in address.");
   }
   location.assign(url.href);
