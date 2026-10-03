@@ -10,10 +10,16 @@ export function validateAuthorizationId(value) {
   return value;
 }
 
+const CHATGPT_CONNECTOR_HOSTS = new Set(["chatgpt.com"]);
+const LOOPBACK_HOSTS = new Set(["127.0.0.1", "[::1]", "localhost"]);
+
 export function safeRedirect(value) {
-  const url = new URL(value);
-  const loopback = ["127.0.0.1", "[::1]", "localhost"].includes(url.hostname);
-  if (url.username || url.password || !(url.protocol === "https:" || (url.protocol === "http:" && loopback))) {
+  let url;
+  try { url = new URL(value); }
+  catch { throw new Error("The app returned an unsafe redirect address."); }
+  const loopback = LOOPBACK_HOSTS.has(url.hostname);
+  const chatgpt = CHATGPT_CONNECTOR_HOSTS.has(url.hostname) && url.protocol === "https:" && url.port === "";
+  if (url.username || url.password || !(chatgpt || (loopback && (url.protocol === "http:" || url.protocol === "https:")))) {
     throw new Error("The app returned an unsafe redirect address.");
   }
   return url.href;
