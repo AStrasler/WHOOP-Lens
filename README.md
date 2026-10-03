@@ -4,7 +4,7 @@ Hosted ChatGPT and Codex plugin for reading a person's own WHOOP data. It can al
 
 ## How it is hosted
 
-The consent and connection UI in `docs/` is the GitHub Pages site: [https://astrasler.github.io/codex-whoop/](https://astrasler.github.io/codex-whoop/). Each person signs in with their own Supabase user. This repository does not add a separate account system.
+The consent and connection UI in `docs/` is the GitHub Pages site: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/). Each person signs in with their own Supabase user. This repository does not add a separate account system.
 
 WHOOP requests are handled by the Supabase edge function `whoop-mcp`. Its source is `supabase/functions/whoop-mcp/index.ts`. Supabase processes those requests. The integration does not run only on the visitor's computer.
 
