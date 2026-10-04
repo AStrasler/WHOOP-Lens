@@ -8,7 +8,8 @@ const pages = ["../docs/index.html", "../docs/oauth/consent/index.html"].map(rea
 const terms = read("../docs/terms/index.html");
 const support = read("../docs/support/index.html");
 const privacy = read("../docs/privacy/index.html");
-const source = read("../supabase/functions/whoop-mcp/index.ts");
+const source = read("../supabase/functions/whoop-mcp/handler.mjs");
+const entry = read("../supabase/functions/whoop-mcp/index.ts");
 
 test("sign-in and consent link privacy, terms, and support", () => {
   for (const page of pages) {
@@ -36,6 +37,10 @@ test("privacy is published as a Pages page", () => {
   assert.match(privacy, /not affiliated with WHOOP/);
   assert.match(privacy, /https:\/\/astrasler\.github\.io\/WHOOP-Lens\/privacy\//);
   assert.match(read("../Privacy.md"), /https:\/\/astrasler\.github\.io\/WHOOP-Lens\/privacy\//);
+  assert.match(privacy, /9 public connection seats and 1 developer seat/);
+  assert.match(privacy, /whoop-lens@outlook.com/);
+  assert.match(privacy, /does not include WHOOP access tokens/);
+  assert.match(read("../Privacy.md"), /does not include WHOOP access tokens/);
 });
 
 test("challenge route returns the env token exactly and 404 when it is missing", async () => {
@@ -55,9 +60,11 @@ test("the edge function serves the challenge from the environment on GET only", 
   const route = source.indexOf('pathname.endsWith("/.well-known/openai-apps-challenge")');
   const auth = source.indexOf("const me = await user(req)");
   assert.ok(route > -1 && route < auth);
-  assert.match(source, /req\.method === "GET" && u\.pathname\.endsWith\("\/\.well-known\/openai-apps-challenge"\)/);
-  assert.match(source, /openaiAppsChallengeResponse\(Deno\.env\.get\("OPENAI_APPS_CHALLENGE"\)\)/);
+  assert.match(source, /req\.method === "GET" && url\.pathname\.endsWith\("\/\.well-known\/openai-apps-challenge"\)/);
+  assert.match(source, /openaiAppsChallengeResponse\(env\("OPENAI_APPS_CHALLENGE"\)\)/);
   assert.doesNotMatch(source, /OPENAI_APPS_CHALLENGE"\s*\)\s*\|\|\s*"/);
+  assert.doesNotMatch(entry, /OPENAI_APPS_CHALLENGE"\s*\)\s*\|\|\s*"/);
+  assert.match(entry, /env: \(name\) => Deno\.env\.get\(name\)/);
 });
 
 test("every tool keeps readOnlyHint, destructiveHint, and openWorldHint", () => {

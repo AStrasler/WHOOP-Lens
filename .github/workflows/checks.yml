@@ -9,8 +9,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - name: Check browser modules and authentication controls
+      - name: Check browser modules, function source, and authentication controls
         run: |
           node --check docs/auth-client.mjs
           node --check docs/app.mjs
-          node --test docs/*.test.mjs
+          node --check docs/landing.mjs
+          node --check supabase/functions/whoop-mcp/challenge.mjs
+          node --check supabase/functions/whoop-mcp/handler.mjs
+          node --experimental-strip-types --check supabase/functions/whoop-mcp/index.ts
+          node --test docs/*.test.mjs supabase/functions/tests/*.test.mjs

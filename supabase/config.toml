@@ -1,0 +1,4 @@
+# whoop-mcp checks the Supabase user and WHOOP OAuth itself.
+# The WHOOP callback has no gateway JWT, so the platform JWT check stays off.
+[functions.whoop-mcp]
+verify_jwt = false

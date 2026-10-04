@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import test from "node:test";
 import { createAuthClient, safeRedirect, validateAuthorizationId, SUPABASE_URL } from "../docs/auth-client.mjs";
 
@@ -53,5 +54,35 @@ await auth.signOut();
 await reject(() => auth.details(id), "Sign-out clears the session");
 console.log("Passed " + results.length + " security checks.");
 
+});
+
+test("seat responses stay fixed strings and do not surface upstream bodies", async () => {
+  const fakeFetch = async (url) => {
+    if (url.endsWith("/token?grant_type=password")) {
+      return { ok: true, status: 200, json: async () => ({ access_token: "private-test-token", refresh_token: "private-refresh-token", expires_in: 60, user: { email: "test@example.com" } }) };
+    }
+    return {
+      ok: false,
+      status: 403,
+      json: async () => ({ code: "seat_full", error: "Public WHOOP seats are full.", access_token: "should-not-surface", refresh_token: "should-not-surface-either" }),
+    };
+  };
+  const auth = createAuthClient(fakeFetch, () => 1000);
+  await auth.signIn("test@example.com", "test-password");
+  const denied = await auth.connect().then(() => null, (error) => error);
+  assert.match(denied.message, /Public WHOOP seats are full/);
+  assert.equal(denied.message.includes("should-not-surface"), false);
+  assert.equal(denied.message.includes("refresh_token"), false);
+  const developerFetch = async (url) => {
+    if (url.endsWith("/token?grant_type=password")) {
+      return { ok: true, status: 200, json: async () => ({ access_token: "private-test-token", refresh_token: "private-refresh-token", expires_in: 60, user: { email: "test@example.com" } }) };
+    }
+    return { ok: false, status: 403, json: async () => ({ code: "developer_seat_taken", error: "raw upstream", authorization: "Bearer leaked" }) };
+  };
+  const developerAuth = createAuthClient(developerFetch, () => 1000);
+  await developerAuth.signIn("test@example.com", "test-password");
+  const developerDenied = await developerAuth.connect().then(() => null, (error) => error);
+  assert.match(developerDenied.message, /developer seat is already assigned/);
+  assert.equal(developerDenied.message.includes("Bearer leaked"), false);
 });
 
