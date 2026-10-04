@@ -48,6 +48,8 @@ export function createAuthClient(fetcher = globalThis.fetch, now = () => Date.no
     if (!response.ok) {
       if (response.status === 401) session = null;
       // Never render raw upstream responses: they may contain sensitive details.
+      if (data.code === "seat_full") throw new Error("Public WHOOP seats are full. This account was not connected. It is recorded for a notice when a public seat opens.");
+      if (data.code === "developer_seat_taken") throw new Error("The developer seat is already assigned, so this connection was not completed.");
       if (response.status === 429) throw new Error("Too many attempts. Wait a moment and try again.");
       if (path.startsWith("/functions/") && [404, 503].includes(response.status)) {
         throw new Error("The WHOOP server is not ready yet. Finish setup before linking your account.");

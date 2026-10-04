@@ -1,4 +1,5 @@
 import { createAuthClient, validateAuthorizationId, safeRedirect, MCP_URL } from "./auth-client.mjs";
+import { landingNote } from "./landing.mjs";
 const byId = id => document.getElementById(id);
 const auth = createAuthClient();
 const params = new URLSearchParams(location.search);
@@ -27,14 +28,8 @@ if (authorizationId) {
   message("No authorization request was provided. Start the connection from ChatGPT or Codex.", true);
   byId("login").hidden = true;
 }
-const linkedEmail = params.get("linked_email");
-const linkedAccount = linkedEmail && /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/.test(linkedEmail) && linkedEmail.length <= 254
-  ? linkedEmail : "";
-if (params.get("connected") === "1") {
-  message(linkedAccount
-    ? "WHOOP is linked to the Supabase user " + linkedAccount + ". Sign in with that account to confirm the connection."
-    : "Returned from WHOOP. Sign in to check that your account is connected.");
-}
+const note = landingNote(params);
+if (note) message(note.text, note.error);
 byId("endpoint").textContent = MCP_URL + "/mcp";
 byId("login").addEventListener("submit", event => {
   event.preventDefault();

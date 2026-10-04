@@ -1,6 +1,6 @@
 # WHOOP Lens — Privacy Statement
 
-Last updated: October 3, 2026
+Last updated: October 4, 2026
 
 WHOOP Lens is a hosted plugin that lets a person connect their own WHOOP account so ChatGPT and Codex can read that person's data with their permission. Each person signs in with their own Supabase user. The project is operated by Aaron Strasler. It is not affiliated with WHOOP.
 
@@ -26,7 +26,9 @@ WHOOP access and refresh tokens are encrypted per Supabase user and stored in Su
 
 You can revoke the plugin in your WHOOP account settings. Revocation stops future authorized WHOOP access. It does not automatically delete information already included in ChatGPT or Codex conversations. Conversations remain subject to your OpenAI settings and controls.
 
-Sign out of the Pages app to end the in-memory Supabase session. Disabling a Supabase user through the optional `whoop_members` kill switch stops that user from calling the plugin. A valid Supabase user is otherwise allowed.
+Sign out of the Pages app to end the in-memory Supabase session. Disabling a Supabase user through the optional `whoop_members` kill switch stops that user from calling the plugin.
+
+WHOOP Lens has 9 public connection seats and 1 developer seat. A person who does not already have a WHOOP connection cannot complete a new one once the public seats are full. The developer seat is one Supabase user chosen outside this repository. When a public seat is unavailable, the plugin can store a waitlist intake for that signed-in user: the Supabase user id, the account email when it matches a normal address, the time, and the notice destination whoop-lens@outlook.com. That intake does not include WHOOP access tokens, refresh tokens, client secrets, authorization codes, or health data. Storing the intake does not send mail.
 
 ## Contact
 
