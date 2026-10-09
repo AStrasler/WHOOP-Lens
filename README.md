@@ -2,6 +2,66 @@
 
 Hosted ChatGPT and Codex plugin for reading a person's own WHOOP data. It can also read Samsung Health records that were uploaded for that same person. This is an independent project. It is not affiliated with WHOOP.
 
+## Installation
+
+WHOOP Lens connects your WHOOP account to your own ChatGPT account. Setup has two parts: authorize WHOOP, then connect ChatGPT.
+
+### Before you start
+
+- Have an active WHOOP account and access to ChatGPT's custom MCP plugin setup.
+- Request access to the invite-only beta and obtain your own WHOOP Lens sign-in credentials from the maintainer.
+- Use your own account for both sign-ins. WHOOP Lens credentials sign you into this integration through Supabase Auth; your WHOOP credentials are entered on WHOOP's authorization page. You do not need a Supabase dashboard account.
+- A new WHOOP connection requires an available seat.
+
+### 1. Connect your WHOOP account
+
+1. Open [WHOOP Lens setup](https://astrasler.github.io/WHOOP-Lens/).
+2. Enter your WHOOP Lens sign-in email and password, then click **Sign in securely**.
+3. Under **WHOOP connection**, click **Connect WHOOP**.
+4. On WHOOP's page, sign in with your own WHOOP credentials and approve the requested access.
+5. WHOOP returns you to WHOOP Lens with a connection confirmation. If you sign in again to check the status, it should say **Your WHOOP account is connected.**
+
+### 2. Add WHOOP Lens to ChatGPT
+
+1. Open ChatGPT in the account that will use your WHOOP data.
+2. Open **Plugins**, click **Add**, and choose **Add custom MCP server**.
+3. Enter **WHOOP Lens** as the name.
+4. Enter this **Server URL**:
+
+   `https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/mcp`
+
+5. Choose **OAuth** for authentication. Review the displayed notice, select its acknowledgment checkbox, and continue the setup.
+6. On the WHOOP Lens consent page, sign in with the same WHOOP Lens credentials used in part 1.
+7. Review the requesting app and return address, then click **Approve access**. If this app was already approved, the button may say **Continue**.
+8. Return to ChatGPT. WHOOP Lens should appear with your connected account.
+
+If you start with ChatGPT before connecting WHOOP, the consent page first shows **Connect WHOOP**. Click it, authorize WHOOP in the separate tab, then return to the original consent tab and click **Refresh**. Finish with **Approve access** or **Continue**. Keep the original tab open during this flow.
+
+### 3. Check the connection
+
+In a ChatGPT conversation with WHOOP Lens available, ask:
+
+- “Use WHOOP Lens to show my WHOOP profile so I can confirm you're accessing my account.”
+- “What is my latest recovery score, HRV, and resting heart rate? Include the date.”
+- “How much did I sleep last night, and what was my sleep performance?”
+
+Confirm the profile belongs to you and compare the dated readings with your WHOOP app. If the profile request fails, resolve that failure before testing the other readings.
+
+### If ChatGPT is connected but WHOOP is not
+
+A connected account in ChatGPT, or **Previously approved app** on the consent page, confirms the ChatGPT authorization. It does not by itself confirm WHOOP authorization.
+
+1. Open [WHOOP Lens setup](https://astrasler.github.io/WHOOP-Lens/) in the same browser session.
+2. Sign in with the WHOOP Lens credentials associated with that ChatGPT connection.
+3. Click **Connect WHOOP**, sign in to WHOOP, and approve access.
+4. After WHOOP Lens confirms the connection, return to ChatGPT and retry the profile question. You do not need to add the MCP server again.
+
+For an already installed plugin, its ChatGPT settings page is not the WHOOP authorization page. Use the setup website above.
+
+If a consent request says it could not be completed after you already returned to ChatGPT, that request may have been consumed. Use the setup website to finish WHOOP authorization; start a fresh ChatGPT connection request only if the ChatGPT connection itself is still incomplete.
+
+If an older page keeps skipping WHOOP setup, reload the setup website with **Ctrl+Shift+R** on Windows or **Command+Shift+R** on macOS. During a connection started from ChatGPT, allow the separate WHOOP tab to open, then return to the original consent tab.
+
 ## How it is hosted
 
 The consent and connection UI in `docs/` is the GitHub Pages site: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/). Each person signs in with their own Supabase user. This repository does not add a separate account system.
