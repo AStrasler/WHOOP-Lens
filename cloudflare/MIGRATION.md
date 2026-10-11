@@ -81,6 +81,34 @@ at it. The current deployment predates this staged version and is **not**
 evidence that Cloudflare is running WHOOP Lens. Public and preview routing are off
 at the Cloudflare API. DNS and WHOOP OAuth registrations remain unchanged.
 
+## MCP protocol port (staging only, 2026-10-11)
+
+- New `src/mcp.mjs` maps **six read-only WHOOP MCP tools** to the existing
+  Cloudflare D1-backed WHOOP API adapter: profile, body measurements, recovery,
+  sleep, workouts and cycles. It does not advertise uploads, mutations or
+  unfinished optional Health Connect/medical context.
+- New `POST /mcp` support handles modern stateless MCP `2026-07-28` request
+  headers and `2025-11-25` initialization/list/call semantics, within a strict
+  16KB request-body cap. No stateful sessions or streaming notifications.
+- Every request verifies the Supabase Auth bearer (transitional identity
+  bridge), **then** active account membership in D1. MCP calls cannot choose
+  their own user ID. A supplied browser Origin must be allowlisted, and
+  protocol method/tool headers must match the JSON-RPC body.
+- Tool arguments and page sizes are bounded; four pages/100 records maximum
+  for auto-page; unexpected errors never include WHOOP tokens, user identifiers,
+  SQL text or secret values. Synthetic tests cover these constraints.
+- A separate `MCP_ENABLED=false` Worker flag complements
+  `MIGRATION_API_ENABLED=false` and `WHOOP_READS_ENABLED=false`.
+- **NOT yet a production-ready ChatGPT MCP URL**: the Cloudflare app does not
+  yet issue OAuth 2.1 access tokens; Supabase user bearer validation is only
+  a transitional staging bridge. Before claiming compatibility, integrate and
+  test an independent OAuth authorization/resource server, ChatGPT client
+  registration, account consent, and protocol conformance using a protected
+  non-production endpoint.
+- No new Cloudflare Worker deployment, public URLs, custom domain routes,
+  WHOOP re-authorization, actual account data transfer, or Supabase changes
+  occurred as part of the MCP source work.
+
 ## Cutover roadmap
 
 **Next:** test the interim bridge in a separately secured environment with
