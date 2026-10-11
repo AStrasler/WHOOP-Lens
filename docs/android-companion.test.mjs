@@ -3,7 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 
-test("Android companion requires private login and explicit Health Connect consent", () => {
+test("Android requires private login, consent and manual local-only steps aggregation", () => {
   const manifest=read("../android/app/src/main/AndroidManifest.xml");
   const build=read("../android/app/build.gradle.kts");
   const source=read("../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt");
@@ -18,6 +18,8 @@ test("Android companion requires private login and explicit Health Connect conse
   assert.match(source,/auth\.signIn\(address, secret\)/);
   assert.match(auth,/whoop-mcp\/status/);
   assert.match(auth,/fun signOut/);
+  assert.match(source,/hc\.aggregate\(AggregateRequest/);
+  assert.match(source,/getGrantedPermissions\(/);
   assert.doesNotMatch(source,/readRecords\(|insertRecords\(/);
-  assert.match(source,/No records are read or uploaded/i);
+  assert.match(source,/Nothing is uploaded/i);
 });
