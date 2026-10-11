@@ -40,6 +40,7 @@ function createMemoryDb(initial = {}) {
     whoop_waitlist: clone(initial.whoop_waitlist ?? []),
     samsung_health_records: clone(initial.samsung_health_records ?? []),
     health_connect_records: clone(initial.health_connect_records ?? []),
+    medical_context_entries: clone(initial.medical_context_entries ?? []),
   };
   let upsertError = null;
   function from(name) {
@@ -475,7 +476,7 @@ test("pagination stays on the caller token and stops on a repeated cursor", asyn
     body: { jsonrpc: "2.0", id: 1, method: "tools/list" },
   }));
   const tools = (await listed.json()).result.tools.map((tool) => tool.name);
-  assert.deepEqual(tools, ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_capabilities", "get_health_connect", "get_samsung_health", "connect_whoop"]);
+  assert.deepEqual(tools, ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_capabilities", "get_medical_context", "get_health_connect", "get_samsung_health", "connect_whoop"]);
   const paged = await harness.handle(request("/mcp", {
     method: "POST",
     token: "session-do-not-log-b",
@@ -872,5 +873,22 @@ test("Health Connect MCP reads only current user's imported rows and labels the 
   assert.equal(JSON.parse(other.result.content[0].text).records.length,0);
   const bad=await (await h.handle(reqFor("session-do-not-log-a",{limit:1000}))).json();
   assert.equal(bad.error.code,-32603);
+  assertSafe(h.logs);
+});
+
+test("medical context MCP reads only reviewed current-account entries and never exposes another account",async()=>{
+  const row={id:"11111111-1111-4111-8111-111111111111",user_id:userA,category:"note",
+    detail_json:{title:"Synthetic test question"},source_type:"self_reported",source_label:"test",reviewed_at:"2026-10-10T12:00:00Z"};
+  const h=createHarness({rows:{medical_context_entries:[row]},fetch:async()=>jsonResponse({})});
+  const read=async(token)=> (await (await h.handle(request("/mcp",{method:"POST",token,
+    body:{jsonrpc:"2.0",id:920,method:"tools/call",params:{name:"get_medical_context",arguments:{}}}
+  }))).json());
+  const mine=JSON.parse((await read("session-do-not-log-a")).result.content[0].text);
+  const other=JSON.parse((await read("session-do-not-log-b")).result.content[0].text);
+  assert.equal(mine.entries.length,1);
+  assert.equal(mine.entries[0].source_type,"self_reported");
+  assert.equal(mine.entries[0].user_id,undefined);
+  assert.equal(other.entries.length,0);
+  assert.equal(mine.provenance,"user_approved_medical_context");
   assertSafe(h.logs);
 });

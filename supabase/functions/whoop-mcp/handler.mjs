@@ -50,6 +50,7 @@ const capabilitySchema = {
 };
 const toolDescriptions = {
   get_health_connect: "Read the signed-in account’s uploaded Android Health Connect records, separately attributed from WHOOP and Samsung records.",
+  get_medical_context: "Read only the signed-in account’s explicitly reviewed, source-labeled medical-context entries. No edits, diagnosis or third-party sharing.",
   get_capabilities: "Discover all WHOOP Lens features and limitations from the deployed version-matched catalog. Return current account availability, sample questions, and what the MCP cannot do. Consult this first when someone asks what they can learn or explore; host visuals and research may differ.",
 
   get_profile: "Read the signed-in user's WHOOP profile.",
@@ -75,7 +76,7 @@ const metricOutcomes = new Set([
 ]);
 const toolNames = new Set([
   "get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles",
-  "get_samsung_health", "get_health_connect", "connect_whoop", "get_capabilities",
+  "get_samsung_health", "get_health_connect", "get_medical_context", "connect_whoop", "get_capabilities",
 ]);
 
 export function linkedEmail(value) {
@@ -370,6 +371,25 @@ export function createWhoopMcp({
   }
 
   async function callTool(uid, name, args) {
+    if (name === "get_medical_context") {
+      const limit = args?.limit ?? 25, offset = args?.offset ?? 0;
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+          !Number.isSafeInteger(offset) || offset < 0 || offset > 100000) throw new Error("Invalid context pagination");
+      const { data, error } = await db.from("medical_context_entries")
+        .select("id,category,detail_json,source_type,source_label,source_date,reviewed_at,created_at,updated_at")
+        .eq("user_id", uid).order("created_at", { ascending: false }).range(offset, offset + limit);
+      if (error) throw new Error("Medical context read failed");
+      return {
+        entries: (data ?? []).slice(0, limit).map(row => ({
+          id: row.id, category: row.category, detail_json: row.detail_json,
+          source_type: row.source_type, source_label: row.source_label,
+          source_date: row.source_date, reviewed_at: row.reviewed_at,
+          created_at: row.created_at, updated_at: row.updated_at,
+        })),
+        next_offset: (data?.length ?? 0) > limit ? offset + limit : null,
+        provenance: "user_approved_medical_context",
+      };
+    }
     if (name === "get_health_connect") {
       const allowed = ["steps_daily", "sleep_session", "heart_rate", "exercise_session"];
       if (args?.metric !== undefined && !allowed.includes(args.metric)) throw new Error("Invalid Health Connect metric");
@@ -741,6 +761,19 @@ export function createWhoopMcp({
                   name: "get_capabilities",
                   description: toolDescriptions.get_capabilities,
                   inputSchema: capabilitySchema,
+                  annotations: closed,
+                },
+                {
+                  name: "get_medical_context",
+                  description: toolDescriptions.get_medical_context,
+                  inputSchema: {
+                    type: "object",
+                    properties: {
+                      limit: { type: "integer", minimum: 1, maximum: 100 },
+                      offset: { type: "integer", minimum: 0 },
+                    },
+                    additionalProperties: false,
+                  },
                   annotations: closed,
                 },
                 {
