@@ -6,14 +6,18 @@ on:
       - 'cloudflare/oauth/**'
       - 'cloudflare/migrations/0003_oauth_login_limits.sql'
       - 'cloudflare/test/oauth-*.test.mjs'
+      - 'cloudflare/test/provider/**'
       - 'cloudflare/package.json'
+      - 'cloudflare/package-lock.json'
       - '.github/workflows/cloudflare-oauth-staging.yml'
   pull_request:
     paths:
       - 'cloudflare/oauth/**'
       - 'cloudflare/migrations/0003_oauth_login_limits.sql'
       - 'cloudflare/test/oauth-*.test.mjs'
+      - 'cloudflare/test/provider/**'
       - 'cloudflare/package.json'
+      - 'cloudflare/package-lock.json'
       - '.github/workflows/cloudflare-oauth-staging.yml'
 permissions:
   contents: read
@@ -30,7 +34,9 @@ jobs:
         run: node --test cloudflare/test/oauth-*.test.mjs
       - name: Install pinned OAuth provider and Wrangler locally
         working-directory: cloudflare
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
+      - name: Test real OAuth provider with synthetic upstream and in-memory storage
+        run: node --test cloudflare/test/provider/*.test.mjs
       - name: Bundle OAuth issuer and MCP resource (DRY RUN ONLY)
         working-directory: cloudflare
         run: |

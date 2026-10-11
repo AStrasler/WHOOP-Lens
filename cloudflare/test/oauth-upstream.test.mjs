@@ -207,3 +207,43 @@ test('upstream callback cannot be tricked into issuing other scopes',async()=>{
     assert.equal(calls.complete,0);
   }finally{db.close();}
 });
+test('ambiguous callbacks are rejected before state consumption or code exchange',async()=>{
+  const db=fixture();try{
+    const {oauth,calls}=stub();
+    const flow=makeConsentFlow({getOAuth:()=>oauth,
+      verifyIdentity:async()=>{throw Error('must not exchange');}});
+    for(const query of [
+      `state=${state}&code=first&code=second`,
+      `state=${state}&state=${state}&code=first`,
+      `state=${state}&error=denied&code=first`,
+      `state=${state}&error=denied&error=other`,
+      `state=${state}&error=denied&error_description=a&error_description=b`,
+      `state=${state}&code=first&iss=a&iss=b`,
+      `state=${state}&code=`, `state=${state}`, 'code=first'
+    ]){
+      const response=await flow.callback(req('/oauth/upstream/callback?'+query),env(db));
+      assert.equal(response.status,400,query);
+      assert.equal(response.headers.get('referrer-policy'),'no-referrer');
+    }
+    assert.equal(calls.finish,0);assert.equal(calls.complete,0);
+  }finally{db.close();}
+});
+test('all post-consumption failures clear the cookie without leaking upstream errors',async()=>{
+  const db=fixture();try{
+    for(const kind of ['identity','completion','scope','denial']){
+      const {oauth,calls}=stub();
+      calls.data={verifier:createVerifier(),grantedScopes:kind==='scope'?['mcp:write']:['mcp:read']};
+      if(kind==='completion')oauth.completeAuthorization=async()=>{throw Error('private-token');};
+      const flow=makeConsentFlow({getOAuth:()=>oauth,verifyIdentity:async()=>{
+        if(kind==='identity')throw Error('private-token');return A;
+      }});
+      const query=kind==='denial'?'error=denied':'code=code-123';
+      const response=await flow.callback(req('/oauth/upstream/callback?'+query+'&state='+state,
+        'GET',null,{cookie:'__Host-oauth-upstream=private'}),env(db));
+      assert.ok(response.status>=400);
+      assert.match(response.headers.get('set-cookie'),/Max-Age=0/);
+      assert.equal(response.headers.get('cache-control'),'no-store');
+      assert.doesNotMatch(await response.text(),/private-token/);
+    }
+  }finally{db.close();}
+});

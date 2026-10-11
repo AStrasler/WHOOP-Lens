@@ -1,5 +1,5 @@
 import {
-  OAuthAuthorizationServer,authorizationErrorRedirect
+  OAuthAuthorizationServer,authorizationErrorRedirect,OAuthError
 } from '@cloudflare/workers-oauth-provider';
 import {WorkerEntrypoint} from 'cloudflare:workers';
 import {makeConsentFlow} from './consent-flow.mjs';
@@ -8,11 +8,19 @@ import {makeConsentFlow} from './consent-flow.mjs';
 // All routes remain disabled until a separately approved staging rollout.
 export const ISSUER='https://auth.whooplens.tech';
 export const RESOURCE='https://whooplens.tech/mcp';
-const server=new OAuthAuthorizationServer({
+export const server=new OAuthAuthorizationServer({
   issuer:ISSUER,resources:[RESOURCE],
   scopesSupported:['mcp:read','offline_access'],
   clientIdMetadataDocumentEnabled:true,
-  clientRegistrationEndpoint:'/oauth/register'
+  clientRegistrationEndpoint:'/oauth/register',
+  // The SDK issues refresh tokens by default, independently of scope names.
+  // Honor the member's explicit offline-access selection at the token endpoint.
+  tokenExchangeCallback:({grantType,scope})=>{
+    if(!scope.includes('offline_access')){
+      if(grantType==='refresh_token')throw new OAuthError('invalid_grant');
+      return {refreshTokenTTL:0};
+    }
+  }
 });
 const flow=makeConsentFlow({
   getOAuth:env=>server.getOAuthApi(env),

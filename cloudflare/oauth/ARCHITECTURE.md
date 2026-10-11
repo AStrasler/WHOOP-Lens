@@ -207,3 +207,50 @@ No public activation without a separately approved plan.
 Docs:
 - https://supabase.com/docs/guides/auth/oauth-server/oauth-flows
 - https://github.com/cloudflare/workers-oauth-provider/blob/main/docs/upstream-sign-in.md
+
+## Redirect validation follow-up (2026-10-11)
+
+This source-only batch builds on the already completed redirect replacement
+(commit da64452). It does not register an upstream client, deploy either Worker,
+change DNS, enable any feature gate, or transfer account data.
+
+- Callback parsing rejects duplicate state/code/error fields, conflicting code
+  and error responses, empty responses, and duplicate issuer/error metadata
+  before consuming state. Callback failures after consumption preserve the
+  provider's cookie-clearing headers. Denial redirects suppress referrers.
+- The pinned provider issues refresh tokens by default independently of the
+  `offline_access` scope. The issuer now explicitly suppresses refresh tokens
+  when that permission was not selected and rejects refresh for such a grant.
+- A separate Node 24 integration suite imports the actual issuer configuration
+  and pinned provider. Only the unused Workers RPC base class is shimmed.
+  Upstream HTTP uses synthetic responses; KV is an expiring in-memory double
+  and membership uses disposable SQLite. No external sign-in requests occur.
+- Verified: browser cookie binding, sequential replay rejection, parallel-tab
+  isolation, expiry, encrypted-state tampering, inactive-member rejection and
+  cleanup, downstream S256 code exchange, scope selection, refresh and grant
+  revocation. The provider's transitive dependency tree is locked; OAuth CI
+  installs it with npm ci before running the provider suite and dry-run builds.
+
+### Limits of this evidence
+
+These are protocol integration tests, not a browser or deployed edge trial.
+They do not prove Cloudflare KV consistency, Workers RPC, CIMD fetch behavior,
+actual Supabase token/logout semantics, or browser cookie enforcement. Node
+cannot enable the Workers-only CIMD flag; these tests use local registered
+synthetic clients. Production remains Supabase-primary and unchanged.
+
+The provider documents that KV get-then-delete is **not atomic**: simultaneous
+callbacks from the same browser can both resume a transaction. Sequential
+replay tests must not be interpreted as an atomic single-use guarantee. The
+upstream authorization server's one-use authorization code plus S256 PKCE is
+an additional barrier, but real upstream concurrency and failure behavior
+remain a required private-trial check before activation. No new paid service
+or runtime storage was added by this batch.
+
+Run locally (Node 24):
+
+```sh
+cd cloudflare
+npm ci --no-audit --no-fund
+node --test test/oauth-*.test.mjs test/provider/*.test.mjs
+```

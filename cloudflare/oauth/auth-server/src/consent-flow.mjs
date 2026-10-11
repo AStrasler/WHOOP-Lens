@@ -3,7 +3,11 @@ import {createVerifier,checkUpstreamConfig,upstreamAuthorizationUrl,verifyUpstre
 const SCOPES=new Set(['mcp:read','offline_access']);
 const ORIGIN='https://auth.whooplens.tech';
 const CALLBACK_PATH='/oauth/upstream/callback';
-const oauthError=(status=400)=>new Response('Authorization unavailable',{status,headers:noStoreHeaders()});
+const oauthError=(status=400,cleanup)=>{
+  const headers=new Headers(cleanup);
+  for(const [key,value] of Object.entries(noStoreHeaders()))headers.set(key,value);
+  return new Response('Authorization unavailable',{status,headers});
+};
 const allowedSelection=(selected,original)=>
   Array.isArray(selected)&&selected.length>=1&&selected.length<=2&&
   selected.includes('mcp:read')&&new Set(selected).size===selected.length&&
@@ -92,28 +96,40 @@ export function makeConsentFlow({
     const url=new URL(request.url);
     if(request.method!=='GET'||url.origin!==ORIGIN||url.pathname!==CALLBACK_PATH)
       return oauthError(403);
+    // Reject ambiguous responses before consuming the browser-bound transaction.
+    // Extensions are allowed, but security-relevant OAuth fields are singletons.
+    const params=url.searchParams;
+    if(['state','code','error','error_description','error_uri','iss'].some(
+      key=>params.getAll(key).length>1)||
+      !/^[A-Za-z0-9_-]{24,256}$/.test(params.get('state')||'')||
+      params.has('code')===params.has('error')||
+      !(params.get('code')||params.get('error')))
+      return oauthError();
+    let cleanup;
     try{
       const oauth=getOAuth(env);
       // Official provider validates one-time upstream state + browser cookie.
       const finished=await oauth.finishUpstream(request);
       if(!finished?.request||!finished?.headers)return oauthError();
+      cleanup=finished.headers;
       if(url.searchParams.has('error')){
         const destination=errorRedirect(finished.request,'access_denied');
         let target;
-        try{target=new URL(destination);}catch{return oauthError();}
+        try{target=new URL(destination);}catch{return oauthError(400,cleanup);}
         const local=['localhost','127.0.0.1','[::1]'].includes(target.hostname);
         if(target.protocol!=='https:'&&!(target.protocol==='http:'&&local))
-          return oauthError();
+          return oauthError(400,cleanup);
         const headers=new Headers(finished.headers);
         headers.set('location',destination);
         headers.set('cache-control','no-store');
+        headers.set('referrer-policy','no-referrer');
         return new Response(null,{status:302,headers});
       }
       const code=url.searchParams.get('code');
       const data=finished.data;
       if(typeof code!=='string'||!data||typeof data.verifier!=='string'||
          !allowedSelection(data.grantedScopes,finished.request.scope))
-        return oauthError();
+        return oauthError(400,cleanup);
       // Subject must be validated by Supabase and ACTIVE D1 membership.
       // No access or refresh tokens enter the Cloudflare OAuth grant.
       const userId=await verifyIdentity({code,verifier:data.verifier,env});
@@ -126,7 +142,7 @@ export function makeConsentFlow({
       headers.set('cache-control','no-store');
       headers.set('referrer-policy','no-referrer');
       return new Response(null,{status:302,headers});
-    }catch{return oauthError(401);}
+    }catch{return oauthError(401,cleanup);}
   }
   return {authorize,callback};
 }
