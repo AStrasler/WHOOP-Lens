@@ -20,8 +20,8 @@ test("ciphertext cannot cross tenant/purpose/key boundaries or survive tampering
   await assert.rejects(openWhoopToken(envelope,{...opts,purpose:"access"}));
   await assert.rejects(openWhoopToken(envelope,{...opts,key:key()}));
   const pieces=envelope.split(".");
-  const last=pieces[2].slice(0,-1)+(pieces[2].at(-1)==="A"?"B":"A");
-  await assert.rejects(openWhoopToken(pieces[0]+"."+pieces[1]+"."+last,opts));
+  const tampered=(pieces[2][0]==="A"?"B":"A")+pieces[2].slice(1);
+  await assert.rejects(openWhoopToken(pieces[0]+"."+pieces[1]+"."+tampered,opts));
 });
 test("invalid user, key, version and token contents rejected",async()=>{
   const opts={userId:A,purpose:"access",key:key()};
