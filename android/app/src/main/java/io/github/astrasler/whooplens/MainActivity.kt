@@ -26,6 +26,7 @@ import kotlinx.coroutines.runBlocking
 class MainActivity : ComponentActivity() {
   private val auth = PrivateSession()
   private var verified = false
+  private var uiGeneration = 0L
   private val permissions = setOf(
     HealthPermission.getReadPermission(StepsRecord::class),
     HealthPermission.getReadPermission(SleepSessionRecord::class),
@@ -35,6 +36,7 @@ class MainActivity : ComponentActivity() {
   private val permissionsLauncher = registerForActivityResult(
     PermissionController.createRequestPermissionResultContract()
   ) { granted ->
+    if (!verified || auth.currentToken() == null) return@registerForActivityResult
     findViewById<TextView>(4001)?.text =
       "Health Connect: " + granted.size + " of " + permissions.size + " permissions granted. No data uploaded."
     findViewById<Button>(4002)?.isEnabled = verified &&
@@ -102,6 +104,7 @@ class MainActivity : ComponentActivity() {
     setContentView(ScrollView(this).apply { addView(layout) })
 
     loginButton.setOnClickListener {
+      val attempt = ++uiGeneration
       val address = email.text.toString().trim()
       val secret = password.text.toString()
       password.text.clear()
@@ -114,6 +117,7 @@ class MainActivity : ComponentActivity() {
       Thread {
         val result = try { auth.signIn(address, secret) } catch (_: Exception) { false }
         runOnUiThread {
+          if (attempt != uiGeneration || isDestroyed || isFinishing) return@runOnUiThread
           verified = result
           loginButton.isEnabled = true
           permissionsButton.isEnabled = result &&
@@ -137,6 +141,7 @@ class MainActivity : ComponentActivity() {
       if (!verified || auth.currentToken() == null) {
         status.text = "Please sign in again before viewing your steps."
       } else {
+        val attempt = uiGeneration
         previewButton.isEnabled = false
         status.text = "Reading yesterday's steps locally..."
         Thread {
@@ -157,7 +162,9 @@ class MainActivity : ComponentActivity() {
             }
           } catch (_: Exception) { null }
           runOnUiThread {
-            previewButton.isEnabled = verified && auth.currentToken() != null
+            if (attempt != uiGeneration || isDestroyed || isFinishing ||
+              !verified || auth.currentToken() == null) return@runOnUiThread
+            previewButton.isEnabled = true
             status.text = if (total == null)
               "Yesterday's steps unavailable or permission revoked. No data uploaded."
             else "Yesterday: " + total + " steps (Health Connect aggregate). Local preview only; nothing uploaded."
@@ -170,6 +177,7 @@ class MainActivity : ComponentActivity() {
       if (!verified || auth.currentToken() == null) {
         status.text = "Sign in again before reading local health records."
       } else {
+        val attempt = uiGeneration
         otherPreviewButton.isEnabled = false
         status.text = "Reading permitted Health Connect records locally..."
         Thread {
@@ -203,7 +211,9 @@ class MainActivity : ComponentActivity() {
             }
           } catch (_: Exception) { "Local preview unavailable; check Health Connect permissions." }
           runOnUiThread {
-            otherPreviewButton.isEnabled = verified && auth.currentToken() != null
+            if (attempt != uiGeneration || isDestroyed || isFinishing ||
+              !verified || auth.currentToken() == null) return@runOnUiThread
+            otherPreviewButton.isEnabled = true
             status.text = summary + " No data uploaded."
           }
         }.start()
@@ -211,7 +221,9 @@ class MainActivity : ComponentActivity() {
     }
 
     logoutButton.setOnClickListener {
+      ++uiGeneration
       auth.signOut()
+      loginButton.isEnabled = true
       verified = false
       permissionsButton.isEnabled = false
       previewButton.isEnabled = false
@@ -222,6 +234,7 @@ class MainActivity : ComponentActivity() {
   }
 
   override fun onDestroy() {
+    ++uiGeneration
     auth.signOut()
     super.onDestroy()
   }
