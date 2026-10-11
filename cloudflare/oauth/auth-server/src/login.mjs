@@ -3,7 +3,7 @@
 // revoked before Cloudflare OAuth issues a separate grant. Never log credentials.
 import { activeMembership } from '../../../src/storage.mjs';
 const AUTH_ORIGIN='https://evoiwauqplbcecumiwqn.supabase.co';
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL=/^[^\s@]{1,128}@[^\s@]{1,255}$/;
 const timeout=()=>AbortSignal.timeout(8000);
 export class SignInDenied extends Error { constructor(){super('Sign-in not accepted');} }
