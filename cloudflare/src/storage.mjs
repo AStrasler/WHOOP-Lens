@@ -1,6 +1,6 @@
 // D1 does not support Supabase RLS. Every query MUST bind a verified user ID.
 // This module intentionally exposes no generic query or arbitrary table access.
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function verifiedUserId(userId) {
   if (typeof userId !== "string" || !UUID.test(userId)) throw new Error("Invalid verified user");
   return userId.toLowerCase();
