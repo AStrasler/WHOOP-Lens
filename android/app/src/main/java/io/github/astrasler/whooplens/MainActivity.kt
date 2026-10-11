@@ -105,6 +105,7 @@ class MainActivity : ComponentActivity() {
 
     loginButton.setOnClickListener {
       val attempt = ++uiGeneration
+      val authAttempt = auth.beginSignIn()
       val address = email.text.toString().trim()
       val secret = password.text.toString()
       password.text.clear()
@@ -115,7 +116,7 @@ class MainActivity : ComponentActivity() {
       loginButton.isEnabled = false
       status.text = "Checking your private WHOOP Lens access..."
       Thread {
-        val result = try { auth.signIn(address, secret) } catch (_: Exception) { false }
+        val result = try { auth.signIn(address, secret, authAttempt) } catch (_: Exception) { false }
         runOnUiThread {
           if (attempt != uiGeneration || isDestroyed || isFinishing) return@runOnUiThread
           verified = result
