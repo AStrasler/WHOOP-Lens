@@ -2,6 +2,7 @@ import { AccessDenied, verifySupabaseSession } from "./identity.mjs";
 import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
 import { callWhoop } from "./whoop-api.mjs";
 import { createWhoopAuthorization, acceptWhoopCallback } from "./whoop-oauth.mjs";
+import { handleMcpRpc, validateMcpTransport } from "./mcp.mjs";
 
 function json(data, status=200) {
   return new Response(JSON.stringify(data), {
@@ -22,6 +23,48 @@ export function createStagingRouter({ verifyIdentity = verifySupabaseSession, wh
     if (env?.MIGRATION_API_ENABLED !== "true")
       return json({error:"WHOOP Lens Cloudflare migration not activated"},503);
 
+    // MCP is gated independently, including tool discovery. No session details
+    // or health metadata may leak to unauthenticated callers.
+    let preliminaryUrl;
+    try{preliminaryUrl=new URL(request.url);}catch{return json({error:"Invalid request"},400);}
+    if(preliminaryUrl.pathname==="/mcp") {
+      if(env?.MCP_ENABLED!=="true")return json({error:"Cloudflare MCP is not activated"},503);
+      if(request.method!=="POST")return json({error:"MCP requires POST"},405);
+      if(!env?.DB||env?.WHOOP_READS_ENABLED!=="true")
+        return json({error:"Cloudflare MCP is not ready"},503);
+      const origin=request.headers.get("origin");
+      // Browser origins need explicit approval; no Origin is normal for server-side
+      // ChatGPT clients. Never rely on Origin as authentication.
+      if(origin && ![preliminaryUrl.origin,"https://chatgpt.com","https://chat.openai.com"].includes(origin))
+        return json({error:"Disallowed origin"},403);
+      if(!(request.headers.get("content-type")||"").toLowerCase().startsWith("application/json"))
+        return json({error:"JSON required"},415);
+      const accept=request.headers.get("accept")||"";
+      if(!accept.includes("application/json")||!accept.includes("text/event-stream"))
+        return json({error:"Unsupported MCP Accept header"},406);
+      if(Number(request.headers.get("content-length"))>16384)
+        return json({error:"MCP request too large"},413);
+      let raw;
+      try{raw=await request.text();}catch{return json({error:"Unreadable request"},400);}
+      if(raw.length>16384)return json({error:"MCP request too large"},413);
+      let message;
+      try{message=JSON.parse(raw);}catch{return json({error:"Invalid JSON"},400);}
+      const transport=validateMcpTransport(request,message);
+      if(transport.error)return json({error:transport.error},transport.status);
+      try {
+        const userId=await verifyIdentity(request,env);
+        if(!await activeMembership(env.DB,userId))
+          return json({error:"Not authorized for WHOOP Lens"},403);
+        const result=await handleMcpRpc(message,{
+          db:env.DB,userId,env,whoopRequest
+        },transport);
+        if(result===null)return new Response(null,{status:202,headers:{"cache-control":"no-store"}});
+        return json(result);
+      }catch(error){
+        if(error instanceof AccessDenied)return json({error:"Unauthorized"},error.status);
+        return json({error:"MCP staging unavailable"},503);
+      }
+    }
     if (request.method !== "GET")
       return json({error:"Unsupported method"},405);
     let url;
