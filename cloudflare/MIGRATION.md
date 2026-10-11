@@ -236,3 +236,27 @@ The exact future OAuth callback
 Supabase only following a separate owner-approved, threat-reviewed step.
 Supabase OAuth configuration, login UI and token/logout conformance are
 unverified for this future client. See \`cloudflare/oauth/ARCHITECTURE.md\`.
+
+
+## Mandatory membership and identity transfer preflight (code only)
+
+- \`cloudflare/migration/preflight.mjs\` is a **pure, zero-write** validator for
+  a controlled future migration manifest. The manifest contains only stable
+  user IDs, approved membership flags, seat roles and record-owner IDs;
+  raw WHOOP health data, email addresses, encrypted refresh tokens, password
+  material and arbitrary record fields are rejected.
+- The preflight checks Supabase Auth identities, exact \`identity_links\`
+  provider-to-subject relationships, explicit ACTIVE member rows, each WHOOP
+  connection, each recovery/sleep record owner and the 9-public/1-developer
+  seat limits. It also rejects duplicates and unmapped or inactive users.
+- Only aggregate **finding codes and counts**, never account IDs, are returned.
+  \`requireSafeTransferManifest()\` throws if ANY reconciliation problem exists.
+  Passing this check still **does not authorize data movement or deployment**.
+- The live Supabase read-only audit identified a connected account without an
+  explicit member row. No automatic membership enrollment is allowed. That
+  account requires owner-reviewed, policy-grounded reconciliation before
+  creating a real transfer manifest.
+- The validator is covered by synthetic tests in the existing Cloudflare
+  isolation workflow. All real account and health data remain in Supabase.
+  No credentials, identity rows, recovery/sleep records or OAuth grants were
+  copied to D1 by this preflight work.
