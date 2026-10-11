@@ -1,15 +1,22 @@
-# WHOOP Lens companion (private beta scaffold)
+# WHOOP Lens companion (private preview build)
 
-This Android 14+ scaffold uses stable Health Connect client 1.1.0. **It does not read or upload any health records yet and is not ready for beta distribution.**
+The Android 14+ private companion uses stable Health Connect 1.1.0 with **compile SDK 36**. It has compiled successfully in GitHub Actions, but **it has not yet been tested on a real Android phone or approved for distribution**.
 
-## Build requirements
+## What works in code
 
-- JDK 17, Android SDK API 36, and Gradle 8.11.1 (Android Gradle Plugin 8.9.2).
-- `compileSdk = 36` is required by Health Connect 1.1.0. `minSdk = 34` retains Android 14+ support. Do not confuse compile SDK with the minimum version.
-- GitHub Actions `.github/workflows/android-build.yml` installs the JDK and Gradle and attempts `:app:assembleDebug` on Android changes. The APK is a debug build only, **not a signed release**.
+- Supabase email/password sign-in with a short-lived **in-memory only** access token; the WHOOP Lens status endpoint must confirm an existing connected user.
+- Sign-out clears the in-memory session.
+- Only a signed-in user may open the Health Connect permission chooser for steps, sleep, heart rate and exercise.
+- Manual on-device preview for **yesterday's aggregate steps** (avoids summing overlapping raw step sources).
+- Manual on-device preview of up to 50 sleep, heart-rate and exercise records per category from the last 24 hours, only for permissions currently granted.
+- **No automatic reads, no uploads, no background sync, no service-role secrets.** Preview counts do not imply records are absent when permissions are missing.
 
-## Remaining functionality
+## Build
 
-Implement and test individual user sign-in, authorized Health Connect permissions, correctly aggregated daily steps, record preview, user-controlled upload to the version-2 ingestion endpoint, token/session handling, sign-out, user-directed record deletion, device tests, and a pinned verified Gradle wrapper. No service-role credentials or shared tokens belong in the app.
+JDK 17, Gradle 8.11.1, Android SDK 36, Android Gradle Plugin 8.9.2. GitHub Actions `.github/workflows/android-build.yml` runs `gradle -p android --no-daemon :app:assembleDebug` and confirms the debug APK exists. This is not a signed distribution build.
 
-**Private access only.** No public distribution, background reads, or unattended upload is authorized by this scaffold.
+## Still blocked for private beta
+
+The Health Connect v2 backend and owner-only database schema are **drafts**, not deployed. Do not add a production upload button until those are staged, tested, reviewed and approved. Complete session-expiry/race handling, longer-range source-labeled previews, explicit upload review, retry and deletion controls, correct Health Connect permission revocation UI, signed private builds, real-device testing and invite-only access validation.
+
+**Keep the companion private.** Do not publish an APK, public account registration or automatic data sharing.
