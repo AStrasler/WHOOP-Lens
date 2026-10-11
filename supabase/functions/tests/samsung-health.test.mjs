@@ -20,7 +20,14 @@ function fixture(){
         limit(v){max=v;return q;},range(a,b){range=[a,b];return q;},
         maybeSingle(){return Promise.resolve({data:data.filter(row=>filter.every(([k,v])=>row[k]===v))[0]??null,error:null})},
         upsert(rows,options){op="upsert";input=rows;opts=options??{};return q;},
+        delete(){op="delete";return q;},
         then(resolve,reject){
+          if(op==="delete"){
+            writes++;
+            const matches=data.filter(row=>filter.every(([k,v])=>row[k]===v));
+            store[table]=data.filter(row=>!filter.every(([k,v])=>row[k]===v));
+            return Promise.resolve({data:structuredClone(matches),error:null}).then(resolve,reject);
+          }
           if(op==="upsert"){
             writes++;
             for(const incoming of input){
@@ -45,7 +52,7 @@ function fixture(){
     const response=await handler(new Request("https://example.test/samsung-health"+path,{
       method,
       headers:token?{authorization:"Bearer "+token}:undefined,
-      body:method==="POST"?(typeof body==="string"?body:JSON.stringify(body)):undefined
+      body:["POST","DELETE"].includes(method)?(typeof body==="string"?body:JSON.stringify(body)):undefined
     }));
     return {status:response.status,body:await response.json()};
   }
@@ -109,4 +116,21 @@ test("no writes for empty, oversized, wrong source or malformed v2 payload",asyn
 test("v2 strict allowlist does not accept fake diagnosis or unknown units",()=>{
   assert.equal(validateHealthConnect({...v2(),records:[{...v2().records[0],metric:"diagnosis"}]},Date.parse("2026-10-11")).error,"Invalid Health Connect record");
   assert.ok(validateHealthConnect(v2(),Date.parse("2026-10-11")).rows.length===2);
+});
+
+test("user-approved v2 DELETE only removes owner-matching records and never Samsung v1",async()=>{
+  const t=fixture();await t.call("a",v2());await t.call("b",v2());await t.call("a",v1());
+  const key=v2().records[0].record_key;
+  const item={schema_version:2,source:"health_connect",approved:true,metric:"steps_daily",record_key:key};
+  assert.equal((await t.call("a","", "DELETE")).status,400);
+  assert.equal((await t.call("a",{...item,approved:false},"DELETE")).status,400);
+  assert.equal((await t.call("a",{...item,record_key:"invalid/private/key"},"DELETE")).status,400);
+  const removed=await t.call("a",item,"DELETE");
+  assert.equal(removed.status,200);
+  assert.equal(removed.body.deleted,1);
+  assert.equal(t.store.health_connect_records.filter(r=>r.user_id===userA&&r.metric==="steps_daily").length,0);
+  assert.equal(t.store.health_connect_records.filter(r=>r.user_id===userB&&r.metric==="steps_daily").length,1);
+  assert.equal(t.store.samsung_health_records.length,1);
+  const again=await t.call("a",item,"DELETE");
+  assert.equal(again.body.deleted,0);
 });
