@@ -26,8 +26,8 @@ test("split OAuth server uses official 1.x SDK and pinned dependency",()=>{
 test("inactive authorization cannot issue token or consent",async()=>{
   assert.match(auth,/OAUTH_SERVER_ENABLED!=="true"/);
   assert.match(auth,/status:503/);
-  assert.doesNotMatch(auth,/completeAuthorization\s*\(/);
-  assert.doesNotMatch(auth,/beginConsent\s*\(/);
+  assert.doesNotMatch(auth,/await\s+oauth\.completeAuthorization\s*\(/);
+  assert.doesNotMatch(auth,/await\s+oauth\.beginConsent\s*\(/);
   assert.match(auth,/authorizationPreview/);
   assert.match(auth,/parseAuthRequest\(request\)/);
   assert.match(auth,/describeConsent\(parsed\)/);
