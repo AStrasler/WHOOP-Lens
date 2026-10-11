@@ -2,6 +2,7 @@ package io.github.astrasler.whooplens
 
 import android.os.Bundle
 import android.app.AlertDialog
+import android.app.DatePickerDialog
 import android.text.InputType
 import android.widget.Button
 import android.widget.EditText
@@ -91,6 +92,10 @@ class MainActivity : ComponentActivity() {
       text = "Review one-day steps sync"
       isEnabled = false
     }
+    val deleteButton = Button(this).apply {
+      text = "Delete uploaded steps for a chosen date"
+      isEnabled = false
+    }
     val logoutButton = Button(this).apply { text = "Sign out" }
     val hcStatus = when (HealthConnectClient.getSdkStatus(this)) {
       HealthConnectClient.SDK_AVAILABLE -> "Health Connect is available."
@@ -106,6 +111,7 @@ class MainActivity : ComponentActivity() {
     layout.addView(previewButton)
     layout.addView(otherPreviewButton)
     layout.addView(reviewButton)
+    layout.addView(deleteButton)
     layout.addView(logoutButton)
     layout.addView(status)
     layout.addView(TextView(this).apply {
@@ -124,6 +130,7 @@ class MainActivity : ComponentActivity() {
       previewButton.isEnabled = false
       otherPreviewButton.isEnabled = false
       reviewButton.isEnabled = false
+      deleteButton.isEnabled = false
       preparedSteps = null
       loginButton.isEnabled = false
       status.text = "Checking your private WHOOP Lens access..."
@@ -133,6 +140,7 @@ class MainActivity : ComponentActivity() {
           if (attempt != uiGeneration || isDestroyed || isFinishing) return@runOnUiThread
           verified = result
           loginButton.isEnabled = true
+          deleteButton.isEnabled = result && ManualSync.ENABLE_UPLOADS
           permissionsButton.isEnabled = result &&
             HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE
           status.text = if (result) "Authorized account confirmed. No health data accessed."
@@ -278,6 +286,45 @@ class MainActivity : ComponentActivity() {
       }
     }
 
+    deleteButton.setOnClickListener {
+      if (!ManualSync.ENABLE_UPLOADS || !verified || auth.currentToken() == null) {
+        status.text = "Deletion is unavailable until private sync is released and you sign in."
+      } else {
+        val yesterday = LocalDate.now().minusDays(1)
+        DatePickerDialog(this, { _, year, monthZeroBased, dayOfMonth ->
+          val selected = LocalDate.of(year, monthZeroBased + 1, dayOfMonth)
+          AlertDialog.Builder(this)
+            .setTitle("Delete your uploaded steps?")
+            .setMessage("Remove only the Health Connect steps aggregate dated " + selected +
+              " from your signed-in WHOOP Lens account? This does not delete your phone's records.")
+            .setNegativeButton("Keep", null)
+            .setPositiveButton("Delete uploaded record") { _, _ ->
+              val attempt = uiGeneration
+              deleteButton.isEnabled = false
+              status.text = "Requesting deletion for " + selected + "..."
+              Thread {
+                val removed = try {
+                  val token = auth.currentToken()
+                  if (token == null) -1 else ManualSync.deleteApprovedSteps(selected, token)
+                } catch (_: Exception) { -1 }
+                runOnUiThread {
+                  if (attempt != uiGeneration || isDestroyed || isFinishing ||
+                      !verified || auth.currentToken() == null) return@runOnUiThread
+                  deleteButton.isEnabled = ManualSync.ENABLE_UPLOADS
+                  status.text = when (removed) {
+                    1 -> "Your uploaded steps for " + selected + " were deleted."
+                    0 -> "No uploaded steps record was found for " + selected + "."
+                    else -> "Deletion could not be confirmed; no automatic retry."
+                  }
+                }
+              }.start()
+            }
+            .show()
+        }, yesterday.year, yesterday.monthValue - 1, yesterday.dayOfMonth)
+          .apply { datePicker.maxDate = System.currentTimeMillis(); show() }
+      }
+    }
+
     logoutButton.setOnClickListener {
       ++uiGeneration
       auth.signOut()
@@ -287,6 +334,7 @@ class MainActivity : ComponentActivity() {
       previewButton.isEnabled = false
       otherPreviewButton.isEnabled = false
       reviewButton.isEnabled = false
+      deleteButton.isEnabled = false
       preparedSteps = null
       password.text.clear()
       status.text = "Signed out. No data was uploaded."
