@@ -15,7 +15,12 @@ test("Android requires private login, consent and manual local-only steps aggreg
   assert.match(manifest,/usesCleartextTraffic="false"/);
   assert.doesNotMatch(manifest+source+auth,/SERVICE_ROLE_KEY|sb_secret_|supabase_service_role/);
   assert.match(source,/permissionsLauncher\.launch\(permissions\)/);
-  assert.match(source,/auth\.signIn\(address, secret\)/);
+  assert.match(source,/auth\\.beginSignIn\\(\\)/);
+  assert.match(source,/auth\\.signIn\\(address, secret, authAttempt\\)/);
+  assert.match(auth,/fun beginSignIn\\(\\): Long/);
+  assert.match(auth,/attempt != revision/);
+  assert.match(source,/attempt != uiGeneration/);
+  assert.match(source,/\\+\\+uiGeneration/);
   assert.match(auth,/whoop-mcp\/status/);
   assert.match(auth,/fun signOut/);
   assert.match(source,/hc\.aggregate\(AggregateRequest/);
