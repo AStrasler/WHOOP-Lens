@@ -1,5 +1,6 @@
 import { AccessDenied, verifySupabaseSession } from "./identity.mjs";
 import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
+import { callWhoop } from "./whoop-api.mjs";
 
 function json(data, status=200) {
   return new Response(JSON.stringify(data), {
@@ -12,7 +13,7 @@ function json(data, status=200) {
     }
   });
 }
-export function createStagingRouter({ verifyIdentity = verifySupabaseSession } = {}) {
+export function createStagingRouter({ verifyIdentity = verifySupabaseSession, whoopRequest = callWhoop } = {}) {
   return async function stagingFetch(request, env) {
     // Deliberately disabled. This is not enabled by creating a D1 database or
     // deploying a Worker; a separately reviewed release must opt in explicitly.
@@ -24,7 +25,15 @@ export function createStagingRouter({ verifyIdentity = verifySupabaseSession } =
     let url;
     try { url = new URL(request.url); }
     catch { return json({error:"Invalid request"},400); }
-    const routes = new Set(["/v1/status","/v1/recovery","/v1/sleep"]);
+    const whoopRoutes = Object.freeze({
+      "/v1/whoop/profile":"profile",
+      "/v1/whoop/measurements":"measurements",
+      "/v1/whoop/recovery":"recovery",
+      "/v1/whoop/sleep":"sleep",
+      "/v1/whoop/workouts":"workouts",
+      "/v1/whoop/cycles":"cycles"
+    });
+    const routes = new Set(["/v1/status","/v1/recovery","/v1/sleep",...Object.keys(whoopRoutes)]);
     if (!routes.has(url.pathname)) return json({error:"Not found"},404);
     if (!env?.DB) return json({error:"Staging unavailable"},503);
 
@@ -39,6 +48,19 @@ export function createStagingRouter({ verifyIdentity = verifySupabaseSession } =
       const rawLimit=url.searchParams.get("limit");
       if (rawLimit != null && !/^([1-9]|1[0-9]|2[0-5])$/.test(rawLimit))
         return json({error:"Invalid limit"},400);
+      if (Object.hasOwn(whoopRoutes,url.pathname)) {
+        // Live WHOOP calls are gated separately from the staged D1 API.
+        if (env?.WHOOP_READS_ENABLED !== "true")
+          return json({error:"WHOOP Cloudflare reads not activated"},503);
+        const nextToken=url.searchParams.get("next_token");
+        if (nextToken != null && nextToken.length > 512)
+          return json({error:"Invalid cursor"},400);
+        const category=whoopRoutes[url.pathname];
+        const data=await whoopRequest(env.DB,userId,category,env,{
+          limit:rawLimit == null?10:Number(rawLimit),next_token:nextToken
+        });
+        return json({category,data,source:"whoop-cloudflare-staging"});
+      }
       const category = url.pathname === "/v1/recovery" ? "recovery" : "sleep";
       const records = await readHistory(env.DB,userId,category,rawLimit == null ? 10 : Number(rawLimit));
       return json({category,records,source:"cloudflare-staging"});
