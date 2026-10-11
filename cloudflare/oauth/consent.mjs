@@ -21,8 +21,11 @@ export function consentPage(details,handle){
     '<p>Sign in with your existing WHOOP Lens (Supabase) account to confirm your identity. Credentials are checked with Supabase and are not stored on Cloudflare.</p>'+
     '<label>Email <input type="email" name="email" autocomplete="username" required maxlength="320"></label>'+
     '<label>Password <input type="password" name="password" autocomplete="current-password" required maxlength="1024"></label>'+
-    '<p><button name="decision" value="approve">Sign in and allow</button> <button name="decision" value="deny" formnovalidate>Cancel</button></p>'+
-    '</form><p>Only explicitly invited and active WHOOP Lens accounts may connect.</p></main></body></html>';
+    '<p><button name="decision" value="approve">Sign in and allow</button></p>'+
+    '</form><form method="post" action="/authorize">'+
+    '<input type="hidden" name="handle" value="'+escapeHtml(handle)+'">'+
+    '<button name="decision" value="deny">Cancel</button></form>'+
+    '<p>Only explicitly invited and active WHOOP Lens accounts may connect.</p></main></body></html>';
 }
 export function noStoreHeaders(contentType='text/plain; charset=utf-8'){
   return {'content-type':contentType,'cache-control':'no-store',

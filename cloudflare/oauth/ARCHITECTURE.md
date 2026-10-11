@@ -119,3 +119,42 @@ end-to-end OAuth conformance checks are mandatory before enabling the form.
 Because D1 has no user rows, no real user could be approved with the current
 empty staging data even if flags were enabled. The Worker is not deployed.
 
+
+## Consent security review and regression batch (2026-10-11)
+
+The following changes are **staging source only** with no Worker deployment
+or additional paid services:
+
+- POST /authorize now checks exact canonical auth host, browser Origin and
+  Sec-Fetch-Site (when present) before consuming a consent handle or attempting
+  identity verification. The official provider's one-time, browser-bound
+  consent cookie remains the primary CSRF protection.
+- Accepted form content-type is restricted to a real URL-encoded form, not
+  arbitrary MIME strings that merely share the same prefix.
+- The Cancel action is a distinct HTML form carrying only the consent handle.
+  The server rejects deny requests containing email, password or scopes,
+  reducing accidental credentials submitted on cancellation.
+- Supabase password authentication temporarily creates a Supabase session.
+  We now call Supabase Auth's local logout endpoint to revoke the refresh
+  session, including when an account is no longer an invited active member.
+  Logout failure denies the WHOOP Lens authorization. Supabase access JWTs
+  may remain valid until expiry, even after logout; they are never persisted
+  or returned from this flow.
+- Synthetic regression tests cover cross-site and unexpected-host POSTs,
+  rejected credential-bearing denial forms, successful session cleanup and
+  failure-to-logout fail-closed behavior.
+
+**Unresolved high-risk design choice:** the transitional password form receives
+a Supabase account password on the future Cloudflare authorization origin and
+forwards it to Supabase Auth. Not storing the password does not eliminate the
+added handling of account credentials. Consider a redirect-based upstream login
+with short-lived, browser-bound PKCE state instead before enabling any live
+login. The above hardening does NOT authorize activating password-based login.
+Review branding, domain ownership, anti-phishing, breach response and identity
+provider strategy before deploying any sign-in entry point.
+
+**Additional prelaunch work:** quantify email-based lockout/DoS potential in
+five-attempt counters, prune old buckets, test logout against the actual
+Supabase configuration, and run independent OAuth client conformance and
+revocation tests. No accounts, secrets, or health records are migrated.
+

@@ -4,7 +4,7 @@ import {reserveLoginAttempt} from './rate-limit.mjs';
 const approvedScopes=new Set(['mcp:read','offline_access']);
 const oauthError=(message,status=400)=>new Response(message,{status,headers:noStoreHeaders()});
 const readForm=async request=>{
-  if(!(request.headers.get('content-type')||'').toLowerCase().startsWith('application/x-www-form-urlencoded'))
+  if(!/^application\/x-www-form-urlencoded(?:;\s*charset=utf-8)?$/i.test((request.headers.get('content-type')||'').trim()))
     return null;
   const declared=Number(request.headers.get('content-length'));
   if(Number.isFinite(declared)&&declared>4096)return null;
@@ -33,6 +33,15 @@ export function makeConsentFlow({getOAuth,signIn=verifyInvitedSignIn,rateLimit=r
       }catch{return oauthError('Invalid authorization request');}
     }
     if(request.method!=='POST')return oauthError('Unsupported authorization method',405);
+    // These origin checks complement the official provider's browser-bound,
+    // one-time consent cookie; never replace its CSRF check with headers alone.
+    const canonical='https://auth.whooplens.tech';
+    if(new URL(request.url).origin!==canonical)return oauthError('Unexpected authorization host',403);
+    const origin=request.headers.get('origin');
+    if(origin!==null&&origin!==canonical)return oauthError('Cross-origin authorization denied',403);
+    const fetchSite=request.headers.get('sec-fetch-site');
+    if(fetchSite!==null&&!['same-origin','none'].includes(fetchSite))
+      return oauthError('Cross-site authorization denied',403);
     let form;
     try{form=await readForm(request);}catch{return oauthError('Invalid authorization form');}
     if(!form)return oauthError('Invalid authorization form');
@@ -43,6 +52,9 @@ export function makeConsentFlow({getOAuth,signIn=verifyInvitedSignIn,rateLimit=r
     if(decision!=='approve'&&decision!=='deny')return oauthError('Invalid authorization decision');
     try{
       if(decision==='deny'){
+        // The Cancel form deliberately does not send email or password.
+        if(form.has('email')||form.has('password')||form.has('scope'))
+          return oauthError('Invalid denial form');
         const rejected=await oauth.denyConsent(request,handle);
         return new Response(null,{status:302,headers:rejected.headers});
       }
