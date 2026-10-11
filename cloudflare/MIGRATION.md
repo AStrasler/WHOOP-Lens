@@ -99,6 +99,11 @@ at the Cloudflare API. DNS and WHOOP OAuth registrations remain unchanged.
   SQL text or secret values. Synthetic tests cover these constraints.
 - A separate `MCP_ENABLED=false` Worker flag complements
   `MIGRATION_API_ENABLED=false` and `WHOOP_READS_ENABLED=false`.
+- The MCP-ready source bundle was uploaded to Cloudflare as **Worker version 5**
+  (ID `5733dec5-761e-4cf8-8997-79a0970a807f`), with eight modules,
+  D1 staging binding and all four feature flags set to `false`.
+  This was an **UPLOAD ONLY**, not a deployment; the currently deployed Worker
+  version remains unchanged, with public `workers.dev` and preview URLs disabled.
 - **NOT yet a production-ready ChatGPT MCP URL**: the Cloudflare app does not
   yet issue OAuth 2.1 access tokens; Supabase user bearer validation is only
   a transitional staging bridge. Before claiming compatibility, integrate and
