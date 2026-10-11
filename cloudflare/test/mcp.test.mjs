@@ -15,6 +15,7 @@ function req(message,{version=modern,origin=null,accept="application/json, text/
   if(origin)h.origin=origin;
   if(version){h["mcp-protocol-version"]=version;h["mcp-method"]=message.method;
     if(message.method==="tools/call")h["mcp-name"]=message.params?.name;}
+  Object.assign(h,headers); // Deliberate invalid-header overrides must survive setup.
   return new Request("https://staging.invalid/mcp",{method,headers:h,body:method==="POST"?JSON.stringify(message):undefined});
 }
 function db({member=true}={}){
