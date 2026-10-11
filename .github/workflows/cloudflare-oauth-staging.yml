@@ -4,17 +4,19 @@ on:
   push:
     paths:
       - 'cloudflare/oauth/**'
+      - 'cloudflare/migrations/0003_oauth_login_limits.sql'
+      - 'cloudflare/test/oauth-*.test.mjs'
       - 'cloudflare/package.json'
       - '.github/workflows/cloudflare-oauth-staging.yml'
   pull_request:
     paths:
       - 'cloudflare/oauth/**'
+      - 'cloudflare/migrations/0003_oauth_login_limits.sql'
+      - 'cloudflare/test/oauth-*.test.mjs'
       - 'cloudflare/package.json'
       - '.github/workflows/cloudflare-oauth-staging.yml'
-
 permissions:
   contents: read
-
 jobs:
   oauth-dry-run:
     runs-on: ubuntu-24.04
@@ -24,8 +26,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24'
-      - name: Test fail-closed OAuth policy
-        run: node --test cloudflare/test/oauth-stage.test.mjs
+      - name: Test OAuth consent and login with synthetic identities
+        run: node --test cloudflare/test/oauth-*.test.mjs
       - name: Install pinned OAuth provider and Wrangler locally
         working-directory: cloudflare
         run: npm install --no-audit --no-fund

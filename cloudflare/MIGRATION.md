@@ -189,3 +189,25 @@ The NEW staged Worker version implements isolated read and future WHOOP OAuth ro
 Since Supabase was not changed, simply leave the existing service in place.
 Delete/disable Cloudflare staging resources only by explicit approval.
 Do not destroy source data, OAuth clients, tokens or sessions.
+
+
+## OAuth sign-in and consent implementation checkpoint (2026-10-11)
+
+- Added browser-bound OAuth consent using official beginConsent, approveConsent
+  and denyConsent APIs; an explicit Allow/Deny form shows the client, scopes
+  and redirect destination with strict HTML escaping and no framing.
+- Transitional sign-in verifies credentials against the existing Supabase Auth
+  endpoint and fetches the authenticated user again, then checks explicit
+  active invited membership in Cloudflare D1. No credentials are persisted.
+- D1 migration 0003 supplies atomic per-IP and per-email counters keyed
+  by a secret HMAC to limit login attempts without storing those identifiers.
+  The Cloudflare AUTH_RATE_HMAC_KEY and SUPABASE_PUBLIC_KEY are not configured
+  or copied; missing configuration denies sign-in.
+- This remains a CODE-ONLY staging implementation: both
+  OAUTH_SERVER_ENABLED=false and OAUTH_CONSENT_ENABLED=false, no Worker deploy,
+  no DNS/WHOOP redirect change, and no real users or credentials copied.
+- Before private end-to-end testing, review Cloudflare collection of
+  password submissions, rate-limit counter retention and failure modes,
+  remaining identity migration design, and consent/PKCE token conformance.
+  See cloudflare/oauth/ARCHITECTURE.md for details.
+

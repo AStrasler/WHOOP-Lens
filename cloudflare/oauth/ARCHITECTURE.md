@@ -38,11 +38,10 @@ Resource Worker: OAUTH_RESOURCE_ENABLED=false, MCP_ENABLED=false,
 MIGRATION_API_ENABLED=false, WHOOP_READS_ENABLED=false, WHOOP_OAUTH_ENABLED=false.
 Both Workers have workers_dev=false, preview_urls=false and NO routes.
 
-The current authorization handler only validates/looks up client metadata to
-render an XSS-escaped **inactive** consent preview. It cannot authenticate
-anyone, display an approval button, call completeAuthorization or issue
-credentials. OAuth metadata and token endpoints also return 503 while disabled.
-The source is an architectural foundation, NOT a working authorization service.
+The consent source now contains an explicit Allow/Deny flow and transitional
+Supabase-verified sign-in, but it remains entirely inactive. OAuth token and
+metadata endpoints still return 503 while disabled. This is NOT a deployed or
+production-ready authorization service.
 
 ## Validation completed
 
@@ -58,9 +57,9 @@ The source is an architectural foundation, NOT a working authorization service.
 
 ## Remaining before any private end-to-end trial
 
-1. Design and implement independent secure user identity, sign-in sessions,
-   verified active memberships, and fully explicit consent using the official
-   beginConsent/approveConsent/denyConsent APIs. Do NOT auto-approve any client.
+1. Review and harden transitional Supabase-based sign-in and explicit consent,
+   then decide whether to keep this provider or replace it with an independent
+   identity solution. Do NOT auto-approve any client.
 2. Implement CSRF-safe user session handling, login retry/rate limiting, consent
    client verification and identity-provider revocation; test forged clients,
    redirect URI changes, stale sessions, XSS, cross-user and replay attempts.
@@ -80,3 +79,43 @@ The source is an architectural foundation, NOT a working authorization service.
    before copying any records.
 
 A green dry-run build is NOT authorization to deploy, publish or migrate data.
+
+
+## Single-batch staged OAuth sign-in and explicit consent (2026-10-11)
+
+This batch implements a **transitional**, not independently hosted, identity
+flow. It is code-only, disabled by both OAUTH_SERVER_ENABLED=false and
+OAUTH_CONSENT_ENABLED=false, and cannot run on any public URL.
+
+- GET /authorize validates exact client, redirect, resource and PKCE through
+  the official provider, describes the client and redirect destination, then
+  calls beginConsent() to issue the provider's browser-bound, short-lived
+  consent handle/cookie. The form escapes all client metadata and displays
+  the target host, requested scopes, and loopback warnings.
+- POST /authorize supports explicit Allow/Deny only. Deny calls denyConsent().
+  Allow calls approveConsent() and verifies the chosen scopes against the
+  original request. It never grants a scope the user did not select.
+- Identity is provisionally established with the EXISTING Supabase password
+  sign-in endpoint and checked again via Supabase Auth /auth/v1/user. After
+  login, active D1 membership with a matching Supabase identity mapping is
+  required. Connected accounts with no explicit active membership are denied.
+- Credentials and Supabase session tokens are handled transiently and not
+  stored in cookies, D1, KV or OAuth token props; only an approved user ID is
+  passed to completeAuthorization(). No Supabase password, signing key or
+  existing WHOOP token has been copied.
+- D1 migration 0003 adds atomic 5-attempts-per-15-min sign-in limits for
+  HMAC-hashed IP and email buckets. The Cloudflare AUTH_RATE_HMAC_KEY is
+  required at runtime and must be configured as a secret, not committed.
+  The counters store no raw email, IP or password. Cleanup of old counters
+  and further bot protection remain a prelaunch task.
+- Synthetic tests cover approve/deny, escaped untrusted client metadata,
+  consent feature gates, login with a disabled invitation, cookie headers,
+  nonce-independent D1 rate limits and generalized errors.
+
+CRITICAL: The present architecture forwards a password entered into a
+Cloudflare-hosted form to Supabase for verification. A full privacy and
+threat-model review, sign-in UX review, independent IdP decision and
+end-to-end OAuth conformance checks are mandatory before enabling the form.
+Because D1 has no user rows, no real user could be approved with the current
+empty staging data even if flags were enabled. The Worker is not deployed.
+
