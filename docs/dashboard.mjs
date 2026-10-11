@@ -107,6 +107,9 @@ $("login-form").addEventListener("submit", async event => {
     setStatus("Private account verified. You can inspect a supported file locally.");
   } catch (error) {
     if (attempt !== epoch) return;
+    // Even a successful password exchange is not authorization to enter.
+    // If the WHOOP entitlement check fails, clear the memory-only token.
+    try { await auth.signOut(); } catch { /* locally cleared by finally */ }
     locked();
     setStatus(error.message || "Unable to verify your account.", true);
   } finally {
@@ -149,7 +152,13 @@ $("health-file").addEventListener("change", async event => {
     setStatus("Local preview ready. Cloud synchronization is not enabled.");
   } catch (error) {
     if (attempt !== epoch) return;
-    clearPreview();
-    setStatus(error.message || "Unable to preview this file.", true);
+    const message = error.message || "Unable to preview this file.";
+    if (/sign-in|session|expired|unauthorized|401/i.test(message)) {
+      await signOut();
+      setStatus("Your session expired or is unauthorized. Sign in again.", true);
+    } else {
+      clearPreview();
+      setStatus(message, true);
+    }
   }
 });
