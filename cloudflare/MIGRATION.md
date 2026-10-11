@@ -1,6 +1,6 @@
 # WHOOP Lens: Supabase to Cloudflare migration
 
-Status: **Cloudflare D1 staging schema created, app not migrated or published**.
+Status: **Supabase remains PRIMARY; Cloudflare is PARALLEL STAGING only. No application deployment, domain cutover or live data copy.**
 Cloudflare account: dedicated WHOOP Lens account.
 D1 database: whoop-lens-migration, ID 58250de2-cad7-4a8a-a061-d9b41c7b24d2.
 The database was created and the exact SQL in migrations/0001_initial.sql was applied successfully on 2026-10-11.
@@ -16,6 +16,40 @@ The database was created and the exact SQL in migrations/0001_initial.sql was ap
 - The staged PR's Health Connect and medical-context schemas are not live in Supabase.
 - Supabase Storage has no buckets or objects to migrate.
 - No live data was copied to Cloudflare.
+
+## Completed isolated development stage (2026-10-11)
+
+- Created a D1 staging schema containing 10 application tables, with no real account or health data.
+- Implemented a **temporary Supabase-authenticated Cloudflare Worker bridge** in
+  `src/identity.mjs`, `src/storage.mjs`, and `src/router.mjs`.
+- A valid Supabase access token is checked with the live Supabase Auth
+  `GET /auth/v1/user` endpoint, not decoded and trusted locally. This is
+  temporary and **Supabase remains the identity provider until final replacement**.
+- A missing or inactive D1 membership **DENIES** access even when a connection row exists.
+  D1 reads are restricted to the verified user's ID by bound SQL parameters.
+- Implemented *read-only* staged `/v1/status`, `/v1/recovery`, `/v1/sleep` routes.
+  Requests using POST/PUT/PATCH/DELETE are rejected. No generic SQL route exists.
+- Worker API is disabled unless explicitly configured
+  `MIGRATION_API_ENABLED=true`. In this repo, `wrangler.jsonc`
+  fixes it at `false`, and workers.dev + preview URLs are disabled.
+- Added Cloudflare-specific AES-GCM token envelopes in
+  `src/token-crypto.mjs` using a new 256-bit secret, per-user/per-purpose AAD,
+  and unique nonces. Existing Supabase encryption keys and WHOOP credentials
+  have **not** been copied. This does not yet implement a new WHOOP OAuth callback.
+- Added GitHub Actions isolation tests using real in-memory SQLite and synthetic
+  accounts, and AES-GCM tampering tests. CI checks do not deploy.
+- **No new OAuth clients, DNS settings, workers routes, or API keys were activated.**
+  There is no public Cloudflare service to visit yet.
+
+## Cutover roadmap
+
+**Next:** test the interim bridge in a separately secured environment with
+synthetic accounts only; build independent Cloudflare identity and OAuth
+authorization server, port WHOOP API/token-refresh and client registrations,
+integrate backend with the web app, and review invite-only enforcement.
+Then plan user identity/consent migration (possibly requiring reauthorization),
+secure data transfer, dual-service parity checks, rollback, and a separately
+approved cutover. Never switch production merely because CI is green.
 
 ## Non-negotiable cutover gates
 
@@ -51,11 +85,7 @@ empty staging database is not a claim of a free unlimited production backend.
 
 ## Worker's current behavior
 
-The source shell in src/index.js deliberately returns HTTP 503 to all routes.
-workers_dev=false and preview_urls=false prevent default public Worker addresses,
-but a later custom-route configuration could expose it if not separately reviewed.
-The Worker has **not** been deployed. No authenticated API functionality exists
-on Cloudflare yet.
+The staged Worker implements restricted read routes but **returns HTTP 503** to all requests while MIGRATION_API_ENABLED=false. workers_dev=false and preview_urls=false disable default public addresses; a future custom route still requires separate security review. The Worker has **not** been deployed, and no authenticated endpoint is live on Cloudflare yet.
 
 ## Rollback
 
