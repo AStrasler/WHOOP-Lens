@@ -1,6 +1,7 @@
 import { AccessDenied, verifySupabaseSession } from "./identity.mjs";
 import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
 import { callWhoop } from "./whoop-api.mjs";
+import { createWhoopAuthorization, acceptWhoopCallback } from "./whoop-oauth.mjs";
 
 function json(data, status=200) {
   return new Response(JSON.stringify(data), {
@@ -13,7 +14,8 @@ function json(data, status=200) {
     }
   });
 }
-export function createStagingRouter({ verifyIdentity = verifySupabaseSession, whoopRequest = callWhoop } = {}) {
+export function createStagingRouter({ verifyIdentity = verifySupabaseSession, whoopRequest = callWhoop,
+  whoopAuthorize = createWhoopAuthorization, whoopCallback = acceptWhoopCallback } = {}) {
   return async function stagingFetch(request, env) {
     // Deliberately disabled. This is not enabled by creating a D1 database or
     // deploying a Worker; a separately reviewed release must opt in explicitly.
@@ -33,7 +35,21 @@ export function createStagingRouter({ verifyIdentity = verifySupabaseSession, wh
       "/v1/whoop/workouts":"workouts",
       "/v1/whoop/cycles":"cycles"
     });
-    const routes = new Set(["/v1/status","/v1/recovery","/v1/sleep",...Object.keys(whoopRoutes)]);
+    const callbackRoute = url.pathname === "/api/whoop/callback";
+    const routes = new Set(["/v1/status","/v1/recovery","/v1/sleep","/v1/whoop/connect",
+                            ...Object.keys(whoopRoutes)]);
+    if (callbackRoute) {
+      if (env?.WHOOP_OAUTH_ENABLED !== "true")
+        return json({error:"WHOOP Cloudflare OAuth not activated"},503);
+      if (!env?.DB) return json({error:"Staging unavailable"},503);
+      try {
+        const result = await whoopCallback(env.DB,url,env);
+        return json(result);
+      } catch {
+        // Never disclose WHOOP authorization codes, states or exchanged tokens.
+        return json({error:"WHOOP authorization could not be completed"},400);
+      }
+    }
     if (!routes.has(url.pathname)) return json({error:"Not found"},404);
     if (!env?.DB) return json({error:"Staging unavailable"},503);
 
@@ -41,6 +57,12 @@ export function createStagingRouter({ verifyIdentity = verifySupabaseSession, wh
       const userId = await verifyIdentity(request, env);
       const permitted = await activeMembership(env.DB, userId);
       if (!permitted) return json({error:"Not authorized for WHOOP Lens"},403);
+      if (url.pathname === "/v1/whoop/connect") {
+        if (env?.WHOOP_OAUTH_ENABLED !== "true")
+          return json({error:"WHOOP Cloudflare OAuth not activated"},503);
+        const result=await whoopAuthorize(env.DB,userId,env);
+        return json(result);
+      }
       if (url.pathname === "/v1/status") {
         const status = await connectionStatus(env.DB,userId);
         return json({connected:status.connected,source:"cloudflare-staging"});
