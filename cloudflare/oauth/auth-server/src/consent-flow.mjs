@@ -31,7 +31,7 @@ function checkBrowserPost(request){
     (fetchSite===null||fetchSite==='same-origin'||fetchSite==='none');
 }
 export function makeConsentFlow({
-  getOAuth,verifyIdentity=verifyUpstreamCode,
+  getOAuth,checkConfig=checkUpstreamConfig,verifyIdentity=verifyUpstreamCode,
   startUrl=upstreamAuthorizationUrl,pkceVerifier=createVerifier,
   errorRedirect=()=>null
 }={}){
@@ -71,7 +71,7 @@ export function makeConsentFlow({
       }
       // Fail without consuming the consent handle if the upstream provider
       // hasn't been explicitly configured in a later approved stage.
-      checkUpstreamConfig(env);
+      checkConfig(env);
       const selected=form.getAll('scope');
       if(!allowedSelection(selected,['mcp:read','offline_access']))return oauthError();
       const approved=await oauth.approveConsent(request,handle,{scope:selected});
@@ -130,9 +130,9 @@ export function makeConsentFlow({
       if(typeof code!=='string'||!data||typeof data.verifier!=='string'||
          !allowedSelection(data.grantedScopes,finished.request.scope))
         return oauthError(400,cleanup);
-      // Subject must be validated by Supabase and ACTIVE D1 membership.
+      // Subject must be validated by Cloudflare Access and ACTIVE D1 membership.
       // No access or refresh tokens enter the Cloudflare OAuth grant.
-      const userId=await verifyIdentity({code,verifier:data.verifier,env});
+      const userId=await verifyIdentity({request,code,verifier:data.verifier,env});
       const completed=await oauth.completeAuthorization({
         request:finished.request,userId,scope:data.grantedScopes,
         metadata:{},props:{userId}

@@ -297,3 +297,16 @@ change, and WHOOP application credentials/callback registration. These are
 not configured in production. Source membership reconciliation is also
 required before transferring real records; missing memberships are not
 automatically granted. Keep Supabase live until the owner verifies Cloudflare.
+
+
+## Superseding independent authentication checkpoint (2026-10-11)
+
+Cloudflare Access now replaces the transitional Supabase upstream adapter.
+See `cloudflare/oauth/CUTOVER.md` for the independent runtime, exact Access
+configuration, identity mapping, deferred verification and owner approval gates.
+Historical Supabase upstream-client setup instructions no longer apply.
+The old adapter exists only as a test fixture for protocol regression coverage.
+The legacy root staging entrypoint remains separate; deploy the OAuth issuer
+and resource configurations, which contain no Supabase network endpoints.
+All launch flags stay false. Supabase remains live until the owner authorizes
+cutover and later retirement; passing checks does not authorize either.

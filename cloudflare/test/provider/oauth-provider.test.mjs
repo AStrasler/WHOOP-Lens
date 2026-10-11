@@ -5,8 +5,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import {makeConsentFlow} from '../../oauth/auth-server/src/consent-flow.mjs';
-import {createVerifier,createChallenge,verifyUpstreamCode} from '../../oauth/auth-server/src/upstream.mjs';
+import {makeConsentFlow as baseConsentFlow} from '../../oauth/auth-server/src/consent-flow.mjs';
+import {checkUpstreamConfig,upstreamAuthorizationUrl,createVerifier,createChallenge,verifyUpstreamCode} from '../fixtures/legacy-supabase-upstream.mjs';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='cloudflare:workers')return {
     url:'data:text/javascript,export class WorkerEntrypoint {}',shortCircuit:true
@@ -207,3 +207,5 @@ test('resource routes only the WHOOP callback outside MCP bearer validation',asy
   assert.equal(unauthenticated.status,401);
   assert.equal(consumed,1);
 });
+
+function makeConsentFlow(options){return baseConsentFlow({checkConfig:checkUpstreamConfig,startUrl:upstreamAuthorizationUrl,verifyIdentity:verifyUpstreamCode,...options});}

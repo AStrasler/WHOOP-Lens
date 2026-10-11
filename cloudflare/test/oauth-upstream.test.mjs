@@ -3,10 +3,10 @@ import test from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {
-  createVerifier,createChallenge,upstreamAuthorizationUrl,
+  checkUpstreamConfig,createVerifier,createChallenge,upstreamAuthorizationUrl,
   verifyUpstreamCode,UpstreamSignInDenied,CALLBACK_URI
-} from '../oauth/auth-server/src/upstream.mjs';
-import {makeConsentFlow} from '../oauth/auth-server/src/consent-flow.mjs';
+} from './fixtures/legacy-supabase-upstream.mjs';
+import {makeConsentFlow as baseConsentFlow} from '../oauth/auth-server/src/consent-flow.mjs';
 import {consentPage} from '../oauth/consent.mjs';
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -247,3 +247,5 @@ test('all post-consumption failures clear the cookie without leaking upstream er
     }
   }finally{db.close();}
 });
+
+function makeConsentFlow(options){return baseConsentFlow({checkConfig:checkUpstreamConfig,startUrl:upstreamAuthorizationUrl,verifyIdentity:verifyUpstreamCode,...options});}

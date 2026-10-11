@@ -1,112 +1,64 @@
-// WHOOP Lens OAuth upstream adapter (staging only).
-// Supabase performs sign-in and consent on the EXISTING authorization UI.
-// Cloudflare does not collect, process or store the user's password.
-import { activeMembership } from '../../../src/storage.mjs';
-
-const AUTH_ORIGIN='https://evoiwauqplbcecumiwqn.supabase.co';
+// Independent browser identity: only Cloudflare Access and local D1 membership.
+// The callback is protected by Access; the literal code is a flow marker, NOT
+// a credential. A signed application JWT and browser-bound OAuth state are required.
+import {activeMembership} from '../../../src/storage.mjs';
 export const CALLBACK_URI='https://auth.whooplens.tech/oauth/upstream/callback';
-const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const CLIENT_ID=/^[A-Za-z0-9._~-]{1,256}$/;
-const SAFE_CODE=/^[A-Za-z0-9._~+/=-]{4,4096}$/;
-const SAFE_VERIFIER=/^[A-Za-z0-9_-]{43,128}$/;
-const timeout=()=>AbortSignal.timeout(8000);
 export class UpstreamSignInDenied extends Error {
-  constructor(){super('Upstream identity verification unavailable');}
+  constructor(){super('Identity verification unavailable');}
 }
 export function checkUpstreamConfig(env){
-  if(typeof env?.SUPABASE_UPSTREAM_CLIENT_ID!=='string' ||
-     !CLIENT_ID.test(env.SUPABASE_UPSTREAM_CLIENT_ID) ||
-     typeof env?.SUPABASE_PUBLIC_KEY!=='string'||!env.SUPABASE_PUBLIC_KEY ||
-     !env.DB ||
-     (env.SUPABASE_UPSTREAM_CLIENT_SECRET!=null &&
-      (typeof env.SUPABASE_UPSTREAM_CLIENT_SECRET!=='string' ||
-       env.SUPABASE_UPSTREAM_CLIENT_SECRET.length>4096)))
-    throw new UpstreamSignInDenied();
-  return env.SUPABASE_UPSTREAM_CLIENT_ID;
+  if(!/^https:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/.test(env?.ACCESS_ISSUER||'')||
+     !/^[a-f0-9]{64}$/.test(env?.ACCESS_AUD||'')||!env?.DB)throw new UpstreamSignInDenied();
+  return env.ACCESS_ISSUER;
 }
-function base64url(bytes){
-  return btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
-}
-export function createVerifier(){
-  return base64url(crypto.getRandomValues(new Uint8Array(32)));
-}
-export async function createChallenge(verifier){
-  if(typeof verifier!=='string'||!SAFE_VERIFIER.test(verifier))throw new UpstreamSignInDenied();
-  const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(verifier));
-  return base64url(new Uint8Array(hash));
-}
-export async function upstreamAuthorizationUrl({state,verifier,env}){
-  const clientId=checkUpstreamConfig(env);
-  if(typeof state!=='string'||!/^[A-Za-z0-9_-]{24,256}$/.test(state))
-    throw new UpstreamSignInDenied();
-  const u=new URL(AUTH_ORIGIN+'/auth/v1/oauth/authorize');
-  u.search=new URLSearchParams({
-    client_id:clientId,redirect_uri:CALLBACK_URI,response_type:'code',
-    scope:'openid',state,code_challenge:await createChallenge(verifier),
-    code_challenge_method:'S256'
-  }).toString();
-  return u.toString();
-}
-async function boundedJson(response){
-  if(Number(response.headers.get('content-length'))>16000)throw new UpstreamSignInDenied();
-  const body=await response.text();
-  if(body.length>16000)throw new UpstreamSignInDenied();
-  const value=JSON.parse(body);
-  if(!value||typeof value!=='object'||Array.isArray(value))throw new UpstreamSignInDenied();
-  return value;
-}
-export async function verifyUpstreamCode({code,verifier,env,fetcher=fetch}){
+function b64(bytes){return btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');}
+export function createVerifier(){return b64(crypto.getRandomValues(new Uint8Array(32)));}
+export async function createChallenge(value){return b64(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value))));}
+export async function upstreamAuthorizationUrl({state,env}){
   checkUpstreamConfig(env);
-  if(typeof code!=='string'||!SAFE_CODE.test(code)||
-     typeof verifier!=='string'||!SAFE_VERIFIER.test(verifier))
-    throw new UpstreamSignInDenied();
-  let temporaryToken=null, verifiedUser=null, revoked=false;
+  if(!/^[A-Za-z0-9_-]{24,256}$/.test(state||''))throw new UpstreamSignInDenied();
+  return CALLBACK_URI+'?'+new URLSearchParams({state,code:'access'});
+}
+function decode(segment){
+  if(!/^[A-Za-z0-9_-]+$/.test(segment))throw new UpstreamSignInDenied();
+  return Uint8Array.from(atob(segment.replaceAll('-','+').replaceAll('_','/')),c=>c.charCodeAt(0));
+}
+function parse(segment){return JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(decode(segment)));}
+export async function verifyUpstreamCode({request,code,env,fetcher=fetch,now=Date.now()}){
   try{
-    const form=new URLSearchParams({
-      grant_type:'authorization_code',client_id:env.SUPABASE_UPSTREAM_CLIENT_ID,
-      redirect_uri:CALLBACK_URI,code,code_verifier:verifier
-    });
-    if(env.SUPABASE_UPSTREAM_CLIENT_SECRET)form.set('client_secret',env.SUPABASE_UPSTREAM_CLIENT_SECRET);
-    const result=await fetcher(AUTH_ORIGIN+'/auth/v1/oauth/token',{
-      method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},
-      body:form,redirect:'error',credentials:'omit',cache:'no-store',
-      referrerPolicy:'no-referrer',signal:timeout()
-    });
-    if(!result.ok)throw new UpstreamSignInDenied();
-    const payload=await boundedJson(result);
-    if(typeof payload.access_token!=='string'||payload.access_token.length<16||
-       payload.access_token.length>8192||!/^[A-Za-z0-9._~-]+$/.test(payload.access_token))
+    const issuer=checkUpstreamConfig(env);
+    if(code!=='access'||!request||new URL(request.url).origin!=='https://auth.whooplens.tech' ||
+       new URL(request.url).pathname!=='/oauth/upstream/callback')throw new UpstreamSignInDenied();
+    const jwt=request.headers.get('cf-access-jwt-assertion');
+    if(typeof jwt!=='string'||jwt.length>16384)throw new UpstreamSignInDenied();
+    const parts=jwt.split('.');
+    if(parts.length!==3)throw new UpstreamSignInDenied();
+    const header=parse(parts[0]),claims=parse(parts[1]),seconds=Math.floor(now/1000);
+    if(header.alg!=='RS256'||typeof header.kid!=='string'||header.kid.length>256||header.crit||
+       claims.iss!==issuer||!Array.isArray(claims.aud)||!claims.aud.includes(env.ACCESS_AUD)||
+       claims.type!=='app'||typeof claims.sub!=='string'||claims.sub.length<1||claims.sub.length>256||
+       typeof claims.email!=='string'||claims.email.length>254||!claims.email.includes('@')||
+       !Number.isSafeInteger(claims.exp)||claims.exp<=seconds||
+       !Number.isSafeInteger(claims.iat)||claims.iat>seconds+30||claims.exp<=claims.iat||
+       (claims.nbf!==undefined&&(!Number.isSafeInteger(claims.nbf)||claims.nbf>seconds+30)))
       throw new UpstreamSignInDenied();
-    temporaryToken=payload.access_token;
-    const who=await fetcher(AUTH_ORIGIN+'/auth/v1/user',{
-      method:'GET',headers:{apikey:env.SUPABASE_PUBLIC_KEY,
-        authorization:'Bearer '+temporaryToken},
-      redirect:'error',cache:'no-store',credentials:'omit',
-      referrerPolicy:'no-referrer',signal:timeout()
-    });
-    if(!who.ok)throw new UpstreamSignInDenied();
-    const user=await boundedJson(who);
-    if(typeof user.id!=='string'||!UUID.test(user.id))throw new UpstreamSignInDenied();
-    const userId=user.id.toLowerCase();
-    if(!await activeMembership(env.DB,userId))throw new UpstreamSignInDenied();
-    verifiedUser=userId;
+    // Never follow jku/x5u or a URL from the JWT. Only the configured team's certs.
+    const response=await fetcher(issuer+'/cdn-cgi/access/certs',{
+      redirect:'error',credentials:'omit',signal:AbortSignal.timeout(8000)});
+    if(!response.ok||Number(response.headers.get('content-length'))>65536)throw new UpstreamSignInDenied();
+    const body=await response.text();
+    if(body.length>65536)throw new UpstreamSignInDenied();
+    const keys=JSON.parse(body).keys;
+    if(!Array.isArray(keys)||keys.length>20)throw new UpstreamSignInDenied();
+    const matches=keys.filter(k=>k.kid===header.kid&&k.kty==='RSA'&&(!k.alg||k.alg==='RS256')&&(!k.use||k.use==='sig'));
+    if(matches.length!==1)throw new UpstreamSignInDenied();
+    const key=await crypto.subtle.importKey('jwk',matches[0],{name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'},false,['verify']);
+    if(!await crypto.subtle.verify('RSASSA-PKCS1-v1_5',key,decode(parts[2]),new TextEncoder().encode(parts[0]+'.'+parts[1])))
+      throw new UpstreamSignInDenied();
+    // Explicit subject mapping only. Never auto-enrol or link accounts by email.
+    const row=await env.DB.prepare('SELECT user_id FROM access_identity_links WHERE issuer=?1 AND subject=?2 AND enabled=1')
+      .bind(issuer,claims.sub).first();
+    if(!row||!await activeMembership(env.DB,row.user_id))throw new UpstreamSignInDenied();
+    return row.user_id;
   }catch{throw new UpstreamSignInDenied();}
-  finally{
-    if(temporaryToken!==null){
-      try{
-        const response=await fetcher(AUTH_ORIGIN+'/auth/v1/logout?scope=local',{
-          method:'POST',headers:{apikey:env.SUPABASE_PUBLIC_KEY,
-            authorization:'Bearer '+temporaryToken},
-          redirect:'error',cache:'no-store',credentials:'omit',
-          referrerPolicy:'no-referrer',signal:timeout()
-        });
-        revoked=response.ok;
-      }catch{revoked=false;}
-    }
-    temporaryToken=null;
-  }
-  // An upstream grant can remain authorized, and Supabase access JWTs may remain
-  // valid until expiry even after logout. No upstream token is stored downstream.
-  if(!verifiedUser||!revoked)throw new UpstreamSignInDenied();
-  return verifiedUser;
 }

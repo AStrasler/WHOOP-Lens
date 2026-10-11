@@ -4,7 +4,7 @@ import {
 import {WorkerEntrypoint} from 'cloudflare:workers';
 import {makeConsentFlow} from './consent-flow.mjs';
 // The Cloudflare OAuth provider issues tokens only after an explicit member
-// consent and independently validated Supabase OAuth PKCE redirect.
+// consent and independently validated Cloudflare Access application JWT.
 // All routes remain disabled until a separately approved staging rollout.
 export const ISSUER='https://auth.whooplens.tech';
 export const RESOURCE='https://whooplens.tech/mcp';

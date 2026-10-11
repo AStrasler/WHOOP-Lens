@@ -46,3 +46,7 @@ jobs:
         run: |
           test -f /tmp/whoop-lens-oauth-issuer/index.js
           test -f /tmp/whoop-lens-oauth-resource/index.js
+          if grep -Eq 'https://[^" ]*supabase\.co' /tmp/whoop-lens-oauth-issuer/index.js /tmp/whoop-lens-oauth-resource/index.js; then
+            echo 'Unexpected Supabase endpoint in independent Worker bundle'
+            exit 1
+          fi

@@ -4,12 +4,8 @@ const USER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const AUTH_ORIGIN = "https://evoiwauqplbcecumiwqn.supabase.co";
 const TIMEOUT_MS = 8000;
 
-export class AccessDenied extends Error {
-  constructor(status = 401) {
-    super("Access denied");
-    this.status = status;
-  }
-}
+import {AccessDenied} from "./access-denied.mjs";
+export {AccessDenied};
 
 export async function verifySupabaseSession(request, env, fetcher = fetch) {
   const auth = request.headers.get("authorization") || "";

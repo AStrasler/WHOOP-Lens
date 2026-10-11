@@ -19,9 +19,7 @@ export function safeRedirect(value) {
   catch { throw new Error("The app returned an unsafe redirect address."); }
   const loopback = LOOPBACK_HOSTS.has(url.hostname);
   const chatgpt = CHATGPT_CONNECTOR_HOSTS.has(url.hostname) && url.protocol === "https:" && url.port === "";
-  const cloudflare = url.origin === "https://auth.whooplens.tech" &&
-    url.pathname === "/oauth/upstream/callback" && !url.hash;
-  if (url.username || url.password || !(cloudflare || chatgpt || (loopback && (url.protocol === "http:" || url.protocol === "https:")))) {
+  if (url.username || url.password || !(chatgpt || (loopback && (url.protocol === "http:" || url.protocol === "https:")))) {
     throw new Error("The app returned an unsafe redirect address.");
   }
   return url.href;

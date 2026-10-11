@@ -87,9 +87,9 @@ test("seat responses stay fixed strings and do not surface upstream bodies", asy
 });
 
 
-test('Cloudflare upstream callback is an exact redirect allowlist entry',()=>{
+test('independent Cloudflare callback is not a Supabase redirect target',()=>{
   const url='https://auth.whooplens.tech/oauth/upstream/callback?code=synthetic&state=synthetic';
-  assert.equal(safeRedirect(url),url);
+  assert.throws(()=>safeRedirect(url));
   for(const bad of ['https://auth.whooplens.tech/other',
     'https://auth.whooplens.tech/oauth/upstream/callback/extra',
     'https://auth.whooplens.tech.evil.invalid/oauth/upstream/callback',
