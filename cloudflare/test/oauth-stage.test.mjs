@@ -5,13 +5,16 @@ import {escapeHtml,consentPage,unavailable} from '../oauth/consent.mjs';
 const file=path=>readFileSync(new URL(path,import.meta.url),'utf8');
 const issuer=file('../oauth/auth-server/src/index.mjs');
 const consent=file('../oauth/auth-server/src/consent-flow.mjs');
+const upstream=file('../oauth/auth-server/src/upstream.mjs');
 const resource=file('../oauth/resource/src/index.mjs');
 const authConfig=file('../oauth/auth-server/wrangler.jsonc');
 const resourceConfig=file('../oauth/resource/wrangler.jsonc');
 const deps=JSON.parse(file('../package.json'));
-test('official OAuth provider uses split issuer and resource audience',()=>{
+
+test('pinned official OAuth SDK and strict issuer/resource separation',()=>{
   assert.equal(deps.dependencies['@cloudflare/workers-oauth-provider'],'1.2.3');
   assert.match(issuer,/OAuthAuthorizationServer/);
+  assert.match(issuer,/authorizationErrorRedirect/);
   assert.match(resource,/OAuthResourceServer/);
   assert.match(issuer,/clientIdMetadataDocumentEnabled:true/);
   assert.match(issuer,/clientRegistrationEndpoint:'\/oauth\/register'/);
@@ -21,31 +24,45 @@ test('official OAuth provider uses split issuer and resource audience',()=>{
   assert.match(resource,/authorization_servers:\["https:\/\/auth\.whooplens\.tech"\]/);
   assert.match(resource,/requiredScopes:\["mcp:read"\]/);
 });
-test('authorization cannot issue token with a disabled feature flag',async()=>{
+
+test('consent + OAuth issuer are disabled until independently approved',async()=>{
   assert.match(issuer,/OAUTH_SERVER_ENABLED!=='true'/);
   assert.match(issuer,/OAUTH_CONSENT_ENABLED!=='true'/);
-  assert.match(consent,/beginConsent\(auth\)/);
-  assert.match(consent,/approveConsent\(request,handle/);
-  assert.match(consent,/denyConsent\(request,handle\)/);
-  assert.match(consent,/await oauth\.completeAuthorization/);
-  const r=unavailable();assert.equal(r.status,503);
+  assert.match(issuer,/flow\.callback/);
+  assert.match(consent,/oauth\.beginConsent\(original\)/);
+  assert.match(consent,/oauth\.approveConsent\(request,handle/);
+  assert.match(consent,/oauth\.denyConsent\(request,handle\)/);
+  assert.match(consent,/oauth\.beginUpstream\(approved\.request/);
+  assert.match(consent,/oauth\.finishUpstream\(request\)/);
+  assert.match(consent,/oauth\.completeAuthorization/);
+  const r=unavailable();
+  assert.equal(r.status,503);
   assert.match(await r.text(),/not available/);
 });
-test('explicit consent escapes the client and redirect destination',()=>{
+
+test('consent escapes hostile client metadata without collecting passwords',()=>{
   assert.equal(escapeHtml('<img src=x onerror="alert(1)">'),
     '&#60;img src=x onerror=&#34;alert(1)&#34;&#62;');
-  const html=consentPage({clientName:'<script>alert("evil")</script>',
-    redirectHost:'client.test"><iframe src=x>',clientDomain:'<b>bad</b>',
-    scope:['mcp:read','<img src=x onerror=alert(1)>'],redirectIsLoopback:true},'A'.repeat(43));
+  const html=consentPage({
+    clientName:'<script>alert(1)</script>',
+    redirectHost:'client.test"><iframe src=x>',
+    clientDomain:'<b>bad</b>',
+    scope:['mcp:read','offline_access'],
+    redirectIsLoopback:true
+  },'H'.repeat(43));
   assert.match(html,/access will be sent/i);
-  assert.match(html,/Client metadata domain/);
+  assert.match(html,/Verified client metadata domain/);
   assert.match(html,/application on your computer/);
-  assert.match(html,/Sign in and allow/);
+  assert.match(html,/Continue to secure sign-in/);
   assert.doesNotMatch(html,/<script>|<iframe|<img/);
+  assert.doesNotMatch(html,/type="password"|name="password"|name="email"/);
   assert.match(html,/name="decision" value="deny"/);
   assert.match(html,/&#60;/);
+  assert.doesNotMatch(consent,/password\s*[:=]/);
+  assert.doesNotMatch(upstream,/grant_type=password/);
 });
-test('Cloudflare bindings and all public routes remain disabled',()=>{
+
+test('both Workers have all launch gates off and no public route',()=>{
   for(const cfg of [authConfig,resourceConfig]){
     assert.match(cfg,/"workers_dev"\s*:\s*false/);
     assert.match(cfg,/"preview_urls"\s*:\s*false/);

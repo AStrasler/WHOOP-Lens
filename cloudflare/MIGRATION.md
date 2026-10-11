@@ -211,3 +211,28 @@ Do not destroy source data, OAuth clients, tokens or sessions.
   remaining identity migration design, and consent/PKCE token conformance.
   See cloudflare/oauth/ARCHITECTURE.md for details.
 
+
+
+## Redirect-based OAuth design replacing the staged password form
+
+The subsequent draft OAuth batch **replaces**, rather than enables, the
+earlier disabled Cloudflare-hosted password form. The Auth Worker now uses
+official OAuth \`beginConsent\` / \`approveConsent\` / \`beginUpstream\` and
+\`finishUpstream\` helpers and a browser redirect to the project's existing
+Supabase OAuth 2.1 authorization endpoint with S256 PKCE. The return code
+is exchanged at the fixed Supabase OAuth token endpoint and the resulting
+subject is verified with Supabase Auth plus ACTIVE D1 membership. Supabase
+tokens are not copied into Cloudflare grants. Local logout is required.
+
+The old password module and its tests are removed. Any historical checkpoint
+above describing a transitional password form is superseded by this section.
+This remains **undelployed staging source**, with both OAuth gates disabled,
+public/preview URLs disabled, no new routes/domains, no registered upstream
+OAuth client, no Supabase production changes and no real data transfer.
+Supabase retains the active WHOOP Lens service.
+
+The exact future OAuth callback
+\`https://auth.whooplens.tech/oauth/upstream/callback\` must be registered in
+Supabase only following a separate owner-approved, threat-reviewed step.
+Supabase OAuth configuration, login UI and token/logout conformance are
+unverified for this future client. See \`cloudflare/oauth/ARCHITECTURE.md\`.

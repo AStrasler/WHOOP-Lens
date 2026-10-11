@@ -112,12 +112,7 @@ OAUTH_CONSENT_ENABLED=false, and cannot run on any public URL.
   consent feature gates, login with a disabled invitation, cookie headers,
   nonce-independent D1 rate limits and generalized errors.
 
-CRITICAL: The present architecture forwards a password entered into a
-Cloudflare-hosted form to Supabase for verification. A full privacy and
-threat-model review, sign-in UX review, independent IdP decision and
-end-to-end OAuth conformance checks are mandatory before enabling the form.
-Because D1 has no user rows, no real user could be approved with the current
-empty staging data even if flags were enabled. The Worker is not deployed.
+HISTORICAL NOTE (superseded): The earlier, unactivated Cloudflare-hosted password form is no longer present in source. The current design redirects to Supabase OAuth 2.1 with PKCE instead. The Worker remains undeployed.
 
 
 ## Consent security review and regression batch (2026-10-11)
@@ -158,3 +153,57 @@ five-attempt counters, prune old buckets, test logout against the actual
 Supabase configuration, and run independent OAuth client conformance and
 revocation tests. No accounts, secrets, or health records are migrated.
 
+
+
+## Current proposal: Supabase OAuth 2.1 redirect with PKCE (supersedes password form)
+
+**Implementation is code-only and disabled.** A registered Supabase OAuth 2.1
+client with the exact callback URI
+\`https://auth.whooplens.tech/oauth/upstream/callback\` and a working
+existing Supabase authorization UI are required before it can be exercised
+against actual accounts. Neither has been configured as part of this work.
+No Worker has been deployed and neither domain has been attached.
+
+The official Cloudflare OAuth provider handles the outer ChatGPT/OAuth client
+authorization (S256 PKCE, consent, token audience, revocation). Its own
+\`beginConsent()\` and \`approveConsent()\` bind the user's explicit choice to
+the original client and its validated callback. After the user approves,
+\`beginUpstream()\` stores a randomly generated Supabase PKCE verifier and
+selected scopes in encrypted, browser-bound, short-lived state.
+
+Instead of receiving the user's Supabase password, the Cloudflare auth Worker
+redirects their browser to Supabase's existing OAuth issuer
+\`/auth/v1/oauth/authorize\` with \`code_challenge_method=S256\` and minimal
+\`openid\` scope. Supabase performs sign-in and upstream consent in the
+existing owner's authorization UI. The return callback uses the official
+provider's \`finishUpstream()\` to validate one-time state and matching browser
+cookie BEFORE attempting to exchange the upstream code.
+
+The Worker exchanges the code at Supabase's fixed
+\`/auth/v1/oauth/token\` endpoint with the stored PKCE verifier and exact
+registered callback. It calls \`/auth/v1/user\` to verify the subject, then
+requires an explicitly ACTIVE D1 membership. A successful local logout must
+complete before issuing the separate Cloudflare grant. It does NOT persist the
+Supabase access or refresh token in D1, OAuth props, cookies, logs, or GitHub.
+Because Supabase access tokens can remain valid until expiry, logout does not
+promise immediate JWT invalidation. Upstream OAuth user consent may continue
+to exist and needs an independently reviewed revocation policy.
+
+The obsolete experimental password collector \`login.mjs\`, password-login
+rate-limit helper and its old synthetic tests were removed from this branch.
+The previously applied empty staging D1 migration \`0003_oauth_login_limits.sql\`
+remains in history; its table is unused and has no account data. Do not
+re-enable the old flow through configuration or copy the deleted modules.
+
+**Unresolved activation requirements:** Register a dedicated upstream client
+and exact callback in Supabase only after owner approval; confirm Supabase
+OAuth Server and existing browser sign-in UI are correctly configured;
+verify OAuth token endpoint/logout semantics and scope/RLS policy before
+any real user sign-in; security review the upstream client, safe callback
+and identity mapping; run a browser-based synthetic end-to-end flow.
+Supabase OAuth scopes such as \`openid\` do not restrict PostgreSQL RLS access.
+No public activation without a separately approved plan.
+
+Docs:
+- https://supabase.com/docs/guides/auth/oauth-server/oauth-flows
+- https://github.com/cloudflare/workers-oauth-provider/blob/main/docs/upstream-sign-in.md

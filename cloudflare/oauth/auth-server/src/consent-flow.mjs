@@ -1,86 +1,132 @@
 import {consentPage,noStoreHeaders,unavailable} from '../../consent.mjs';
-import {verifyInvitedSignIn} from './login.mjs';
-import {reserveLoginAttempt} from './rate-limit.mjs';
-const approvedScopes=new Set(['mcp:read','offline_access']);
-const oauthError=(message,status=400)=>new Response(message,{status,headers:noStoreHeaders()});
-const readForm=async request=>{
-  if(!/^application\/x-www-form-urlencoded(?:;\s*charset=utf-8)?$/i.test((request.headers.get('content-type')||'').trim()))
-    return null;
-  const declared=Number(request.headers.get('content-length'));
-  if(Number.isFinite(declared)&&declared>4096)return null;
+import {createVerifier,checkUpstreamConfig,upstreamAuthorizationUrl,verifyUpstreamCode} from './upstream.mjs';
+const SCOPES=new Set(['mcp:read','offline_access']);
+const ORIGIN='https://auth.whooplens.tech';
+const CALLBACK_PATH='/oauth/upstream/callback';
+const oauthError=(status=400)=>new Response('Authorization unavailable',{status,headers:noStoreHeaders()});
+const allowedSelection=(selected,original)=>
+  Array.isArray(selected)&&selected.length>=1&&selected.length<=2&&
+  selected.includes('mcp:read')&&new Set(selected).size===selected.length&&
+  selected.every(s=>SCOPES.has(s)&&original.includes(s));
+async function readForm(request){
+  const type=(request.headers.get('content-type')||'').trim();
+  if(!/^application\/x-www-form-urlencoded(?:;\s*charset=utf-8)?$/i.test(type))return null;
+  if(Number(request.headers.get('content-length'))>2048)return null;
   const text=await request.text();
-  if(text.length>4096)return null;
-  const body=new URLSearchParams(text);
-  if([...body.keys()].some(x=>!['handle','decision','email','password','scope'].includes(x)))return null;
-  if(['handle','decision','email','password'].some(k=>body.getAll(k).length>1))return null;
-  return body;
-};
-export function makeConsentFlow({getOAuth,signIn=verifyInvitedSignIn,rateLimit=reserveLoginAttempt}={}){
-  if(typeof getOAuth!=='function')throw Error('OAuth provider required');
-  return async function authorize(request,env){
-    if(env?.OAUTH_SERVER_ENABLED!=='true'||env?.OAUTH_CONSENT_ENABLED!=='true')return unavailable();
+  if(text.length>2048)return null;
+  const data=new URLSearchParams(text);
+  if([...data.keys()].some(k=>!['handle','decision','scope'].includes(k)))return null;
+  if(['handle','decision'].some(k=>data.getAll(k).length!==1))return null;
+  return data;
+}
+function checkBrowserPost(request){
+  const origin=request.headers.get('origin');
+  const fetchSite=request.headers.get('sec-fetch-site');
+  return new URL(request.url).origin===ORIGIN &&
+    (origin===null||origin===ORIGIN) &&
+    (fetchSite===null||fetchSite==='same-origin'||fetchSite==='none');
+}
+export function makeConsentFlow({
+  getOAuth,verifyIdentity=verifyUpstreamCode,
+  startUrl=upstreamAuthorizationUrl,pkceVerifier=createVerifier,
+  errorRedirect=()=>null
+}={}){
+  if(typeof getOAuth!=='function')throw Error('Official OAuth provider required');
+
+  async function authorize(request,env){
+    if(env?.OAUTH_SERVER_ENABLED!=='true'||env?.OAUTH_CONSENT_ENABLED!=='true')
+      return unavailable();
+    if(new URL(request.url).origin!==ORIGIN)return oauthError(403);
     const oauth=getOAuth(env);
     if(request.method==='GET'){
       try{
-        const auth=await oauth.parseAuthRequest(request);
-        const description=await oauth.describeConsent(auth);
-        if(!auth.scope.includes('mcp:read')||auth.scope.some(x=>!approvedScopes.has(x)))
-          return oauthError('Requested permissions unavailable');
-        const binding=await oauth.beginConsent(auth);
-        const headers=new Headers(binding.headers);
-        for(const [key,value] of Object.entries(noStoreHeaders('text/html; charset=utf-8')))headers.set(key,value);
-        return new Response(consentPage(description,binding.handle),{status:200,headers});
-      }catch{return oauthError('Invalid authorization request');}
+        const original=await oauth.parseAuthRequest(request);
+        if(!Array.isArray(original.scope)||!allowedSelection(original.scope,original.scope))
+          return oauthError();
+        const description=await oauth.describeConsent(original);
+        const bind=await oauth.beginConsent(original);
+        const headers=new Headers(bind.headers);
+        for(const [key,value] of Object.entries(noStoreHeaders('text/html; charset=utf-8')))
+          headers.set(key,value);
+        return new Response(consentPage(description,bind.handle),{status:200,headers});
+      }catch{return oauthError();}
     }
-    if(request.method!=='POST')return oauthError('Unsupported authorization method',405);
-    // These origin checks complement the official provider's browser-bound,
-    // one-time consent cookie; never replace its CSRF check with headers alone.
-    const canonical='https://auth.whooplens.tech';
-    if(new URL(request.url).origin!==canonical)return oauthError('Unexpected authorization host',403);
-    const origin=request.headers.get('origin');
-    if(origin!==null&&origin!==canonical)return oauthError('Cross-origin authorization denied',403);
-    const fetchSite=request.headers.get('sec-fetch-site');
-    if(fetchSite!==null&&!['same-origin','none'].includes(fetchSite))
-      return oauthError('Cross-site authorization denied',403);
+    if(request.method!=='POST')return oauthError(405);
+    if(!checkBrowserPost(request))return oauthError(403);
     let form;
-    try{form=await readForm(request);}catch{return oauthError('Invalid authorization form');}
-    if(!form)return oauthError('Invalid authorization form');
-    const handle=form.get('handle');
-    if(typeof handle!=='string'||handle.length<24||handle.length>256||!/^[A-Za-z0-9_-]+$/.test(handle))
-      return oauthError('Invalid authorization request');
-    const decision=form.get('decision');
-    if(decision!=='approve'&&decision!=='deny')return oauthError('Invalid authorization decision');
+    try{form=await readForm(request);}catch{return oauthError();}
+    if(!form)return oauthError();
+    const handle=form.get('handle'),decision=form.get('decision');
+    if(typeof handle!=='string'||!/^[A-Za-z0-9_-]{24,256}$/.test(handle)||
+       !['approve','deny'].includes(decision))return oauthError();
     try{
       if(decision==='deny'){
-        // The Cancel form deliberately does not send email or password.
-        if(form.has('email')||form.has('password')||form.has('scope'))
-          return oauthError('Invalid denial form');
-        const rejected=await oauth.denyConsent(request,handle);
-        return new Response(null,{status:302,headers:rejected.headers});
+        if(form.has('scope'))return oauthError();
+        const denied=await oauth.denyConsent(request,handle);
+        return new Response(null,{status:302,headers:denied.headers});
       }
+      // Fail without consuming the consent handle if the upstream provider
+      // hasn't been explicitly configured in a later approved stage.
+      checkUpstreamConfig(env);
       const selected=form.getAll('scope');
-      if(selected.length<1||selected.length>2||new Set(selected).size!==selected.length||
-         !selected.includes('mcp:read')||selected.some(x=>!approvedScopes.has(x)))
-        return oauthError('Invalid authorization permissions');
+      if(!allowedSelection(selected,['mcp:read','offline_access']))return oauthError();
       const approved=await oauth.approveConsent(request,handle,{scope:selected});
-      if(!Array.isArray(approved.request?.scope)||!selected.every(x=>approved.request.scope.includes(x)))
-        return oauthError('Invalid authorization permissions');
-      const email=form.get('email'),password=form.get('password');
-      if(typeof email!=='string'||typeof password!=='string'||
-         email.length>320||password.length>1024||password.length<1)
-        return oauthError('Sign-in or invitation check failed',401);
-      const allowed=await rateLimit(request,email,env);
-      if(!allowed)return oauthError('Too many sign-in attempts. Try again later.',429);
-      const userId=await signIn({email,password,env});
-      const result=await oauth.completeAuthorization({
-        request:approved.request,userId,scope:selected,
-        metadata:{},props:{userId}
+      if(!Array.isArray(approved.request?.scope)||
+         !allowedSelection(selected,approved.request.scope))return oauthError();
+      const verifier=pkceVerifier();
+      const upstream=await oauth.beginUpstream(approved.request,{
+        data:{verifier,grantedScopes:selected},headers:approved.headers
       });
-      const headers=new Headers(approved.headers);
-      headers.set('location',result.redirectTo);
+      const location=await startUrl({state:upstream.state,verifier,env});
+      const headers=new Headers(upstream.headers);
+      headers.set('location',location);
       headers.set('cache-control','no-store');
       headers.set('referrer-policy','no-referrer');
       return new Response(null,{status:302,headers});
-    }catch{return oauthError('Sign-in or invitation check failed. Start authorization again.',401);}
-  };
+    }catch{return oauthError();}
+  }
+
+  async function callback(request,env){
+    if(env?.OAUTH_SERVER_ENABLED!=='true'||env?.OAUTH_CONSENT_ENABLED!=='true')
+      return unavailable();
+    const url=new URL(request.url);
+    if(request.method!=='GET'||url.origin!==ORIGIN||url.pathname!==CALLBACK_PATH)
+      return oauthError(403);
+    try{
+      const oauth=getOAuth(env);
+      // Official provider validates one-time upstream state + browser cookie.
+      const finished=await oauth.finishUpstream(request);
+      if(!finished?.request||!finished?.headers)return oauthError();
+      if(url.searchParams.has('error')){
+        const destination=errorRedirect(finished.request,'access_denied');
+        let target;
+        try{target=new URL(destination);}catch{return oauthError();}
+        const local=['localhost','127.0.0.1','[::1]'].includes(target.hostname);
+        if(target.protocol!=='https:'&&!(target.protocol==='http:'&&local))
+          return oauthError();
+        const headers=new Headers(finished.headers);
+        headers.set('location',destination);
+        headers.set('cache-control','no-store');
+        return new Response(null,{status:302,headers});
+      }
+      const code=url.searchParams.get('code');
+      const data=finished.data;
+      if(typeof code!=='string'||!data||typeof data.verifier!=='string'||
+         !allowedSelection(data.grantedScopes,finished.request.scope))
+        return oauthError();
+      // Subject must be validated by Supabase and ACTIVE D1 membership.
+      // No access or refresh tokens enter the Cloudflare OAuth grant.
+      const userId=await verifyIdentity({code,verifier:data.verifier,env});
+      const completed=await oauth.completeAuthorization({
+        request:finished.request,userId,scope:data.grantedScopes,
+        metadata:{},props:{userId}
+      });
+      const headers=new Headers(finished.headers);
+      headers.set('location',completed.redirectTo);
+      headers.set('cache-control','no-store');
+      headers.set('referrer-policy','no-referrer');
+      return new Response(null,{status:302,headers});
+    }catch{return oauthError(401);}
+  }
+  return {authorize,callback};
 }
