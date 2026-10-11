@@ -474,7 +474,7 @@ test("pagination stays on the caller token and stops on a repeated cursor", asyn
     body: { jsonrpc: "2.0", id: 1, method: "tools/list" },
   }));
   const tools = (await listed.json()).result.tools.map((tool) => tool.name);
-  assert.deepEqual(tools, ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_samsung_health", "connect_whoop"]);
+  assert.deepEqual(tools, ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_capabilities", "get_samsung_health", "connect_whoop"]);
   const paged = await harness.handle(request("/mcp", {
     method: "POST",
     token: "session-do-not-log-b",
@@ -782,4 +782,74 @@ test("an existing connection can reconnect when seats are full and a lost race s
   assert.equal(JSON.stringify(lost.headers.get("location")).includes("oauth-code-do-not-log"), false);
   assertSafe(harness.logs);
   assertSafe(raced.logs);
+});
+
+// PR 1: catalog is account-scoped, truthful about missing data, and safe across clients.
+async function catalogCall(harness, token, argumentsObject = {}, method = "tools/call") {
+  const response = await harness.handle(request("/mcp", {
+    method: "POST",
+    token,
+    body: { jsonrpc: "2.0", id: 901, method, params: { name: "get_capabilities", arguments: argumentsObject } },
+  }));
+  return { response, rpc: await response.json() };
+}
+
+test("capability directory is available without WHOOP history but does not invent a connection", async () => {
+  const h = createHarness({ fetch: async () => jsonResponse({}) });
+  const { rpc } = await catalogCall(h, "session-do-not-log-a");
+  const result = JSON.parse(rpc.result.content[0].text);
+  assert.equal(result.source, "bundled_deployed_catalog");
+  assert.equal(result.registry_version, "1.1.0-pr1");
+  assert.ok(result.global_limitations.some((item) => item.includes("diagnoses")));
+  assert.equal(result.capabilities.find((item) => item.id === "directory").status, "available");
+  assert.equal(result.capabilities.find((item) => item.id === "recovery").status, "requires_connection_or_data");
+  assert.equal(result.capabilities.find((item) => item.id === "samsung").status, "requires_connection_or_data");
+  assert.equal(result.capabilities.find((item) => item.id === "health-connect").status, "planned");
+  assert.equal(result.capabilities.find((item) => item.id === "ehr-writeback").status, "unsupported");
+  assert.ok(result.capabilities.every((item) => item.limitations.length && item.data_requirements.length));
+  assert.equal(JSON.stringify(result).includes("session-do-not-log"), false);
+  assertSafe(h.logs);
+});
+
+test("capability discovery keeps optional uploads and WHOOP account status isolated", async () => {
+  const h = createHarness({
+    rows: {
+      whoop_connections: [{ user_id: userA, seat_role: "public" }],
+      samsung_health_records: [{ user_id: userA, id: "record-a", metric: "sleep" }],
+    },
+    fetch: async () => jsonResponse({}),
+  });
+  const a = JSON.parse((await catalogCall(h, "session-do-not-log-a")).rpc.result.content[0].text);
+  const b = JSON.parse((await catalogCall(h, "session-do-not-log-b")).rpc.result.content[0].text);
+  assert.equal(a.capabilities.find((item) => item.id === "samsung").status, "available");
+  assert.equal(b.capabilities.find((item) => item.id === "samsung").status, "requires_connection_or_data");
+  assert.equal(a.capabilities.find((item) => item.id === "recovery").status, "available");
+  assert.equal(b.capabilities.find((item) => item.id === "recovery").status, "requires_connection_or_data");
+  assert.equal(JSON.stringify(a).includes("record-a"), false);
+  assert.equal(JSON.stringify(a).includes(userA), false);
+  assert.equal(JSON.stringify(b).includes(userA), false);
+  assertSafe(h.logs);
+});
+
+test("catalog supports bounded filtering, pagination and optional planned features", async () => {
+  const h = createHarness({ fetch: async () => jsonResponse({}) });
+  const { rpc } = await catalogCall(h, "session-do-not-log-a", { category: "whoop", limit: 2 });
+  const page = JSON.parse(rpc.result.content[0].text);
+  assert.equal(page.capabilities.length, 2);
+  assert.equal(page.next_offset, 2);
+  assert.ok(page.capabilities.every((item) => item.category === "whoop"));
+  const filtered = JSON.parse((await catalogCall(h, "session-do-not-log-a", { include_planned: false })).rpc.result.content[0].text);
+  assert.ok(filtered.capabilities.every((item) => !["planned", "unsupported"].includes(item.status)));
+  const invalid = (await catalogCall(h, "session-do-not-log-a", { limit: 500 })).rpc;
+  assert.equal(invalid.error.code, -32603);
+  assert.equal(invalid.error.message, "The tool could not be completed.");
+});
+
+test("catalog respects authentication and member disable gate", async () => {
+  const h = createHarness({ fetch: async () => jsonResponse({}) });
+  const anon = await catalogCall(h, undefined);
+  assert.equal(anon.response.status, 401);
+  h.memory.tables.whoop_members.push({ user_id: userA, active: false });
+  const disabled = await catalogCall(h, "session-do-not-log-a");
+  assert.equal(disabled.response.status, 403);
 });

@@ -1,4 +1,5 @@
 import { openaiAppsChallengeResponse } from "./challenge.mjs";
+import capabilityManifest from "./capabilities.json" with { type: "json" };
 
 // Deploy these bytes. Live function version 40 matched this tree except an extra
 // caret in the domain class ([^^\s@] versus [^\s@]). Keep this pattern.
@@ -37,7 +38,19 @@ const historySchema = {
 };
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: true };
 const closed = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
+const capabilitySchema = {
+  type: "object",
+  properties: {
+    category: { type: "string", enum: ["whoop", "optional", "explore", "advocacy", "planned", "unsupported"] },
+    limit: { type: "integer", minimum: 1, maximum: 25 },
+    offset: { type: "integer", minimum: 0, maximum: 1000 },
+    include_planned: { type: "boolean" },
+  },
+  additionalProperties: false,
+};
 const toolDescriptions = {
+  get_capabilities: "Discover all WHOOP Lens features and limitations from the deployed version-matched catalog. Return current account availability, sample questions, and what the MCP cannot do. Consult this first when someone asks what they can learn or explore; host visuals and research may differ.",
+
   get_profile: "Read the signed-in user's WHOOP profile.",
   get_body_measurements: "Read the signed-in user's WHOOP body measurements.",
   get_recovery: "Read the signed-in user's WHOOP recovery history.",
@@ -46,6 +59,14 @@ const toolDescriptions = {
   get_cycles: "Read the signed-in user's WHOOP cycle history.",
 };
 const instructions = "WHOOP Lens covers six WHOOP categories: recovery, sleep, cycles, workouts, body measurements, and profile. It can also read separately attributed Samsung Health records when the Android companion has uploaded them; for a broad request to understand everything, call get_samsung_health as well and state clearly if no Samsung records are uploaded. For a broad request to understand all available WHOOP data, retrieve all six; paginate each of the four history categories independently until complete is true, or state exactly which categories remain incomplete. Treat complete and next_token as internal pagination fields: never show raw status labels such as `complete: true` to the user. Describe the coverage in plain language, such as all available pages through this connection, and explain any partial retrieval. Present a concise multi-domain view in chat: recovery and HRV/resting heart rate; sleep duration, timing and stages; cycle strain and steps; workout frequency/type/strain; and body measurements/profile as snapshots. Compare dated trends and overlaps, distinguish naps and open cycles from completed days, and identify missing or nonmatching dates. For any request to explain or understand ALL WHOOP data, do not finalize after retrieving WHOOP alone. If the user has connected ChatGPT Health sources available to this conversation, call the Health connection in this request and check relevant dated records before answering; prior chat text or memory is not a substitute for a current Health lookup. Do not assume Apple Health is the only wearable source. Check for both Apple Health and Health Connect coverage when the Health connection exposes them, and use whichever sources are actually available for the signed-in user. If only one is available, say which source was checked; if Health Connect is not exposed through ChatGPT Health, say so instead of treating Apple Health as the default or as proof that no Android health data exists. Then include a Health context section covering relevant records across sleep, recovery, heart metrics, activity and body measurements. Keep Health records separate from WHOOP and never send Health details to this WHOOP server. If Health is unavailable, inaccessible, or the user declines its use, state that the WHOOP retrieval is complete but the combined Health interpretation is incomplete, with the specific reason. For narrower interpretation requests, consult Health when relevant and accessible. Separate measurements, Health context, hypotheses and unknowns; do not turn correlation or a static profile value into a cause or measured trend. WHOOP Lens is read-only and cannot change WHOOP settings. When a user asks to change a WHOOP setting, goal, alarm, plan, profile value, or other configuration, clearly say that WHOOP Lens cannot make the change, direct the user to the WHOOP app, and give concise how-to steps for the relevant setting. For sleep-goal requests, use current WHOOP app guidance: on the Home screen, open Tonight's Sleep to reach Sleep Planner; for weekly sleep targets, open My Plan/View My Plan and edit the plan. If the exact in-app path is uncertain or may vary by app version, say so rather than inventing one.";
+const discoveryGuidance = [
+  "For 'What can WHOOP Lens do?', 'What patterns could I explore?', 'Surprise me with possible analyses', or 'What are your limitations?', call get_capabilities first. Display categorized abilities with honest availability, data requirements, limitations, and example user questions. Never claim a planned or unavailable feature is installed; the MCP tool inventory, not the newest GitHub document, determines live tools.",
+  "For a capability demo, fetch a small recent signed-in-user sample with the available read-only data tools, present dates and units, and offer useful questions the user can choose. Do not crawl full history by default. Make native in-chat charts the default where the AI host supports them and enough measurements exist; always include readable text and stop charts immediately when the user opts out for the conversation. WHOOP Lens cannot draw charts or guarantee host UI.",
+  "Encourage user-led investigation, flexible detail and corrections. Distinguish user statements, measured WHOOP data, optional authorized medical context, independently verifiable external research, interpretation, and uncertainty. Never invent studies or imply a correlation proves causality. Explain when the AI host cannot browse or support a chart.",
+  "For healthcare self-advocacy when requested, help the user create optional clear questions and short scripts for communicating concerns, or an editable provider-ready one-page appointment brief with dated source labels. Help them raise potentially overlooked context without judging a provider, diagnosing, suggesting treatment changes, or contacting anyone. No EHR integration or automatic clinical record sharing.",
+  "When users ask for medical context, explain evidence and limitations without diagnosing; they make their own decisions. Do not presume preferences from age or relationship; let each user choose technical detail, pacing, visual density and direction. Do not claim preferences persist between unrelated sessions.",
+].join(" ");
+const fullInstructions = instructions + " " + discoveryGuidance;
 const metricEvents = new Set(["request", "seat_denied", "waitlist", "token_refresh", "whoop_retry", "tool_call", "oauth_callback"]);
 const metricOutcomes = new Set([
   "ok", "denied", "error", "rate_limited", "stored", "already_listed", "not_needed", "unavailable",
@@ -53,7 +74,7 @@ const metricOutcomes = new Set([
 ]);
 const toolNames = new Set([
   "get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles",
-  "get_samsung_health", "connect_whoop",
+  "get_samsung_health", "connect_whoop", "get_capabilities",
 ]);
 
 export function linkedEmail(value) {
@@ -348,6 +369,59 @@ export function createWhoopMcp({
   }
 
   async function callTool(uid, name, args) {
+    if (name === "get_capabilities") {
+      const category = args?.category;
+      if (category !== undefined && !["whoop", "optional", "explore", "advocacy", "planned", "unsupported"].includes(category)) {
+        throw new Error("Invalid capability category");
+      }
+      const limit = args?.limit ?? 25;
+      const offset = args?.offset ?? 0;
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 25 ||
+          !Number.isSafeInteger(offset) || offset < 0 || offset > 1000 ||
+          (args?.include_planned !== undefined && typeof args.include_planned !== "boolean")) {
+        throw new Error("Invalid capability pagination");
+      }
+      const { data: linked, error: linkError } = await db.from("whoop_connections")
+        .select("user_id").eq("user_id", uid).maybeSingle();
+      if (linkError) throw new Error("Capability availability lookup failed");
+      const { data: samsung, error: samsungError } = await db.from("samsung_health_records")
+        .select("id").eq("user_id", uid).range(0, 0);
+      if (samsungError) throw new Error("Capability availability lookup failed");
+      const hasConnection = !!linked;
+      const hasSamsung = (samsung ?? []).length > 0;
+      const capabilities = capabilityManifest.capabilities
+        .filter((item) => (!category || item.category === category) &&
+          (args?.include_planned !== false || (item.status !== "planned" && item.status !== "unsupported")))
+        .map((item) => {
+          let status = item.status;
+          let availability_reason = null;
+          if (item.id === "samsung" && !hasSamsung) {
+            status = "requires_connection_or_data";
+            availability_reason = "No authorized Samsung Health records have been uploaded to this account.";
+          } else if (item.tools.some((tool) => ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles"].includes(tool)) && !hasConnection) {
+            status = "requires_connection_or_data";
+            availability_reason = "Connect WHOOP to access measurements; this does not guarantee a scored record exists.";
+          } else if (item.delivery === "host_assisted" && item.tools.length === 0) {
+            availability_reason = "This is guidance from the AI host, not a stand-alone WHOOP Lens data tool.";
+          } else if (item.delivery === "host_assisted") {
+            availability_reason = "Requires sufficient dated records and supported AI client capabilities.";
+          } else if (item.status === "planned" || item.status === "unsupported") {
+            availability_reason = "This feature is not currently provided by the deployed MCP.";
+          } else if (status === "available") {
+            availability_reason = "Tool is registered; actual records and completeness have not been checked.";
+          }
+          return { ...item, status, availability_reason };
+        });
+      return {
+        schema_version: capabilityManifest.schema_version,
+        registry_version: capabilityManifest.registry_version,
+        source: "bundled_deployed_catalog",
+        global_limitations: capabilityManifest.global_limitations,
+        total: capabilities.length,
+        next_offset: offset + limit < capabilities.length ? offset + limit : null,
+        capabilities: capabilities.slice(offset, offset + limit),
+      };
+    }
     if (name === "get_samsung_health") {
       const metricName = args?.metric;
       const allowed = ["sleep", "heart_rate", "spo2", "steps", "activity", "exercise", "body_composition", "skin_temperature", "energy_score", "blood_pressure", "profile"];
@@ -617,7 +691,7 @@ export function createWhoopMcp({
               protocolVersion: "2025-06-18",
               capabilities: { tools: {} },
               serverInfo: { name: "whoop-lens", version: "1.0.0" },
-              instructions,
+              instructions: fullInstructions,
             },
           }), { route, outcome: "ok", user_id: userId });
         }
@@ -639,6 +713,12 @@ export function createWhoopMcp({
             id: body.id,
             result: {
               tools: snapshots.concat(history, [
+                {
+                  name: "get_capabilities",
+                  description: toolDescriptions.get_capabilities,
+                  inputSchema: capabilitySchema,
+                  annotations: closed,
+                },
                 {
                   name: "get_samsung_health",
                   description: "Read Samsung Health records uploaded for the signed-in user. These records are separate from WHOOP. Paginate with offset.",

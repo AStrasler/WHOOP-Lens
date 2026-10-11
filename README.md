@@ -62,6 +62,16 @@ If a consent request says it could not be completed after you already returned t
 
 If an older page keeps skipping WHOOP setup, reload the setup website with **Ctrl+Shift+R** on Windows or **Command+Shift+R** on macOS. During a connection started from ChatGPT, allow the separate WHOOP tab to open, then return to the original consent tab.
 
+## Explore capabilities and limitations
+
+When the PR 1 capability discovery update is deployed, connected MCP clients can call **get_capabilities** and ask:
+
+- "What can WHOOP Lens do?"
+- "What patterns could my data reveal that I have not thought to ask about?"
+- "What are WHOOP Lens's limitations?"
+
+See [the capability directory](docs/CAPABILITIES.md), including required data and what each feature **cannot** conclude. The deployed MCP catalog is the runtime source of truth; planned items in GitHub are not automatically available in ChatGPT or other AI clients. Supported charts and outside research depend on the connected AI host, and users can opt out of visuals.
+
 ## How it is hosted
 
 The consent and connection UI in `docs/` is the GitHub Pages site: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/). Each person signs in with their own Supabase user. This repository does not add a separate account system.

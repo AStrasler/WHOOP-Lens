@@ -1,0 +1,352 @@
+{
+  "schema_version": 1,
+  "registry_version": "1.1.0-pr1",
+  "global_limitations": [
+    "Measurements and patterns are not diagnoses or proofs of causation.",
+    "No record is never proof of no symptoms or activity.",
+    "Only current authorized account data may be read.",
+    "Charts and research depend on the connected AI client.",
+    "No automatic WHOOP setting changes or healthcare provider contact.",
+    "Android Health Connect and medical-context integrations are planned, not live."
+  ],
+  "capabilities": [
+    {
+      "id": "profile",
+      "name": "WHOOP profile",
+      "category": "whoop",
+      "description": "WHOOP profile",
+      "provides": "WHOOP profile",
+      "delivery": "mcp_data",
+      "status": "available",
+      "tools": [
+        "get_profile"
+      ],
+      "data_requirements": [
+        "Connected WHOOP account and relevant data"
+      ],
+      "limitations": [
+        "Snapshot only; values may be missing.",
+        "Measurements do not establish medical diagnoses or causality."
+      ],
+      "example_prompts": [
+        "Show my WHOOP profile."
+      ]
+    },
+    {
+      "id": "body",
+      "name": "Body measurements",
+      "category": "whoop",
+      "description": "Body measurements",
+      "provides": "Body measurements",
+      "delivery": "mcp_data",
+      "status": "available",
+      "tools": [
+        "get_body_measurements"
+      ],
+      "data_requirements": [
+        "Connected WHOOP account and relevant data"
+      ],
+      "limitations": [
+        "Static measurements are not trends.",
+        "Measurements do not establish medical diagnoses or causality."
+      ],
+      "example_prompts": [
+        "Show my WHOOP body measurements."
+      ]
+    },
+    {
+      "id": "recovery",
+      "name": "Recovery, HRV and resting HR",
+      "category": "whoop",
+      "description": "Recovery, HRV and resting HR",
+      "provides": "Recovery, HRV and resting HR",
+      "delivery": "mcp_data",
+      "status": "available",
+      "tools": [
+        "get_recovery"
+      ],
+      "data_requirements": [
+        "Connected WHOOP account and relevant data"
+      ],
+      "limitations": [
+        "Missing/unscored days; not a diagnosis.",
+        "Measurements do not establish medical diagnoses or causality."
+      ],
+      "example_prompts": [
+        "Chart my recovery this week."
+      ]
+    },
+    {
+      "id": "sleep",
+      "name": "Sleep and consistency",
+      "category": "whoop",
+      "description": "Sleep and consistency",
+      "provides": "Sleep and consistency",
+      "delivery": "mcp_data",
+      "status": "available",
+      "tools": [
+        "get_sleep"
+      ],
+      "data_requirements": [
+        "Connected WHOOP account and relevant data"
+      ],
+      "limitations": [
+        "Nap and time zone coverage may vary.",
+        "Measurements do not establish medical diagnoses or causality."
+      ],
+      "example_prompts": [
+        "Explore my sleep stages and consistency."
+      ]
+    },
+    {
+      "id": "cycles",
+      "name": "Daily cycles and strain",
+      "category": "whoop",
+      "description": "Daily cycles and strain",
+      "provides": "Daily cycles and strain",
+      "delivery": "mcp_data",
+      "status": "available",
+      "tools": [
+        "get_cycles"
+      ],
+      "data_requirements": [
+        "Connected WHOOP account and relevant data"
+      ],
+      "limitations": [
+        "Open cycles are incomplete.",
+        "Measurements do not establish medical diagnoses or causality."
+      ],
+      "example_prompts": [
+        "Compare my strain and recovery."
+      ]
+    },
+    {
+      "id": "workouts",
+      "name": "Workouts and activity",
+      "category": "whoop",
+      "description": "Workouts and activity",
+      "provides": "Workouts and activity",
+      "delivery": "mcp_data",
+      "status": "available",
+      "tools": [
+        "get_workouts"
+      ],
+      "data_requirements": [
+        "Connected WHOOP account and relevant data"
+      ],
+      "limitations": [
+        "Missing workouts do not imply inactivity.",
+        "Measurements do not establish medical diagnoses or causality."
+      ],
+      "example_prompts": [
+        "Show my recent workouts and strain."
+      ]
+    },
+    {
+      "id": "samsung",
+      "name": "Samsung Health uploads",
+      "category": "optional",
+      "description": "Samsung Health uploads",
+      "provides": "Samsung Health uploads",
+      "delivery": "mcp_data",
+      "status": "available",
+      "tools": [
+        "get_samsung_health"
+      ],
+      "data_requirements": [
+        "Prior authorized Samsung Health uploads"
+      ],
+      "limitations": [
+        "Only separately uploaded Samsung SDK records; no live phone sync.",
+        "Measurements do not establish medical diagnoses or causality."
+      ],
+      "example_prompts": [
+        "What Samsung records were uploaded?"
+      ]
+    },
+    {
+      "id": "directory",
+      "name": "Discover capabilities",
+      "category": "explore",
+      "description": "Discover capabilities",
+      "provides": "Discover capabilities",
+      "delivery": "mcp_data",
+      "status": "available",
+      "tools": [
+        "get_capabilities"
+      ],
+      "data_requirements": [
+        "Signed-in WHOOP Lens account"
+      ],
+      "limitations": [
+        "A feature list does not imply this user has records.",
+        "Measurements do not establish medical diagnoses or causality."
+      ],
+      "example_prompts": [
+        "What can WHOOP Lens do?"
+      ]
+    },
+    {
+      "id": "patterns",
+      "name": "Explore possible cross-metric patterns",
+      "category": "explore",
+      "description": "Compare dated sleep, recovery and cycle metrics when available.",
+      "provides": "User-directed pattern questions.",
+      "delivery": "host_assisted",
+      "status": "available",
+      "tools": [
+        "get_recovery",
+        "get_sleep",
+        "get_cycles"
+      ],
+      "data_requirements": [
+        "Overlapping authorized dated WHOOP measurements"
+      ],
+      "limitations": [
+        "Correlations do not prove a cause.",
+        "Too few aligned days can prevent meaningful comparisons."
+      ],
+      "example_prompts": [
+        "What patterns might I not know to ask about?"
+      ]
+    },
+    {
+      "id": "charts",
+      "name": "Optional in-chat charts",
+      "category": "explore",
+      "description": "Charts when the connected AI client supports them; text otherwise.",
+      "provides": "Visual pattern explanations.",
+      "delivery": "host_assisted",
+      "status": "available",
+      "tools": [
+        "get_recovery",
+        "get_sleep"
+      ],
+      "data_requirements": [
+        "Relevant records",
+        "Client-side chart support"
+      ],
+      "limitations": [
+        "The MCP cannot force the host to render a chart.",
+        "A user can opt out of visuals."
+      ],
+      "example_prompts": [
+        "Chart my sleep and recovery.",
+        "Skip charts."
+      ]
+    },
+    {
+      "id": "advocacy",
+      "name": "Healthcare self-advocacy questions",
+      "category": "advocacy",
+      "description": "Help users express their own medical questions and concerns.",
+      "provides": "Editable patient-led appointment questions.",
+      "delivery": "host_assisted",
+      "status": "available",
+      "tools": [],
+      "data_requirements": [
+        "The user's own questions and context"
+      ],
+      "limitations": [
+        "No diagnosis or judgment that a provider is wrong.",
+        "No unsolicited clinician contact or advice to change treatment."
+      ],
+      "example_prompts": [
+        "Help me ask about an unresolved concern."
+      ]
+    },
+    {
+      "id": "visit-brief",
+      "name": "Provider-ready appointment brief",
+      "category": "advocacy",
+      "description": "Prepare a user-reviewed, copyable summary for appointments.",
+      "provides": "Patient-led visit notes with distinct source labels.",
+      "delivery": "host_assisted",
+      "status": "available",
+      "tools": [],
+      "data_requirements": [
+        "User-provided notes; optionally connected WHOOP measurements"
+      ],
+      "limitations": [
+        "No automatic provider messaging.",
+        "No direct Epic, MyChart or Oracle Health integration."
+      ],
+      "example_prompts": [
+        "Make an appointment brief in my own words."
+      ]
+    },
+    {
+      "id": "research",
+      "name": "Explain medical research",
+      "category": "advocacy",
+      "description": "Explain evidence where the AI host can retrieve verifiable sources.",
+      "provides": "Plain-language medical context, not clinical conclusions.",
+      "delivery": "host_assisted",
+      "status": "available",
+      "tools": [],
+      "data_requirements": [
+        "User question",
+        "Host research access to verify citations"
+      ],
+      "limitations": [
+        "MCP does not browse medical literature.",
+        "Never invent studies, diagnoses or causal conclusions."
+      ],
+      "example_prompts": [
+        "Explain this clinical term and cite studies you can verify."
+      ]
+    },
+    {
+      "id": "health-connect",
+      "name": "Health Connect phone sync",
+      "category": "planned",
+      "description": "Private Android Health Connect imports.",
+      "provides": "Not shipped.",
+      "delivery": "planned",
+      "status": "planned",
+      "tools": [],
+      "data_requirements": [
+        "Future Android companion and permissions"
+      ],
+      "limitations": [
+        "Not yet implemented."
+      ],
+      "example_prompts": []
+    },
+    {
+      "id": "medical-context",
+      "name": "Private medical context",
+      "category": "planned",
+      "description": "Optional patient-reviewed imported medical details.",
+      "provides": "Not shipped.",
+      "delivery": "planned",
+      "status": "planned",
+      "tools": [],
+      "data_requirements": [
+        "Future approved importer and MCP tools"
+      ],
+      "limitations": [
+        "Not yet implemented; no EHR data read."
+      ],
+      "example_prompts": []
+    },
+    {
+      "id": "ehr-writeback",
+      "name": "Direct hospital network integration",
+      "category": "unsupported",
+      "description": "Automatic uploads or writes into hospital portals.",
+      "provides": "Not supported.",
+      "delivery": "unsupported",
+      "status": "unsupported",
+      "tools": [],
+      "data_requirements": [
+        "Separate vendor-specific authorization and implementation"
+      ],
+      "limitations": [
+        "No direct hospital network access or writes.",
+        "Preparing a briefing does not send it."
+      ],
+      "example_prompts": []
+    }
+  ]
+}
