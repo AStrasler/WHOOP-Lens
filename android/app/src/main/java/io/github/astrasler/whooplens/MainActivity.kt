@@ -16,6 +16,7 @@ import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import java.time.LocalDate
 import java.time.ZoneId
@@ -38,6 +39,11 @@ class MainActivity : ComponentActivity() {
       "Health Connect: " + granted.size + " of " + permissions.size + " permissions granted. No data uploaded."
     findViewById<Button>(4002)?.isEnabled = verified &&
       granted.contains(HealthPermission.getReadPermission(StepsRecord::class))
+    findViewById<Button>(4003)?.isEnabled = verified && granted.any {
+      it == HealthPermission.getReadPermission(SleepSessionRecord::class) ||
+      it == HealthPermission.getReadPermission(HeartRateRecord::class) ||
+      it == HealthPermission.getReadPermission(ExerciseSessionRecord::class)
+    }
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -69,6 +75,11 @@ class MainActivity : ComponentActivity() {
       text = "Preview yesterday's steps locally"
       isEnabled = false
     }
+    val otherPreviewButton = Button(this).apply {
+      id = 4003
+      text = "Preview last 24h sleep, HR and exercise counts"
+      isEnabled = false
+    }
     val logoutButton = Button(this).apply { text = "Sign out" }
     val hcStatus = when (HealthConnectClient.getSdkStatus(this)) {
       HealthConnectClient.SDK_AVAILABLE -> "Health Connect is available."
@@ -82,6 +93,7 @@ class MainActivity : ComponentActivity() {
     layout.addView(loginButton)
     layout.addView(permissionsButton)
     layout.addView(previewButton)
+    layout.addView(otherPreviewButton)
     layout.addView(logoutButton)
     layout.addView(status)
     layout.addView(TextView(this).apply {
@@ -96,6 +108,7 @@ class MainActivity : ComponentActivity() {
       verified = false
       permissionsButton.isEnabled = false
       previewButton.isEnabled = false
+      otherPreviewButton.isEnabled = false
       loginButton.isEnabled = false
       status.text = "Checking your private WHOOP Lens access..."
       Thread {
@@ -153,11 +166,56 @@ class MainActivity : ComponentActivity() {
       }
     }
 
+    otherPreviewButton.setOnClickListener {
+      if (!verified || auth.currentToken() == null) {
+        status.text = "Sign in again before reading local health records."
+      } else {
+        otherPreviewButton.isEnabled = false
+        status.text = "Reading permitted Health Connect records locally..."
+        Thread {
+          val summary = try {
+            runBlocking {
+              val hc = HealthConnectClient.getOrCreate(this@MainActivity)
+              val granted = hc.permissionController.getGrantedPermissions()
+              val end = java.time.Instant.now()
+              val start = end.minusSeconds(24L * 3600L)
+              val range = TimeRangeFilter.between(start, end)
+              val rows = mutableListOf<String>()
+              if (granted.contains(HealthPermission.getReadPermission(SleepSessionRecord::class))) {
+                val count = hc.readRecords(ReadRecordsRequest(
+                  recordType = SleepSessionRecord::class, timeRangeFilter = range, pageSize = 50
+                )).records.size
+                rows.add("Sleep sessions (up to 50): " + count)
+              } else rows.add("Sleep: permission not granted")
+              if (granted.contains(HealthPermission.getReadPermission(HeartRateRecord::class))) {
+                val count = hc.readRecords(ReadRecordsRequest(
+                  recordType = HeartRateRecord::class, timeRangeFilter = range, pageSize = 50
+                )).records.size
+                rows.add("Heart rate records (up to 50): " + count)
+              } else rows.add("Heart rate: permission not granted")
+              if (granted.contains(HealthPermission.getReadPermission(ExerciseSessionRecord::class))) {
+                val count = hc.readRecords(ReadRecordsRequest(
+                  recordType = ExerciseSessionRecord::class, timeRangeFilter = range, pageSize = 50
+                )).records.size
+                rows.add("Exercise sessions (up to 50): " + count)
+              } else rows.add("Exercise: permission not granted")
+              rows.joinToString(". ")
+            }
+          } catch (_: Exception) { "Local preview unavailable; check Health Connect permissions." }
+          runOnUiThread {
+            otherPreviewButton.isEnabled = verified && auth.currentToken() != null
+            status.text = summary + " No data uploaded."
+          }
+        }.start()
+      }
+    }
+
     logoutButton.setOnClickListener {
       auth.signOut()
       verified = false
       permissionsButton.isEnabled = false
       previewButton.isEnabled = false
+      otherPreviewButton.isEnabled = false
       password.text.clear()
       status.text = "Signed out. No data was uploaded."
     }
