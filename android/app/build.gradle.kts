@@ -4,7 +4,7 @@ plugins {
 }
 android {
   namespace = "io.github.astrasler.whooplens"
-  compileSdk = 35
+  compileSdk = 36
   defaultConfig {
     applicationId = "io.github.astrasler.whooplens"
     minSdk = 34
