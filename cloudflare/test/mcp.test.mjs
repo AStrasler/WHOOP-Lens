@@ -58,7 +58,10 @@ test("MCP 2026 protocol discovers only six read-only WHOOP tools",async()=>{
   assert.ok(body.result.tools.every(t=>t.annotations.readOnlyHint===true&&t.annotations.destructiveHint===false));
   assert.doesNotMatch(JSON.stringify(body.result.tools),/delete_|write_|connect_whoop|admin_sql|samsung_health/);
   const discover=await route(req(payload("server/discover")),enabled(db()));
-  assert.equal((await discover.json()).result.serverInfo.name,"whoop-lens-cloudflare-staging");
+  const discovery=(await discover.json()).result;
+  assert.equal(discovery.serverInfo.name,"whoop-lens-cloudflare-staging");
+  assert.equal(discovery.cacheScope,"private");
+  assert.equal(discovery.ttlMs,0);
 });
 
 test("Modern MCP tools call accepts only known categories and uses verified identity",async()=>{
@@ -160,6 +163,22 @@ test("Origin, content type, headers, bearer identity and membership block access
   const disabled=await route(req(base),enabled(db({member:false})));
   assert.equal(disabled.status,403);
   assert.equal(called,0);
+});
+
+test("Malformed JSON-RPC bodies fail safely without accessing identity or D1",async()=>{
+  let auth=0;
+  const route=router({verifyIdentity:async()=>{auth++;return A;}});
+  for(const bad of ["null","[]","\"hello\""]){
+    const request=new Request("https://staging.invalid/mcp",{
+      method:"POST",
+      headers:{"accept":"application/json, text/event-stream",
+        "content-type":"application/json","mcp-protocol-version":modern},
+      body:bad
+    });
+    const response=await route(request,enabled(db()));
+    assert.equal(response.status,400);
+  }
+  assert.equal(auth,0);
 });
 
 test("Upstream failure never exposes tokens, SQL or internal errors in tool result",async()=>{
