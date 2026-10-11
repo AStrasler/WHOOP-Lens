@@ -1,22 +1,28 @@
-# WHOOP Lens companion (private preview build)
+# WHOOP Lens Android companion (invite-only, unreleased)
 
-The Android 14+ private companion uses stable Health Connect 1.1.0 with **compile SDK 36**. It has compiled successfully in GitHub Actions, but **it has not yet been tested on a real Android phone or approved for distribution**.
+**Status:** Debug APK compiled; not yet installed or tested on a phone. No production uploads, deletes, or migrations enabled.
 
-## What works in code
+## Implemented on the draft branch
 
-- Supabase email/password sign-in with a short-lived **in-memory only** access token; the WHOOP Lens status endpoint must confirm an existing connected user.
-- Sign-out clears the in-memory session.
-- Only a signed-in user may open the Health Connect permission chooser for steps, sleep, heart rate and exercise.
-- Manual on-device preview for **yesterday's aggregate steps** (avoids summing overlapping raw step sources).
-- Manual on-device preview of up to 50 sleep, heart-rate and exercise records per category from the last 24 hours, only for permissions currently granted.
-- **No automatic reads, no uploads, no background sync, no service-role secrets.** Preview counts do not imply records are absent when permissions are missing.
+- Android 14+ (minSdk 34, compileSdk 36) with Health Connect stable 1.1.0.
+- Account sign-in via Supabase with an **in-memory** token. WHOOP Lens status must confirm an existing connection. Sign-out invalidates stale sign-in and preview callbacks.
+- Explicit permission chooser. No background health reads.
+- Manual local previews: yesterday's **aggregate** steps, plus up to 50 sleep, heart-rate and exercise records each in the last 24 hours. Counts are capped, not guaranteed to represent full totals.
+- One-day aggregate steps prepared in a memory-only, five-minute-expiring snapshot. Separate Review control displays the date, count, mixed/unknown source origin, and destination. Actual Upload requires additional confirmation.
+- User-selected date and second confirmation for deleting a previously imported steps record. This does not delete anything on the phone.
 
-## Build
+## Release gate remains OFF
 
-JDK 17, Gradle 8.11.1, Android SDK 36, Android Gradle Plugin 8.9.2. GitHub Actions `.github/workflows/android-build.yml` runs `gradle -p android --no-daemon :app:assembleDebug` and confirms the debug APK exists. This is not a signed distribution build.
+ManualSync.ENABLE_UPLOADS is intentionally **false**. Both uploads and deletions remain disabled in the compiled APK until the production backend migration and private release are approved.
 
-## Still blocked for private beta
+Protocol v2 sends schema_version 2, source health_connect, metric steps_daily, record_key daily:YYYY-MM-DD:local and the aggregate value and dates. No user ID is trusted from the phone. Server derives ownership from Supabase Auth. Stable keys permit correction without duplicate rows.
 
-The Health Connect v2 backend and owner-only database schema are **drafts**, not deployed. Do not add a production upload button until those are staged, tested, reviewed and approved. Complete session-expiry/race handling, longer-range source-labeled previews, explicit upload review, retry and deletion controls, correct Health Connect permission revocation UI, signed private builds, real-device testing and invite-only access validation.
+## Build / validation
 
-**Keep the companion private.** Do not publish an APK, public account registration or automatic data sharing.
+JDK 17, Gradle 8.11.1, Android SDK 36, AGP 8.9.2. Private GitHub Actions compiles a debug APK and verifies the output. The PostgreSQL RLS test uses a disposable database, not production.
+
+## Still needed
+
+Real device installation and sign-in testing; verifying permission and revocation behavior; signed private package; approved backend deployment and end-to-end upload/deletion tests; token refresh and expiry recovery; complete paged non-step previews and source-attributed exports; rollout/rollback, quotas and privacy review.
+
+Keep registration and distribution strictly owner-controlled. No public APK, automatic synchronization, or public registration.
