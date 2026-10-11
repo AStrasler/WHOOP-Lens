@@ -54,16 +54,16 @@ internal object ManualSync {
   private const val publishable = "sb_publishable_iSQO1ZdTmCnRHC_YxKb30A_x7rVRYr_"
 
   /** A separate explicit confirmation is required by the calling UI. */
-  fun deleteApprovedSteps(draft: ReviewedSteps, token: String): Int {
+  fun deleteApprovedSteps(day: LocalDate, token: String): Int {
     check(ENABLE_UPLOADS) { "Private deletion is not released yet." }
-    check(draft.valid()) { "Preview expired. Review again." }
+    check(!day.isAfter(LocalDate.now())) { "Future dates are invalid." }
     check(token.isNotBlank()) { "Sign in again." }
     val body = JSONObject()
       .put("schema_version", 2)
       .put("source", "health_connect")
       .put("approved", true)
       .put("metric", "steps_daily")
-      .put("record_key", "daily:" + draft.day + ":local").toString()
+      .put("record_key", "daily:" + day + ":local").toString()
     val conn = URL(destination).openConnection() as HttpURLConnection
     try {
       conn.requestMethod = "DELETE"
