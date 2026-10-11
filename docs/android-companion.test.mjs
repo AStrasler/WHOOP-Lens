@@ -27,5 +27,22 @@ test("Android requires private login, consent and manual local-only steps aggreg
   assert.match(source,/getGrantedPermissions\(/);
   assert.match(source,/hc\.readRecords\(ReadRecordsRequest/);
   assert.doesNotMatch(source,/insertRecords\(/);
-  assert.match(source,/Nothing is uploaded/i);
+  assert.match(source,/Nothing has been sent/i);
+  assert.match(source,/reviewButton\.setOnClickListener/);
+  assert.match(source,/AlertDialog\.Builder\(this\)/);
+  assert.match(source,/snapshot === preparedSteps/);
+  assert.match(source,/ManualSync\.uploadApprovedSteps/);
+});
+
+test("Private upload export remains disabled pending approved migrations", () => {
+  const source=read("../android/app/src/main/java/io/github/astrasler/whooplens/ManualSync.kt");
+  assert.match(source,/const val ENABLE_UPLOADS = false/);
+  assert.match(source,/check\(ENABLE_UPLOADS\)/);
+  assert.match(source,/schema_version", 2/);
+  assert.match(source,/source", "health_connect"/);
+  assert.match(source,/metric", "steps_daily"/);
+  assert.match(source,/record_key", "daily:/);
+  assert.match(source,/functions\/v1\/samsung-health/);
+  assert.match(source,/preparedAtMs/);
+  assert.doesNotMatch(source,/SERVICE_ROLE_KEY|sb_secret_|supabase_service_role/);
 });
