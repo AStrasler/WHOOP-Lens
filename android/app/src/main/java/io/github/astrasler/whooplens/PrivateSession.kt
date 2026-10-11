@@ -18,13 +18,17 @@ internal class PrivateSession {
   private var token: String? = null
   private var expiresAtMs = 0L
 
-  fun signIn(email: String, password: String): Boolean {
-    val attempt = synchronized(lock) {
-      revision++
-      token = null
-      expiresAtMs = 0L
-      revision
-    }
+  // Call this on the sign-in button tap. A later Sign out invalidates
+  // the attempt even if its network thread has not started yet.
+  fun beginSignIn(): Long = synchronized(lock) {
+    revision++
+    token = null
+    expiresAtMs = 0L
+    revision
+  }
+
+  fun signIn(email: String, password: String, attempt: Long): Boolean {
+    if (synchronized(lock) { attempt != revision }) return false
     require(email.length in 3..254 && password.isNotEmpty())
     val login = request(
       "/auth/v1/token?grant_type=password", "POST",
