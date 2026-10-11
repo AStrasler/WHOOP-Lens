@@ -20,6 +20,7 @@ test("Android requires private login, consent and manual local-only steps aggreg
   assert.match(auth,/fun signOut/);
   assert.match(source,/hc\.aggregate\(AggregateRequest/);
   assert.match(source,/getGrantedPermissions\(/);
-  assert.doesNotMatch(source,/readRecords\(|insertRecords\(/);
+  assert.match(source,/hc\.readRecords\(ReadRecordsRequest/);
+  assert.doesNotMatch(source,/insertRecords\(/);
   assert.match(source,/Nothing is uploaded/i);
 });
