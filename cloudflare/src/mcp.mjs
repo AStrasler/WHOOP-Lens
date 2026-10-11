@@ -63,6 +63,7 @@ function checkArguments(name,args) {
   return {limit,next_token:args.next_token??null,auto_page:args.auto_page??false};
 }
 export function validateMcpTransport(request,message){
+  if(!isObject(message))return {status:400,error:"Invalid MCP request"};
   const version=request.headers.get("mcp-protocol-version");
   if(version!=null&&!protocolVersions.has(version))
     return {status:400,error:"Unsupported MCP protocol version"};
@@ -105,7 +106,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest},transpor
   }
   if(message.method==="server/discover"){
     if(!modern)return fail(-32601,"Method not found",id);
-    return ok(id,{resultType:"complete",capabilities:{tools:{}},
+    return ok(id,{resultType:"complete",capabilities:{tools:{}},ttlMs:0,cacheScope:"private",
       serverInfo:{name:"whoop-lens-cloudflare-staging",version:"0.1.0"}});
   }
   if(message.method==="ping")return ok(id,{});
