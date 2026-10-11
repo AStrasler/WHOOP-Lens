@@ -13,7 +13,7 @@ export class AccessDenied extends Error {
 
 export async function verifySupabaseSession(request, env, fetcher = fetch) {
   const auth = request.headers.get("authorization") || "";
-  const match = /^Bearer ([A-Za-z0-9._~+/=-]{16,8192})$/i.exec(auth);
+  const match = /^Bearer ([A-Za-z0-9._~-]{16,8192})$/i.exec(auth);
   if (!match) throw new AccessDenied(401);
   if (!env?.SUPABASE_PUBLIC_KEY || typeof env.SUPABASE_PUBLIC_KEY !== "string")
     throw new Error("Staging identity provider not configured");
