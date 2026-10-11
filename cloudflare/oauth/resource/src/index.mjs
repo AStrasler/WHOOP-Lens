@@ -36,6 +36,10 @@ export default {
       return Response.json({error:"WHOOP Lens resource server not activated"},{
         status:503,headers:{"cache-control":"no-store"}
       });
+    // The WHOOP callback is authenticated by its expiring, atomically consumed
+    // state, not an MCP bearer. All other paths retain OAuth protection.
+    if(new URL(request.url).pathname==='/api/whoop/callback')
+      return createStagingRouter()(request,env);
     return mcpResource.fetch(request,env,ctx);
   }
 };

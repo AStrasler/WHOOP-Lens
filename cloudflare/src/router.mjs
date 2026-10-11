@@ -56,7 +56,7 @@ export function createStagingRouter({ verifyIdentity = verifySupabaseSession, wh
         if(!await activeMembership(env.DB,userId))
           return json({error:"Not authorized for WHOOP Lens"},403);
         const result=await handleMcpRpc(message,{
-          db:env.DB,userId,env,whoopRequest
+          db:env.DB,userId,env,whoopRequest,whoopAuthorize
         },transport);
         if(result===null)return new Response(null,{status:202,headers:{"cache-control":"no-store"}});
         return json(result);

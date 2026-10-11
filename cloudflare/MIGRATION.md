@@ -266,3 +266,34 @@ unverified for this future client. See \`cloudflare/oauth/ARCHITECTURE.md\`.
   isolation workflow. All real account and health data remain in Supabase.
   No credentials, identity rows, recovery/sleep records or OAuth grants were
   copied to D1 by this preflight work.
+
+
+## 2026-10-11 domain and MCP checkpoint
+
+This checkpoint supersedes historical undeployed/domain-free statements above.
+The owner authorized Cloudflare deployment and domain wiring while preserving
+Supabase. The free Cloudflare zone is active and custom domains map
+`whooplens.tech` to the resource Worker and `auth.whooplens.tech` to the issuer.
+Both Workers are deployed with activation gates false, workers.dev/preview
+URLs disabled and request observability disabled. Supabase remains live; no
+production identity, health record, OAuth grant or credential was copied.
+
+The next batch adds Samsung Health, Health Connect, reviewed medical context,
+capability discovery and WHOOP connection to the six WHOOP read tools (11
+total). Reads bind the verified owner, require active membership, validate
+arguments and paginate deterministically. Migration 0004 requires an explicit
+review timestamp before medical context can be returned. `connect_whoop` is
+correctly annotated as a state-writing operation. The WHOOP callback uses its
+own consumed OAuth state; MCP bearer validation still protects other paths.
+
+128 local tests pass, including real-provider OAuth tests with synthetic
+identities and SQLite tenant-isolation tests. Both Worker dry-run builds pass.
+A live browser check encountered `ERR_BLOCKED_BY_CLIENT`; browser sign-in is
+not yet verified.
+
+Activation still needs a dedicated upstream Supabase OAuth client with the
+exact Cloudflare callback, the source-prepared login UI callback allowlist
+change, and WHOOP application credentials/callback registration. These are
+not configured in production. Source membership reconciliation is also
+required before transferring real records; missing memberships are not
+automatically granted. Keep Supabase live until the owner verifies Cloudflare.

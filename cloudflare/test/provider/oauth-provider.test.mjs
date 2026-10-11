@@ -187,3 +187,23 @@ test('offline consent permits refresh, narrowed scopes cannot be expanded and re
     await Promise.all(pending);
   }finally{f.db.close();}
 });
+test('resource routes only the WHOOP callback outside MCP bearer validation',async()=>{
+  const {default:resource}=await import('../../oauth/resource/src/index.mjs');
+  let consumed=0,validated=0;
+  const env={OAUTH_RESOURCE_ENABLED:'true',MIGRATION_API_ENABLED:'true',WHOOP_OAUTH_ENABLED:'true',
+    WHOOP_CLIENT_ID:'synthetic',WHOOP_CLIENT_SECRET:'synthetic',WHOOP_TOKEN_AES256_KEY:'synthetic',
+    WHOOP_REDIRECT_URI:'https://whooplens.tech/api/whoop/callback',
+    AUTH_SERVER:{async validateToken(){validated++;return null;}},
+    DB:{prepare(sql){assert.match(sql,/DELETE FROM whoop_oauth_states/);return {
+      bind(){return this;},async first(){consumed++;return null;}
+    };}}};
+  const callback=new Request('https://whooplens.tech/api/whoop/callback?code=synthetic&state='+'S'.repeat(43));
+  const result=await resource.fetch(callback,env,{});
+  assert.equal(result.status,400);assert.equal(consumed,1);assert.equal(validated,0);
+  const gated=await resource.fetch(callback,{...env,WHOOP_OAUTH_ENABLED:'false'},{});
+  assert.equal(gated.status,503);assert.equal(consumed,1);
+  const unauthenticated=await resource.fetch(new Request('https://whooplens.tech/mcp',{
+    method:'POST',headers:{'content-type':'application/json'},body:'{}'}),env,{});
+  assert.equal(unauthenticated.status,401);
+  assert.equal(consumed,1);
+});

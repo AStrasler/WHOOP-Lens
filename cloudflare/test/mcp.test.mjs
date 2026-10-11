@@ -46,17 +46,17 @@ test("MCP is entirely inert until its third switch is enabled",async()=>{
   assert.match(cfg,/"preview_urls"\s*:\s*false/);
 });
 
-test("MCP 2026 protocol discovers only six read-only WHOOP tools",async()=>{
+test("MCP 2026 protocol discovers eleven bounded account tools",async()=>{
   const route=router();
   const result=await route(req(payload("tools/list")),enabled(db()));
   assert.equal(result.status,200);
   const body=await result.json();
   assert.equal(body.result.resultType,"complete");
   assert.equal(body.result.cacheScope,"private");
-  assert.equal(body.result.tools.length,6);
+  assert.equal(body.result.tools.length,11);
   assert.deepEqual(body.result.tools.map(x=>x.name),mcpTools.map(x=>x.name));
-  assert.ok(body.result.tools.every(t=>t.annotations.readOnlyHint===true&&t.annotations.destructiveHint===false));
-  assert.doesNotMatch(JSON.stringify(body.result.tools),/delete_|write_|connect_whoop|admin_sql|samsung_health/);
+  assert.ok(body.result.tools.every(t=>t.annotations.readOnlyHint===(t.name!=='connect_whoop')&&t.annotations.destructiveHint===false));
+  assert.doesNotMatch(JSON.stringify(body.result.tools),/delete_|write_|admin_sql/);
   const discover=await route(req(payload("server/discover")),enabled(db()));
   const discovery=(await discover.json()).result;
   assert.equal(discovery.serverInfo.name,"whoop-lens-cloudflare-staging");
@@ -99,7 +99,7 @@ test("Legacy initialization and tools/list continue without exposing arbitrary m
   assert.equal((await init.json()).result.protocolVersion,legacy);
   const result=await route(req(payload("tools/list"),{version:legacy}),enabled(db()));
   const list=(await result.json()).result;
-  assert.equal(list.tools.length,6);assert.equal(Object.hasOwn(list,"resultType"),false);
+  assert.equal(list.tools.length,11);assert.equal(Object.hasOwn(list,"resultType"),false);
   const forbidden=await route(req(payload("resources/read"),{version:legacy}),enabled(db()));
   assert.equal((await forbidden.json()).error.code,-32601);
   const notification={jsonrpc:"2.0",method:"notifications/initialized",params:{}};

@@ -86,3 +86,13 @@ test("seat responses stay fixed strings and do not surface upstream bodies", asy
   assert.equal(developerDenied.message.includes("Bearer leaked"), false);
 });
 
+
+test('Cloudflare upstream callback is an exact redirect allowlist entry',()=>{
+  const url='https://auth.whooplens.tech/oauth/upstream/callback?code=synthetic&state=synthetic';
+  assert.equal(safeRedirect(url),url);
+  for(const bad of ['https://auth.whooplens.tech/other',
+    'https://auth.whooplens.tech/oauth/upstream/callback/extra',
+    'https://auth.whooplens.tech.evil.invalid/oauth/upstream/callback',
+    'http://auth.whooplens.tech/oauth/upstream/callback',
+    'https://auth.whooplens.tech/oauth/upstream/callback#token'])assert.throws(()=>safeRedirect(bad));
+});

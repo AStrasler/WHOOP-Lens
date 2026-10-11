@@ -10,7 +10,8 @@
     "MIGRATION_API_ENABLED": "false",
     "WHOOP_READS_ENABLED": "false",
     "WHOOP_OAUTH_ENABLED": "false",
-    "MCP_ENABLED": "false"
+    "MCP_ENABLED": "false",
+    "WHOOP_REDIRECT_URI": "https://whooplens.tech/api/whoop/callback"
   },
   "services": [{"binding":"AUTH_SERVER","service":"whoop-lens-auth"}],
   "d1_databases": [{

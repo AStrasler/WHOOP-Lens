@@ -1,4 +1,5 @@
-// Stateless read-only WHOOP Lens MCP adapter for Cloudflare.
+import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
+// Stateless WHOOP Lens MCP adapter for Cloudflare.
 // Staging only. The HTTP router MUST validate the bearer and ACTIVE membership
 // before calling this module. Do not publish until OAuth 2.1 resource protection,
 // host-protocol conformance, and cross-tenant tests have passed.
@@ -32,11 +33,11 @@ const toolLabels=Object.freeze({
   get_workouts:"Read the authenticated member's WHOOP workout data.",
   get_cycles:"Read the authenticated member's WHOOP daily cycles."
 });
-export const mcpTools=Object.freeze(Object.keys(toolToResource).map(name=>({
+export const mcpTools=Object.freeze([...Object.keys(toolToResource).map(name=>({
   name,description:toolLabels[name],
   inputSchema:historyTools.has(name)?schemaHistory:schemaNoArgs,
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
-})));
+})),...extraTools]);
 const toolsByName=new Map(mcpTools.map(x=>[x.name,x]));
 const own=(x,p)=>Object.prototype.hasOwnProperty.call(x,p);
 function isObject(x){return x!==null&&typeof x==="object"&&!Array.isArray(x);}
@@ -49,6 +50,7 @@ function toolError(id,message,modern) {
 }
 function checkArguments(name,args) {
   if(!isObject(args))return null;
+  if(extraTools.some(t=>t.name===name))return extraArguments(name,args);
   const history=historyTools.has(name);
   if(Object.keys(args).some(k=>!(history&&["limit","next_token","auto_page"].includes(k))))return null;
   if(!history)return Object.keys(args).length===0?{}:null;
@@ -79,7 +81,7 @@ export function validateMcpTransport(request,message){
   }
   return {version:version||PROTOCOL_LEGACY,modern};
 }
-export async function handleMcpRpc(message,{db,userId,env,whoopRequest},transport){
+export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuthorize},transport){
   const modern=transport.modern;
   if(!isObject(message)||message.jsonrpc!=="2.0")
     return fail(-32600,"Invalid JSON-RPC request",null);
@@ -124,7 +126,15 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest},transpor
   try {
     const resource=toolToResource[name];
     let data;
-    if(!historyTools.has(name)||!args.auto_page){
+    if(name==='connect_whoop'){
+      if(env.WHOOP_OAUTH_ENABLED!=='true'||typeof whoopAuthorize!=='function')throw Error('Connection disabled');
+      const result=await whoopAuthorize(db,userId,env);
+      const content={content:[{type:'text',text:result.authorization_url}]};
+      if(modern){content.resultType='complete';content.structuredContent=result;}
+      return ok(id,content);
+    }else if(extraTools.some(t=>t.name===name)){
+      data=await readExtraTool(db,userId,name,args);
+    }else if(!historyTools.has(name)||!args.auto_page){
       data=await whoopRequest(db,userId,resource,env,args);
     }else{
       const records=[];
