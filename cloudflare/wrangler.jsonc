@@ -1,6 +1,8 @@
 {
   // Staged migration only. No Worker deploy until auth and full integration pass.
-  "name": "whoop-lens-migration",
+  // Future custom domain: whooplens.tech (NOT attached: no routes or custom_domains).
+  // Do not enable custom routing until the owner approves launch.
+  "name": "whoop-lens",
   "main": "src/index.js",
   "compatibility_date": "2026-10-11",
   "workers_dev": false,
