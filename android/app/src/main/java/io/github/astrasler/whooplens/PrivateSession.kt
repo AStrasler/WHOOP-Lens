@@ -6,43 +6,59 @@ import java.net.URL
 import java.nio.charset.StandardCharsets
 
 /**
- * A private, in-memory Supabase session. This class must be called off the UI thread.
- * The publishable key is public; service-role keys must NEVER enter the Android app.
+ * A private, in-memory Supabase session. Network calls must run off the UI thread.
+ * Session revisions prevent a delayed sign-in from undoing Sign out.
+ * The publishable project key is public; service-role keys must never enter this app.
  */
 internal class PrivateSession {
   private val project = "https://evoiwauqplbcecumiwqn.supabase.co"
   private val publishable = "sb_publishable_iSQO1ZdTmCnRHC_YxKb30A_x7rVRYr_"
-  @Volatile private var token: String? = null
-  @Volatile private var expiresAtMs = 0L
+  private val lock = Any()
+  private var revision = 0L
+  private var token: String? = null
+  private var expiresAtMs = 0L
 
   fun signIn(email: String, password: String): Boolean {
-    signOut()
+    val attempt = synchronized(lock) {
+      revision++
+      token = null
+      expiresAtMs = 0L
+      revision
+    }
     require(email.length in 3..254 && password.isNotEmpty())
-    val body = JSONObject().put("email", email).put("password", password)
-    val login = request("/auth/v1/token?grant_type=password", "POST", body.toString(), null)
+    val login = request(
+      "/auth/v1/token?grant_type=password", "POST",
+      JSONObject().put("email", email).put("password", password).toString(), null
+    )
     val newToken = login.optString("access_token").takeIf { it.isNotBlank() }
       ?: throw IllegalStateException("Sign-in failed")
-    val expiry = login.optLong("expires_in", 0L)
-    if (expiry < 60L) throw IllegalStateException("Sign-in expired")
-    token = newToken
-    expiresAtMs = System.currentTimeMillis() + expiry * 1000L
-    try {
-      val status = request("/functions/v1/whoop-mcp/status", "GET", null, newToken)
-      if (!status.optBoolean("connected", false)) {
-        signOut()
-        return false
+    val expirySeconds = login.optLong("expires_in", 0L)
+    if (expirySeconds < 60L || expirySeconds > 86400L)
+      throw IllegalStateException("Unexpected session expiry")
+
+    // WHOOP Lens's deployed status route enforces the account-active gate.
+    // Do not publish a token until the WHOOP connection is confirmed.
+    val status = request("/functions/v1/whoop-mcp/status", "GET", null, newToken)
+    if (!status.optBoolean("connected", false)) return false
+
+    return synchronized(lock) {
+      if (attempt != revision) {
+        false
+      } else {
+        token = newToken
+        expiresAtMs = System.currentTimeMillis() + expirySeconds * 1000L
+        true
       }
-      return true
-    } catch (error: Exception) {
-      signOut()
-      throw error
     }
   }
 
-  fun currentToken(): String? =
-    token?.takeIf { System.currentTimeMillis() < expiresAtMs - 30_000L }
+  fun currentToken(): String? = synchronized(lock) {
+    val active = token
+    if (active == null || System.currentTimeMillis() >= expiresAtMs - 30_000L) null else active
+  }
 
-  fun signOut() {
+  fun signOut() = synchronized(lock) {
+    revision++
     token = null
     expiresAtMs = 0L
   }
