@@ -74,6 +74,10 @@ test("Worker explicitly disabled; no identity or DB work can occur",async()=>{
     const r=await route(request("/v1/recovery"),{DB:d,MIGRATION_API_ENABLED:"false"});
     assert.equal(r.status,503);
     assert.equal(invocations,0);
+    assert.match(cfg,/"name"\s*:\s*"whoop-lens"/);
+    assert.match(cfg,/Future custom domain: whooplens\.tech/);
+    assert.doesNotMatch(cfg,/"routes?"\s*:/);
+    assert.doesNotMatch(cfg,/"custom_domains"\s*:/);
     assert.match(cfg,/"workers_dev"\s*:\s*false/);
     assert.match(cfg,/"preview_urls"\s*:\s*false/);
     assert.match(cfg,/"MIGRATION_API_ENABLED"\s*:\s*"false"/);
