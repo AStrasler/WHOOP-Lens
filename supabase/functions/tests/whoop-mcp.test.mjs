@@ -39,6 +39,7 @@ function createMemoryDb(initial = {}) {
     whoop_members: clone(initial.whoop_members ?? []),
     whoop_waitlist: clone(initial.whoop_waitlist ?? []),
     samsung_health_records: clone(initial.samsung_health_records ?? []),
+    health_connect_records: clone(initial.health_connect_records ?? []),
   };
   let upsertError = null;
   function from(name) {
@@ -474,7 +475,7 @@ test("pagination stays on the caller token and stops on a repeated cursor", asyn
     body: { jsonrpc: "2.0", id: 1, method: "tools/list" },
   }));
   const tools = (await listed.json()).result.tools.map((tool) => tool.name);
-  assert.deepEqual(tools, ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_capabilities", "get_samsung_health", "connect_whoop"]);
+  assert.deepEqual(tools, ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_capabilities", "get_health_connect", "get_samsung_health", "connect_whoop"]);
   const paged = await harness.handle(request("/mcp", {
     method: "POST",
     token: "session-do-not-log-b",
@@ -852,4 +853,24 @@ test("catalog respects authentication and member disable gate", async () => {
   h.memory.tables.whoop_members.push({ user_id: userA, active: false });
   const disabled = await catalogCall(h, "session-do-not-log-a");
   assert.equal(disabled.response.status, 403);
+});
+
+test("Health Connect MCP reads only current user's imported rows and labels the source", async () => {
+  const row = {user_id:userA, metric:"steps_daily", record_key:"daily:2026-10-10:UTC", origin_package:null,
+    observed_at:"2026-10-10T12:00:00Z", local_date:"2026-10-10", unit:"steps", payload:{count:5000}};
+  const h=createHarness({rows:{health_connect_records:[row]},fetch:async()=>jsonResponse({})});
+  const reqFor=(token,args)=>request("/mcp",{method:"POST",token,
+    body:{jsonrpc:"2.0",id:900,method:"tools/call",params:{name:"get_health_connect",arguments:args}}});
+  const mine=await (await h.handle(reqFor("session-do-not-log-a",{limit:10}))).json();
+  const result=JSON.parse(mine.result.content[0].text);
+  assert.equal(result.records.length,1);
+  assert.equal(result.records[0].payload.count,5000);
+  assert.equal(result.source,"health_connect");
+  assert.equal(result.transport,"health_connect_companion");
+  assert.equal(JSON.stringify(result).includes(userA),false);
+  const other=await (await h.handle(reqFor("session-do-not-log-b",{}))).json();
+  assert.equal(JSON.parse(other.result.content[0].text).records.length,0);
+  const bad=await (await h.handle(reqFor("session-do-not-log-a",{limit:1000}))).json();
+  assert.equal(bad.error.code,-32603);
+  assertSafe(h.logs);
 });

@@ -49,6 +49,7 @@ const capabilitySchema = {
   additionalProperties: false,
 };
 const toolDescriptions = {
+  get_health_connect: "Read the signed-in account’s uploaded Android Health Connect records, separately attributed from WHOOP and Samsung records.",
   get_capabilities: "Discover all WHOOP Lens features and limitations from the deployed version-matched catalog. Return current account availability, sample questions, and what the MCP cannot do. Consult this first when someone asks what they can learn or explore; host visuals and research may differ.",
 
   get_profile: "Read the signed-in user's WHOOP profile.",
@@ -74,7 +75,7 @@ const metricOutcomes = new Set([
 ]);
 const toolNames = new Set([
   "get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles",
-  "get_samsung_health", "connect_whoop", "get_capabilities",
+  "get_samsung_health", "get_health_connect", "connect_whoop", "get_capabilities",
 ]);
 
 export function linkedEmail(value) {
@@ -369,6 +370,29 @@ export function createWhoopMcp({
   }
 
   async function callTool(uid, name, args) {
+    if (name === "get_health_connect") {
+      const allowed = ["steps_daily", "sleep_session", "heart_rate", "exercise_session"];
+      if (args?.metric !== undefined && !allowed.includes(args.metric)) throw new Error("Invalid Health Connect metric");
+      const limit = args?.limit ?? 25, offset = args?.offset ?? 0;
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+          !Number.isSafeInteger(offset) || offset < 0 || offset > 100000) throw new Error("Invalid pagination");
+      let query = db.from("health_connect_records")
+        .select("metric,record_key,origin_package,observed_at,ended_at,local_date,unit,payload,created_at,updated_at")
+        .eq("user_id", uid).order("observed_at", { ascending: false }).order("record_key", { ascending: false })
+        .range(offset, offset + limit);
+      if (args?.metric) query = query.eq("metric", args.metric);
+      const { data, error } = await query;
+      if (error) throw new Error("Health Connect read failed");
+      return {
+        records: (data ?? []).slice(0, limit).map((row) => ({
+          metric: row.metric, record_key: row.record_key, origin_package: row.origin_package,
+          observed_at: row.observed_at, ended_at: row.ended_at, local_date: row.local_date,
+          unit: row.unit, payload: row.payload, created_at: row.created_at, updated_at: row.updated_at,
+        })),
+        next_offset: (data?.length ?? 0) > limit ? offset + limit : null,
+        source: "health_connect", transport: "health_connect_companion",
+      };
+    }
     if (name === "get_capabilities") {
       const category = args?.category;
       if (category !== undefined && !["whoop", "optional", "explore", "advocacy", "planned", "unsupported"].includes(category)) {
@@ -717,6 +741,20 @@ export function createWhoopMcp({
                   name: "get_capabilities",
                   description: toolDescriptions.get_capabilities,
                   inputSchema: capabilitySchema,
+                  annotations: closed,
+                },
+                {
+                  name: "get_health_connect",
+                  description: toolDescriptions.get_health_connect,
+                  inputSchema: {
+                    type: "object",
+                    properties: {
+                      metric: { type: "string", enum: ["steps_daily", "sleep_session", "heart_rate", "exercise_session"] },
+                      limit: { type: "integer", minimum: 1, maximum: 100 },
+                      offset: { type: "integer", minimum: 0 },
+                    },
+                    additionalProperties: false,
+                  },
                   annotations: closed,
                 },
                 {
