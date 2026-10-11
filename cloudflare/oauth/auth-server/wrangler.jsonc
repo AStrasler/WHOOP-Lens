@@ -1,0 +1,13 @@
+{
+  // OAuth authorization staging only: not deployed, no routing, no login/consent.
+  "name": "whoop-lens-auth",
+  "main": "src/index.mjs",
+  "compatibility_date": "2026-10-11",
+  "compatibility_flags": ["global_fetch_strictly_public"],
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {"OAUTH_SERVER_ENABLED": "false", "OAUTH_CONSENT_ENABLED": "false"},
+  "kv_namespaces": [{"binding": "OAUTH_KV", "id": "a21d9ddb65c34aa89f65194670e9e56e"}],
+  "d1_databases": [{"binding":"DB","database_name":"whoop-lens-migration",
+    "database_id":"58250de2-cad7-4a8a-a061-d9b41c7b24d2"}]
+}
