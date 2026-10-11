@@ -114,6 +114,26 @@ at the Cloudflare API. DNS and WHOOP OAuth registrations remain unchanged.
   WHOOP re-authorization, actual account data transfer, or Supabase changes
   occurred as part of the MCP source work.
 
+## Official Cloudflare OAuth 2.1 architecture (2026-10-11)
+
+- Added split-role Cloudflare OAuth server and MCP resource-server source under
+  `cloudflare/oauth/`, with `@cloudflare/workers-oauth-provider@1.2.3` pinned.
+- Created empty Cloudflare KV namespace `whoop-lens-oauth-staging` and provisioned
+  empty `whoop-lens-auth` Worker. Cloudflare API verified **deployed_on=null**,
+  public workers.dev and preview URLs disabled, and no custom domain attached.
+- Planned issuer `https://auth.whooplens.tech` and resource
+  `https://whooplens.tech/mcp`; neither URL has DNS/routing configured.
+- Both split Worker source entries **passed Wrangler dry-run builds**; consent
+  and identity are intentionally unimplemented. OAuth issuance and private
+  resource entry points return 503 while all feature flags remain false.
+- Official SDK handles OAuth metadata, S256 PKCE, CIMD/DCR, token audiences,
+  refresh/revocation once enabled; application-owned identity verification and
+  explicit user consent are NOT DONE. No OAuth clients or users migrated.
+- See `cloudflare/oauth/ARCHITECTURE.md` for the verified security boundary,
+  testing and the remaining cutover gates.
+- No Cloudflare Worker deployment, Supabase production change, DNS activation,
+  WHOOP OAuth redirect update, data copy or public URL activation was performed.
+
 ## Cutover roadmap
 
 **Next:** test the interim bridge in a separately secured environment with
