@@ -81,7 +81,7 @@ export async function callWhoop(db,userId,resource,env,opts={},deps={}){
   if(!Number.isSafeInteger(limit)||limit<1||limit>25)throw Error("Invalid limit");
   const nextToken=opts.next_token;
   if(nextToken!=null&&(!spec.history||typeof nextToken!=="string"||
-                        !/^[A-Za-z0-9._~+/-]{1,512}$/.test(nextToken)))
+                        (!/^[A-Za-z0-9._~+/-]{1,512}$/.test(nextToken)||nextToken.includes(".."))))
     throw Error("Invalid WHOOP cursor");
   const token=await whoopAccessToken(db,userId,env,deps);
   const search=new URLSearchParams();
