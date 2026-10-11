@@ -1,6 +1,6 @@
 const headers = {
   "content-type": "application/json", "cache-control": "no-store",
-  "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,OPTIONS",
+  "access-control-allow-origin": "*", "access-control-allow-methods": "GET,POST,DELETE,OPTIONS",
   "access-control-allow-headers": "authorization,content-type,apikey,x-client-info",
 };
 const legacyMetrics = new Set(["sleep","heart_rate","spo2","steps","activity","exercise","body_composition","skin_temperature","energy_score","blood_pressure","profile"]);
@@ -83,12 +83,24 @@ export function createSamsungHealthHandler({db,now=()=>Date.now()}) {
         if(error)return respond({error:"Read failed"},500);
         return respond({records:data,limit});
       }
-      if(req.method!=="POST") return respond({error:"Method not allowed"},405);
+      if(req.method!=="POST"&&req.method!=="DELETE") return respond({error:"Method not allowed"},405);
       if(Number(req.headers.get("content-length")??0)>512000) return respond({error:"Batch too large"},413);
       const raw=await req.text();
       if(raw.length>512000)return respond({error:"Batch too large"},413);
       let payload;
       try{payload=JSON.parse(raw)}catch{return respond({error:"Invalid JSON"},400)}
+      if(req.method==="DELETE") {
+        if(!isObject(payload)||payload.schema_version!==2||payload.source!=="health_connect"||
+          payload.approved!==true||!metrics.has(payload.metric)||
+          typeof payload.record_key!=="string"||
+          !/^[-\\w:.+]{1,128}$/.test(payload.record_key))
+          return respond({error:"Invalid approved Health Connect deletion"},400);
+        const {data,error}=await db.from("health_connect_records").delete()
+          .eq("user_id",user.id).eq("metric",payload.metric)
+          .eq("record_key",payload.record_key).select("id");
+        if(error)return respond({error:"Delete failed"},500);
+        return respond({deleted:(data??[]).length,schema_version:2});
+      }
       if(payload?.schema_version===2) {
         const validated=validateHealthConnect(payload,now());
         if(validated.error)return respond({error:validated.error},400);
