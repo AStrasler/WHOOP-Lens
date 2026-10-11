@@ -9,6 +9,12 @@
 
 The dashboard URL is **proposed** while this PR is in draft. It will not necessarily be accessible on the live GitHub Pages website until the branch is merged and the Pages site updates. A GitHub Pages HTML file is publicly fetchable; security comes from the **invite-only Supabase Auth gate and enforced per-user API authorization**, not a secret URL. Do not put tokens or health records into the public repository.
 
+## Mandatory invite-only access preflight
+
+The draft web workspace requires Supabase authentication and an existing WHOOP connection, **but the existing backend is not yet a strict owner-approved allowlist**: accounts without a whoop_members row currently default to active, and a legacy public-seat connection flow exists. Read-only audit on October 11 showed **2 connected accounts, only 1 explicitly active membership row, and 1 connected account without a membership row**. The designated developer-seat user has an explicitly active membership.
+
+Before publishing this dashboard as an invite-only beta, the owner must approve which existing users remain authorized, register their memberships without disclosing personal data in git, and separately review/deploy a server-side membership-required gate for WHOOP connection and health-record access. Do not simply change missing memberships to denied in production without resolving the existing connected account. A frontend-only gate is not an authorization boundary. No membership or authentication changes were made during this pivot.
+
 ## What the web workspace can do
 
 1. Verify an existing WHOOP Lens Supabase user and a connected WHOOP account. No registration or invitations are issued from the website.
