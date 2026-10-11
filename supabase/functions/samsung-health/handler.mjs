@@ -93,7 +93,7 @@ export function createSamsungHealthHandler({db,now=()=>Date.now()}) {
         if(!isObject(payload)||payload.schema_version!==2||payload.source!=="health_connect"||
           payload.approved!==true||!metrics.has(payload.metric)||
           typeof payload.record_key!=="string"||
-          !/^[-\\w:.+]{1,128}$/.test(payload.record_key))
+          !/^[-\w:.+]{1,128}$/.test(payload.record_key))
           return respond({error:"Invalid approved Health Connect deletion"},400);
         const {data,error}=await db.from("health_connect_records").delete()
           .eq("user_id",user.id).eq("metric",payload.metric)
