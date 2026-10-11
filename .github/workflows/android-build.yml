@@ -1,6 +1,14 @@
 name: Android companion compile
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-build.yml'
+  pull_request:
+    paths:
+      - 'android/**'
+      - '.github/workflows/android-build.yml'
 
 permissions:
   contents: read
