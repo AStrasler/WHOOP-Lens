@@ -1,6 +1,7 @@
 package io.github.astrasler.whooplens
 
 import android.os.Bundle
+import android.app.AlertDialog
 import android.text.InputType
 import android.widget.Button
 import android.widget.EditText
@@ -27,6 +28,7 @@ class MainActivity : ComponentActivity() {
   private val auth = PrivateSession()
   private var verified = false
   private var uiGeneration = 0L
+  private var preparedSteps: ReviewedSteps? = null
   private val permissions = setOf(
     HealthPermission.getReadPermission(StepsRecord::class),
     HealthPermission.getReadPermission(SleepSessionRecord::class),
@@ -39,6 +41,8 @@ class MainActivity : ComponentActivity() {
     if (!verified || auth.currentToken() == null) return@registerForActivityResult
     findViewById<TextView>(4001)?.text =
       "Health Connect: " + granted.size + " of " + permissions.size + " permissions granted. No data uploaded."
+    preparedSteps = null
+    findViewById<Button>(4004)?.isEnabled = false
     findViewById<Button>(4002)?.isEnabled = verified &&
       granted.contains(HealthPermission.getReadPermission(StepsRecord::class))
     findViewById<Button>(4003)?.isEnabled = verified && granted.any {
@@ -82,6 +86,11 @@ class MainActivity : ComponentActivity() {
       text = "Preview last 24h sleep, HR and exercise counts"
       isEnabled = false
     }
+    val reviewButton = Button(this).apply {
+      id = 4004
+      text = "Review one-day steps sync"
+      isEnabled = false
+    }
     val logoutButton = Button(this).apply { text = "Sign out" }
     val hcStatus = when (HealthConnectClient.getSdkStatus(this)) {
       HealthConnectClient.SDK_AVAILABLE -> "Health Connect is available."
@@ -96,10 +105,11 @@ class MainActivity : ComponentActivity() {
     layout.addView(permissionsButton)
     layout.addView(previewButton)
     layout.addView(otherPreviewButton)
+    layout.addView(reviewButton)
     layout.addView(logoutButton)
     layout.addView(status)
     layout.addView(TextView(this).apply {
-      text = "Steps are read only when you tap Preview. Nothing is uploaded; sign-in is kept only in memory."
+      text = "Steps are read on Preview, then reviewed separately. Upload remains disabled until the private backend is approved. No automatic synchronization."
     })
     setContentView(ScrollView(this).apply { addView(layout) })
 
@@ -113,6 +123,8 @@ class MainActivity : ComponentActivity() {
       permissionsButton.isEnabled = false
       previewButton.isEnabled = false
       otherPreviewButton.isEnabled = false
+      reviewButton.isEnabled = false
+      preparedSteps = null
       loginButton.isEnabled = false
       status.text = "Checking your private WHOOP Lens access..."
       Thread {
@@ -146,7 +158,7 @@ class MainActivity : ComponentActivity() {
         previewButton.isEnabled = false
         status.text = "Reading yesterday's steps locally..."
         Thread {
-          val total = try {
+          val draft = try {
             runBlocking {
               val hc = HealthConnectClient.getOrCreate(this@MainActivity)
               val granted = hc.permissionController.getGrantedPermissions()
@@ -156,19 +168,22 @@ class MainActivity : ComponentActivity() {
               val today = LocalDate.now(zone)
               val start = today.minusDays(1).atStartOfDay(zone).toInstant()
               val end = today.atStartOfDay(zone).toInstant()
-              hc.aggregate(AggregateRequest(
+              val steps = hc.aggregate(AggregateRequest(
                 metrics = setOf(StepsRecord.COUNT_TOTAL),
                 timeRangeFilter = TimeRangeFilter.between(start, end)
               ))[StepsRecord.COUNT_TOTAL]
+              if (steps == null) null else ReviewedSteps(today.minusDays(1), start, end, steps)
             }
           } catch (_: Exception) { null }
           runOnUiThread {
             if (attempt != uiGeneration || isDestroyed || isFinishing ||
               !verified || auth.currentToken() == null) return@runOnUiThread
             previewButton.isEnabled = true
-            status.text = if (total == null)
+            preparedSteps = draft?.takeIf { it.valid() }
+            reviewButton.isEnabled = preparedSteps != null
+            status.text = if (preparedSteps == null)
               "Yesterday's steps unavailable or permission revoked. No data uploaded."
-            else "Yesterday: " + total + " steps (Health Connect aggregate). Local preview only; nothing uploaded."
+            else preparedSteps!!.describe() + " Tap Review to inspect the proposed upload. Nothing has been sent."
           }
         }.start()
       }
@@ -221,6 +236,48 @@ class MainActivity : ComponentActivity() {
       }
     }
 
+    reviewButton.setOnClickListener {
+      val snapshot = preparedSteps
+      if (!verified || auth.currentToken() == null || snapshot == null || !snapshot.valid()) {
+        preparedSteps = null
+        reviewButton.isEnabled = false
+        status.text = "The reviewed preview expired or your session ended. Preview again."
+      } else {
+        val enabled = ManualSync.ENABLE_UPLOADS
+        AlertDialog.Builder(this)
+          .setTitle("Review Health Connect upload")
+          .setMessage(snapshot.describe() + "\n\n" + if (enabled)
+            "Only the record shown would be uploaded after you confirm."
+          else "Uploads are OFF until the private backend migration and release are approved.")
+          .setNegativeButton("Cancel", null)
+          .setPositiveButton(if (enabled) "Upload this record" else "OK") { _, _ ->
+            if (enabled && verified && snapshot === preparedSteps && auth.currentToken() != null) {
+              val attempt = uiGeneration
+              preparedSteps = null
+              reviewButton.isEnabled = false
+              status.text = "Uploading one reviewed steps record..."
+              Thread {
+                val success = try {
+                  val client = HealthConnectClient.getOrCreate(this@MainActivity)
+                  val stillGranted = runBlocking {
+                    client.permissionController.getGrantedPermissions()
+                  }.contains(HealthPermission.getReadPermission(StepsRecord::class))
+                  val token = auth.currentToken()
+                  stillGranted && token != null && ManualSync.uploadApprovedSteps(snapshot, token)
+                } catch (_: Exception) { false }
+                runOnUiThread {
+                  if (attempt != uiGeneration || isDestroyed || isFinishing ||
+                    !verified || auth.currentToken() == null) return@runOnUiThread
+                  status.text = if (success) "One steps record uploaded to your private account."
+                    else "Upload was not confirmed. No automatic retry; preview again to retry."
+                }
+              }.start()
+            }
+          }
+          .show()
+      }
+    }
+
     logoutButton.setOnClickListener {
       ++uiGeneration
       auth.signOut()
@@ -229,6 +286,8 @@ class MainActivity : ComponentActivity() {
       permissionsButton.isEnabled = false
       previewButton.isEnabled = false
       otherPreviewButton.isEnabled = false
+      reviewButton.isEnabled = false
+      preparedSteps = null
       password.text.clear()
       status.text = "Signed out. No data was uploaded."
     }
@@ -236,6 +295,7 @@ class MainActivity : ComponentActivity() {
 
   override fun onDestroy() {
     ++uiGeneration
+    preparedSteps = null
     auth.signOut()
     super.onDestroy()
   }
