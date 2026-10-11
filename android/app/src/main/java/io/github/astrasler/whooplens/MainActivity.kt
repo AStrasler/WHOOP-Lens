@@ -15,8 +15,13 @@ import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.time.TimeRangeFilter
+import java.time.LocalDate
+import java.time.ZoneId
+import kotlinx.coroutines.runBlocking
 
-/** Only explicit user actions can sign in or request Health Connect permissions. */
+/** Data is read only on explicit Preview; this version never uploads health records. */
 class MainActivity : ComponentActivity() {
   private val auth = PrivateSession()
   private var verified = false
@@ -30,7 +35,9 @@ class MainActivity : ComponentActivity() {
     PermissionController.createRequestPermissionResultContract()
   ) { granted ->
     findViewById<TextView>(4001)?.text =
-      "Health Connect: ${granted.size} of ${permissions.size} permissions granted. No data was read or uploaded."
+      "Health Connect: " + granted.size + " of " + permissions.size + " permissions granted. No data uploaded."
+    findViewById<Button>(4002)?.isEnabled = verified &&
+      granted.contains(HealthPermission.getReadPermission(StepsRecord::class))
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,6 +64,11 @@ class MainActivity : ComponentActivity() {
       text = "Choose Health Connect permissions"
       isEnabled = false
     }
+    val previewButton = Button(this).apply {
+      id = 4002
+      text = "Preview yesterday's steps locally"
+      isEnabled = false
+    }
     val logoutButton = Button(this).apply { text = "Sign out" }
     val hcStatus = when (HealthConnectClient.getSdkStatus(this)) {
       HealthConnectClient.SDK_AVAILABLE -> "Health Connect is available."
@@ -69,10 +81,11 @@ class MainActivity : ComponentActivity() {
     layout.addView(password)
     layout.addView(loginButton)
     layout.addView(permissionsButton)
+    layout.addView(previewButton)
     layout.addView(logoutButton)
     layout.addView(status)
     layout.addView(TextView(this).apply {
-      text = "No records are read or uploaded by this version. Sign-in is kept only in memory."
+      text = "Steps are read only when you tap Preview. Nothing is uploaded; sign-in is kept only in memory."
     })
     setContentView(ScrollView(this).apply { addView(layout) })
 
@@ -82,6 +95,7 @@ class MainActivity : ComponentActivity() {
       password.text.clear()
       verified = false
       permissionsButton.isEnabled = false
+      previewButton.isEnabled = false
       loginButton.isEnabled = false
       status.text = "Checking your private WHOOP Lens access..."
       Thread {
@@ -89,12 +103,14 @@ class MainActivity : ComponentActivity() {
         runOnUiThread {
           verified = result
           loginButton.isEnabled = true
-          permissionsButton.isEnabled = result && HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE
-          status.text = if (result) "Authorized account confirmed. No data accessed."
-          else "Sign-in failed or this account is not yet connected to WHOOP Lens."
+          permissionsButton.isEnabled = result &&
+            HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE
+          status.text = if (result) "Authorized account confirmed. No health data accessed."
+            else "Sign-in failed or this account is not yet connected to WHOOP Lens."
         }
       }.start()
     }
+
     permissionsButton.setOnClickListener {
       if (verified && auth.currentToken() != null &&
           HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE) {
@@ -103,10 +119,45 @@ class MainActivity : ComponentActivity() {
         status.text = "Please sign in again or update Health Connect."
       }
     }
+
+    previewButton.setOnClickListener {
+      if (!verified || auth.currentToken() == null) {
+        status.text = "Please sign in again before viewing your steps."
+      } else {
+        previewButton.isEnabled = false
+        status.text = "Reading yesterday's steps locally..."
+        Thread {
+          val total = try {
+            runBlocking {
+              val hc = HealthConnectClient.getOrCreate(this@MainActivity)
+              val granted = hc.permissionController.getGrantedPermissions()
+              if (!granted.contains(HealthPermission.getReadPermission(StepsRecord::class)))
+                throw SecurityException("Steps access not granted")
+              val zone = ZoneId.systemDefault()
+              val today = LocalDate.now(zone)
+              val start = today.minusDays(1).atStartOfDay(zone).toInstant()
+              val end = today.atStartOfDay(zone).toInstant()
+              hc.aggregate(AggregateRequest(
+                metrics = setOf(StepsRecord.COUNT_TOTAL),
+                timeRangeFilter = TimeRangeFilter.between(start, end)
+              ))[StepsRecord.COUNT_TOTAL]
+            }
+          } catch (_: Exception) { null }
+          runOnUiThread {
+            previewButton.isEnabled = verified && auth.currentToken() != null
+            status.text = if (total == null)
+              "Yesterday's steps unavailable or permission revoked. No data uploaded."
+            else "Yesterday: " + total + " steps (Health Connect aggregate). Local preview only; nothing uploaded."
+          }
+        }.start()
+      }
+    }
+
     logoutButton.setOnClickListener {
       auth.signOut()
       verified = false
       permissionsButton.isEnabled = false
+      previewButton.isEnabled = false
       password.text.clear()
       status.text = "Signed out. No data was uploaded."
     }
