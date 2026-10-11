@@ -2,6 +2,10 @@
 
 Status: **Supabase remains PRIMARY; Cloudflare is PARALLEL STAGING only. No application deployment, domain cutover or live data copy.**
 Cloudflare account: dedicated WHOOP Lens account.
+Cloudflare Worker name (planned, not deployed): `whoop-lens`.
+Custom domain target (reserved, not attached): `whooplens.tech`.
+Default workers.dev and preview URLs: disabled in configuration.
+API runtime flag: `MIGRATION_API_ENABLED=false`; no public API.
 D1 database: whoop-lens-migration, ID 58250de2-cad7-4a8a-a061-d9b41c7b24d2.
 The database was created and the exact SQL in migrations/0001_initial.sql was applied successfully on 2026-10-11.
 
@@ -73,9 +77,13 @@ approved cutover. Never switch production merely because CI is green.
    scoped to approved authorized users; verify row counts, ownership, chronology,
    data fidelity and WHOOP OAuth operation. Keep the Supabase source intact until
    the Cloudflare app is demonstrably equivalent and the owner approves shutdown.
-7. No DNS zone activation, WHOOP domain registrar transfer, website deployment,
-   Cloudflare Worker deployment, Pages publication, or change to existing
-   chatgpt-mcp URLs during staging. DNS and domain migration are separate projects.
+7. The approved *target configuration* is Worker name `whoop-lens`, existing D1
+   staging database, `workers_dev=false`, `preview_urls=false`, API flag false,
+   with eventual custom domain `whooplens.tech`. The custom domain has NOT been
+   bound to a Worker. Adding a custom domain/route or changing DNS is a
+   separate, explicitly approved launch step. No DNS zone activation, registrar
+   transfer, website/Worker deployment, Pages publication or change to existing
+   ChatGPT MCP URLs during staging.
 
 ## Cost boundary
 
