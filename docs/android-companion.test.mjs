@@ -32,6 +32,9 @@ test("Android requires private login, consent and manual local-only steps aggreg
   assert.match(source,/AlertDialog\.Builder\(this\)/);
   assert.match(source,/snapshot === preparedSteps/);
   assert.match(source,/ManualSync\.uploadApprovedSteps/);
+  assert.match(source,/DatePickerDialog\(this/);
+  assert.match(source,/ManualSync\.deleteApprovedSteps/);
+  assert.match(source,/setPositiveButton\("Delete uploaded record"\)/);
 });
 
 test("Private upload export remains disabled pending approved migrations", () => {
@@ -44,5 +47,7 @@ test("Private upload export remains disabled pending approved migrations", () =>
   assert.match(source,/record_key", "daily:/);
   assert.match(source,/functions\/v1\/samsung-health/);
   assert.match(source,/preparedAtMs/);
+  assert.match(source,/fun deleteApprovedSteps\(/);
+  assert.match(source,/check\(!day\.isAfter\(LocalDate\.now\(\)\)\)/);
   assert.doesNotMatch(source,/SERVICE_ROLE_KEY|sb_secret_|supabase_service_role/);
 });
