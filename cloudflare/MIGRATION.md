@@ -1,6 +1,6 @@
 # WHOOP Lens: Supabase to Cloudflare migration
 
-Status: **Supabase remains PRIMARY; Cloudflare is PARALLEL STAGING only. No application deployment, domain cutover or live data copy.**
+Status: **Supabase remains PRIMARY; Cloudflare is PARALLEL STAGING only.** An existing Cloudflare Worker deployment was discovered on 2026-10-11, but OUR tested staging version has been UPLOADED ONLY, NOT DEPLOYED. No domain cutover or live data copy.
 Cloudflare account: dedicated WHOOP Lens account.
 Cloudflare Worker name (planned, not deployed): `whoop-lens`.
 Custom domain target (reserved, not attached): `whooplens.tech`.
@@ -44,6 +44,42 @@ The database was created and the exact SQL in migrations/0001_initial.sql was ap
   accounts, and AES-GCM tampering tests. CI checks do not deploy.
 - **No new OAuth clients, DNS settings, workers routes, or API keys were activated.**
   There is no public Cloudflare service to visit yet.
+
+## Cloudflare account checkpoint (2026-10-11, verified directly)
+
+- A Worker resource named `whoop-lens` **already existed** in the account, created
+  and deployed at approximately 13:00 UTC. Its prior deployment was not created
+  by these migration commands. Do not assume its deployed code is the tested
+  migration code; review it separately before enabling any public route.
+- Worker `workers.dev` **disabled** and Worker preview/version URLs **disabled**,
+  verified with the Cloudflare API. No custom domains or Cloudflare DNS zones
+  attached. `whooplens.tech` is still only the intended future domain.
+- Cloudflare Worker URL log query strings are now **redacted** to avoid exposing
+  WHOOP authorization codes or OAuth state parameters.
+- The new source version **4** of `whoop-lens` was uploaded to Cloudflare on
+  2026-10-11 with seven ES modules. Version ID:
+  `d33c4db2-3d7e-4493-a541-ac0992700b60`.
+  It binds to staging D1 and sets all three API flags to `false`.
+  **This version was NOT deployed; the existing deployment remained unchanged.**
+- GitHub Cloudflare isolation tests and existing integration, Health Connect, and
+  Android compile workflows all passed for the OAuth/WHOOP API implementation.
+- Implemented WHOOP token refresh, six WHOOP data read categories, one-time hashed
+  WHOOP OAuth state handling, encrypted callback storage and isolated developer/public
+  seat assignment using synthetic account tests. All code remains **disabled**.
+- Applied D1 migration `0002_enforce_seat_limits.sql`, enforcing maximum 9 public
+  WHOOP seats and a single developer seat (existing unique partial index).
+- Real WHOOP client secrets, encrypted tokens, login records and health data have
+  **not** been copied to Cloudflare. OAuth redirect is still configured to Supabase
+  at WHOOP and has **not** been changed. The Cloudflare callback's future target
+  `https://whooplens.tech/api/whoop/callback` is for later approval and cannot
+  work until DNS, routing and WHOOP redirect registration are configured.
+
+### Important distinction: upload vs deploy
+
+An uploaded Worker version is inert until a Cloudflare deployment points traffic
+at it. The current deployment predates this staged version and is **not**
+evidence that Cloudflare is running WHOOP Lens. Public and preview routing are off
+at the Cloudflare API. DNS and WHOOP OAuth registrations remain unchanged.
 
 ## Cutover roadmap
 
@@ -93,7 +129,7 @@ empty staging database is not a claim of a free unlimited production backend.
 
 ## Worker's current behavior
 
-The staged Worker implements restricted read routes but **returns HTTP 503** to all requests while MIGRATION_API_ENABLED=false. workers_dev=false and preview_urls=false disable default public addresses; a future custom route still requires separate security review. The Worker has **not** been deployed, and no authenticated endpoint is live on Cloudflare yet.
+The NEW staged Worker version implements isolated read and future WHOOP OAuth routes but returns HTTP 503 while MIGRATION_API_ENABLED=false, and the two WHOOP flags are also false. This staged version is **uploaded but not deployed**. The existing Worker has a different, earlier deployment with no workers.dev or preview routing enabled. No authenticated WHOOP Lens Cloudflare endpoint is confirmed live.
 
 ## Rollback
 
