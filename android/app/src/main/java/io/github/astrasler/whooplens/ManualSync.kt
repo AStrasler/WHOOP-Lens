@@ -53,6 +53,38 @@ internal object ManualSync {
     "https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/samsung-health"
   private const val publishable = "sb_publishable_iSQO1ZdTmCnRHC_YxKb30A_x7rVRYr_"
 
+  /** A separate explicit confirmation is required by the calling UI. */
+  fun deleteApprovedSteps(draft: ReviewedSteps, token: String): Int {
+    check(ENABLE_UPLOADS) { "Private deletion is not released yet." }
+    check(draft.valid()) { "Preview expired. Review again." }
+    check(token.isNotBlank()) { "Sign in again." }
+    val body = JSONObject()
+      .put("schema_version", 2)
+      .put("source", "health_connect")
+      .put("approved", true)
+      .put("metric", "steps_daily")
+      .put("record_key", "daily:" + draft.day + ":local").toString()
+    val conn = URL(destination).openConnection() as HttpURLConnection
+    try {
+      conn.requestMethod = "DELETE"
+      conn.connectTimeout = 15_000
+      conn.readTimeout = 20_000
+      conn.instanceFollowRedirects = false
+      conn.doOutput = true
+      conn.setRequestProperty("Authorization", "Bearer $token")
+      conn.setRequestProperty("apikey", publishable)
+      conn.setRequestProperty("Content-Type", "application/json")
+      conn.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
+      if (conn.responseCode != 200) return -1
+      val response = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
+      if (response.length > 4000) return -1
+      val result = JSONObject(response)
+      return if (result.optInt("schema_version") == 2) result.optInt("deleted", -1) else -1
+    } finally {
+      conn.disconnect()
+    }
+  }
+
   fun uploadApprovedSteps(draft: ReviewedSteps, token: String): Boolean {
     check(ENABLE_UPLOADS) { "Private sync is not released yet." }
     check(draft.valid()) { "Preview expired. Review again." }
