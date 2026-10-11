@@ -89,10 +89,25 @@ export function auditTransferManifest(input){
     findings
   };
 }
-export function requireSafeTransferManifest(input){
+export function requireSafeTransferManifest(input,expectedSourceCounts){
   const report=auditTransferManifest(input);
   if(!report.passed)throw Error('Migration preflight blocked; review aggregated findings');
-  // A successful audit is necessary but NEVER sufficient for transferring
-  // accounts, credentials, or records; owner approval is a separate hard gate.
+  // An empty/stale manifest must not look equivalent to a successful transfer.
+  // Expected totals must be obtained INDEPENDENTLY from an owner-approved,
+  // scope-matched, read-only source snapshot before any cutover is considered.
+  const fields=Object.keys(report.counts);
+  if(!expectedSourceCounts||typeof expectedSourceCounts!=='object'||
+     Array.isArray(expectedSourceCounts)||
+     Object.keys(expectedSourceCounts).length!==fields.length||
+     !fields.every(k=>Object.hasOwn(expectedSourceCounts,k)&&
+       Number.isSafeInteger(expectedSourceCounts[k])&&
+       expectedSourceCounts[k]>=0))
+    throw Error('Migration preflight blocked; independently verified source totals required');
+  if(expectedSourceCounts.connectedAccounts<1)
+    throw Error('Migration preflight blocked; nonempty approved source snapshot required');
+  if(fields.some(k=>report.counts[k]!==expectedSourceCounts[k]))
+    throw Error('Migration preflight blocked; source snapshot counts differ');
+  // Matching totals do NOT establish provenance, authorize data transfer,
+  // waive privacy review, or permit a production Cloudflare deployment.
   return report;
 }

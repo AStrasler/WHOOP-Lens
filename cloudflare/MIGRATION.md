@@ -256,6 +256,12 @@ unverified for this future client. See \`cloudflare/oauth/ARCHITECTURE.md\`.
   explicit member row. No automatic membership enrollment is allowed. That
   account requires owner-reviewed, policy-grounded reconciliation before
   creating a real transfer manifest.
+- Before even considering a transfer, `requireSafeTransferManifest()` now
+  requires independently supplied, scope-matched **expected source counts**
+  for all eight aggregate categories. Omitted totals, any mismatched count,
+  or a zero-connection source snapshot **fail closed**. Counting the manifest
+  itself is NOT independent verification; the owner must review the read-only
+  source snapshot separately. Passing still does not authorize a cutover.
 - The validator is covered by synthetic tests in the existing Cloudflare
   isolation workflow. All real account and health data remain in Supabase.
   No credentials, identity rows, recovery/sleep records or OAuth grants were

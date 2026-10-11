@@ -23,7 +23,7 @@ function fixture(){
 const finding=(r,code)=>r.findings.find(x=>x.code===code)?.count??0;
 
 test('complete two-member transfer manifest passes without exposing account IDs',()=>{
-  const original=fixture();const result=requireSafeTransferManifest(original);
+  const original=fixture();const result=requireSafeTransferManifest(original,auditTransferManifest(original).counts);
   assert.equal(result.passed,true);
   assert.deepEqual(result.counts,{
     authIdentities:2,identityLinks:2,activeMembers:2,connectedAccounts:2,
@@ -75,7 +75,7 @@ test('public seats max 9 and developer seats max 1 are enforced',()=>{
   }
   assert.equal(finding(auditTransferManifest(m),'SEAT_LIMIT_EXCEEDED'),1);
   m.connections.pop();
-  assert.equal(requireSafeTransferManifest(m).passed,true);
+  assert.equal(requireSafeTransferManifest(m,auditTransferManifest(m).counts).passed,true);
   m.connections[1].seat_role='developer';
   assert.equal(finding(auditTransferManifest(m),'SEAT_LIMIT_EXCEEDED'),1);
 });
@@ -91,4 +91,19 @@ test('the validator is pure and never alters the supplied transfer manifest',()=
   const m=fixture(),original=copy(m);
   auditTransferManifest(m);
   assert.deepEqual(m,original);
+});
+
+test('cutover gate rejects omitted, empty or independently mismatched source totals',()=>{
+  const m=fixture(),counts=auditTransferManifest(m).counts;
+  assert.throws(()=>requireSafeTransferManifest(m),/source totals required/);
+  assert.throws(()=>requireSafeTransferManifest(m,{...counts,connectedAccounts:3}),
+    /source snapshot counts differ/);
+  assert.throws(()=>requireSafeTransferManifest(m,{...counts,connectedAccounts:0}),
+    /nonempty approved source snapshot/);
+  const empty={authIdentities:[],identityLinks:[],members:[],connections:[],
+    recoveryOwners:[],sleepOwners:[]};
+  assert.equal(auditTransferManifest(empty).passed,true);
+  assert.throws(()=>requireSafeTransferManifest(empty,auditTransferManifest(empty).counts),
+    /nonempty approved source snapshot/);
+  assert.equal(requireSafeTransferManifest(m,counts).passed,true);
 });
