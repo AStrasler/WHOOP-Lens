@@ -2,8 +2,8 @@ import { OAuthResourceServer, insufficientScope } from "@cloudflare/workers-oaut
 import { activeMembership } from "../../../src/storage.mjs";
 import { createStagingRouter } from "../../../src/router.mjs";
 
-// Only this alternative build uses the official OAuth resource validator.
-// Production whoop-lens remains on Supabase until explicit owner-approved cutover.
+// Private MCP resource server for https://whooplens.tech/mcp.
+// Supabase whoop-mcp stays live in parallel. Do not copy WHOOP refresh tokens.
 const mcpResource=new OAuthResourceServer({
   resourceMetadata:{
     resource:"https://whooplens.tech/mcp",

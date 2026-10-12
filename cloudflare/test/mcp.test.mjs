@@ -59,7 +59,10 @@ test("MCP 2026 protocol discovers eleven bounded account tools",async()=>{
   assert.doesNotMatch(JSON.stringify(body.result.tools),/delete_|write_|admin_sql/);
   const discover=await route(req(payload("server/discover")),enabled(db()));
   const discovery=(await discover.json()).result;
-  assert.equal(discovery.serverInfo.name,"whoop-lens-cloudflare-staging");
+  assert.equal(discovery.serverInfo.name,"whoop-lens");
+  assert.equal(discovery.serverInfo.version,"1.0.0");
+  assert.match(discovery.instructions,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
+  assert.match(discovery.instructions,/Do not estimate those durations/);
   assert.equal(discovery.cacheScope,"private");
   assert.equal(discovery.ttlMs,0);
 });
@@ -96,7 +99,11 @@ test("Legacy initialization and tools/list continue without exposing arbitrary m
   const init=await route(req(payload("initialize",1,{protocolVersion:legacy,capabilities:{},
     clientInfo:{name:"test",version:"1"}}),{version:legacy}),enabled(db()));
   assert.equal(init.status,200);
-  assert.equal((await init.json()).result.protocolVersion,legacy);
+  const initBody=await init.json();
+  assert.equal(initBody.result.protocolVersion,legacy);
+  assert.equal(initBody.result.serverInfo.name,"whoop-lens");
+  assert.match(initBody.result.instructions,/call get_capabilities first/);
+  assert.match(initBody.result.instructions,/label it user-provided/);
   const result=await route(req(payload("tools/list"),{version:legacy}),enabled(db()));
   const list=(await result.json()).result;
   assert.equal(list.tools.length,11);assert.equal(Object.hasOwn(list,"resultType"),false);
@@ -105,6 +112,25 @@ test("Legacy initialization and tools/list continue without exposing arbitrary m
   const notification={jsonrpc:"2.0",method:"notifications/initialized",params:{}};
   const response=await route(req(notification,{version:legacy}),enabled(db()));
   assert.equal(response.status,202);
+});
+
+test("ChatGPT protocol versions initialize with the same host instructions",async()=>{
+  const route=router();
+  for(const version of ["2025-06-18","2025-03-26"]){
+    const init=await route(req(payload("initialize",1,{protocolVersion:version,capabilities:{},
+      clientInfo:{name:"chatgpt",version:"1"}}),{version:null}),enabled(db()));
+    assert.equal(init.status,200);
+    const body=await init.json();
+    assert.equal(body.result.protocolVersion,version);
+    assert.equal(body.result.serverInfo.name,"whoop-lens");
+    assert.match(body.result.instructions,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
+    const listed=await route(req(payload("tools/list"),{version}),enabled(db()));
+    assert.equal(listed.status,200);
+    assert.equal((await listed.json()).result.tools.length,11);
+  }
+  const modernInit=await route(req(payload("initialize",1,{protocolVersion:"2026-07-28",capabilities:{},
+    clientInfo:{name:"test",version:"1"}})),enabled(db()));
+  assert.equal((await modernInit.json()).error.code,-32601);
 });
 
 test("Caller cannot choose another user, unknown tool or inject extra arguments",async()=>{

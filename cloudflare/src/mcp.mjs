@@ -1,11 +1,16 @@
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
-// Stateless WHOOP Lens MCP adapter for Cloudflare.
-// Staging only. The HTTP router MUST validate the bearer and ACTIVE membership
-// before calling this module. Do not publish until OAuth 2.1 resource protection,
-// host-protocol conformance, and cross-tenant tests have passed.
+import {hostInstructions,serverInfo} from './host-instructions.mjs';
+// Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
+// The HTTP router MUST validate the bearer and ACTIVE membership before calling
+// this module. Do not copy WHOOP refresh tokens from Supabase.
 const PROTOCOL_CURRENT="2026-07-28";
 const PROTOCOL_LEGACY="2025-11-25";
-const protocolVersions=new Set([PROTOCOL_CURRENT,PROTOCOL_LEGACY]);
+const PROTOCOL_CHATGPT_2025_06="2025-06-18";
+const PROTOCOL_CHATGPT_2025_03="2025-03-26";
+const protocolVersions=new Set([
+  PROTOCOL_CURRENT,PROTOCOL_LEGACY,PROTOCOL_CHATGPT_2025_06,PROTOCOL_CHATGPT_2025_03
+]);
+const initializeVersions=new Set([PROTOCOL_LEGACY,PROTOCOL_CHATGPT_2025_06,PROTOCOL_CHATGPT_2025_03]);
 const toolToResource=Object.freeze({
   get_profile:"profile",
   get_body_measurements:"measurements",
@@ -26,12 +31,12 @@ const schemaHistory=Object.freeze({
   additionalProperties:false
 });
 const toolLabels=Object.freeze({
-  get_profile:"Read the authenticated member's WHOOP profile.",
-  get_body_measurements:"Read the authenticated member's WHOOP body measurements.",
-  get_recovery:"Read the authenticated member's WHOOP recovery data.",
-  get_sleep:"Read the authenticated member's WHOOP sleep data.",
-  get_workouts:"Read the authenticated member's WHOOP workout data.",
-  get_cycles:"Read the authenticated member's WHOOP daily cycles."
+  get_profile:"Read the signed-in user's WHOOP profile.",
+  get_body_measurements:"Read the signed-in user's WHOOP body measurements.",
+  get_recovery:"Read the signed-in user's WHOOP recovery history.",
+  get_sleep:"Read the signed-in user's WHOOP sleep history.",
+  get_workouts:"Read the signed-in user's WHOOP workout history.",
+  get_cycles:"Read the signed-in user's WHOOP cycle history."
 });
 export const mcpTools=Object.freeze([...Object.keys(toolToResource).map(name=>({
   name,description:toolLabels[name],
@@ -101,15 +106,15 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     if(modern)return fail(-32601,"Method not available for stateless MCP",id);
     if(!isObject(params.clientInfo)||!isObject(params.capabilities)||
        typeof params.protocolVersion!=="string"||
-       !protocolVersions.has(params.protocolVersion))
+       !initializeVersions.has(params.protocolVersion))
       return fail(-32602,"Unsupported or invalid initialize request",id);
-    return ok(id,{protocolVersion:PROTOCOL_LEGACY,capabilities:{tools:{}},
-      serverInfo:{name:"whoop-lens-cloudflare-staging",version:"0.1.0"}});
+    return ok(id,{protocolVersion:params.protocolVersion,capabilities:{tools:{}},
+      serverInfo,instructions:hostInstructions});
   }
   if(message.method==="server/discover"){
     if(!modern)return fail(-32601,"Method not found",id);
     return ok(id,{resultType:"complete",capabilities:{tools:{}},ttlMs:0,cacheScope:"private",
-      serverInfo:{name:"whoop-lens-cloudflare-staging",version:"0.1.0"}});
+      serverInfo,instructions:hostInstructions});
   }
   if(message.method==="ping")return ok(id,{});
   if(message.method==="tools/list"){
