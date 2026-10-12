@@ -25,11 +25,18 @@ export function safeRedirect(value) {
   return url.href;
 }
 
+const ENTRY_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function validateEntryId(value) {
+  if (typeof value !== "string" || !ENTRY_ID.test(value)) throw new Error("Invalid entry ID.");
+  return value;
+}
+
 export function createAuthClient(fetcher = globalThis.fetch, now = () => Date.now()) {
   // Session credentials stay in memory, never localStorage, sessionStorage, or URLs.
   let session = null;
   async function request(path, { method = "GET", body, authenticated = true } = {}) {
-    if (!path.startsWith("/auth/v1/") && !path.startsWith("/functions/v1/whoop-mcp/")) {
+    if (!path.startsWith("/auth/v1/") && !path.startsWith("/functions/v1/whoop-mcp/") &&
+        path !== "/functions/v1/medical-context" && !path.startsWith("/functions/v1/medical-context?id=")) {
       throw new Error("Unsupported service path.");
     }
     if (path.includes("..") || path.includes("\\") || path.includes("#")) throw new Error("Invalid service path.");
@@ -83,7 +90,18 @@ export function createAuthClient(fetcher = globalThis.fetch, now = () => Date.no
         { method: "POST", body: { action } });
     },
     status() { return request("/functions/v1/whoop-mcp/status"); },
-    connect() { return request("/functions/v1/whoop-mcp/connect", { method: "POST", body: {} }); }
+    connect() { return request("/functions/v1/whoop-mcp/connect", { method: "POST", body: {} }); },
+    // Private medical context: owner-only, every write carries explicit approval.
+    listMedicalContext() { return request("/functions/v1/medical-context"); },
+    saveMedicalContext(entry) {
+      return request("/functions/v1/medical-context", { method: "POST", body: { ...entry, approved: true } });
+    },
+    updateMedicalContext(id, entry) {
+      return request("/functions/v1/medical-context?id=" + validateEntryId(id), { method: "PATCH", body: { ...entry, approved: true } });
+    },
+    deleteMedicalContext(id) {
+      return request("/functions/v1/medical-context?id=" + validateEntryId(id), { method: "DELETE", body: { approved: true } });
+    }
   };
 }
 

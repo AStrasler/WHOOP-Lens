@@ -3,13 +3,13 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'supabase/migrations/*health_connect*'
-      - 'supabase/tests/health-connect-rls-smoke.sql'
+      - 'supabase/migrations/**'
+      - 'supabase/tests/**'
       - '.github/workflows/health-connect-schema.yml'
   pull_request:
     paths:
-      - 'supabase/migrations/*health_connect*'
-      - 'supabase/tests/health-connect-rls-smoke.sql'
+      - 'supabase/migrations/**'
+      - 'supabase/tests/**'
       - '.github/workflows/health-connect-schema.yml'
 
 permissions:
@@ -44,3 +44,5 @@ jobs:
       - name: Test owner isolation on disposable PostgreSQL
         run: |
           psql -v ON_ERROR_STOP=1 -f supabase/tests/health-connect-rls-smoke.sql
+          createdb medical_smoke
+          PGDATABASE=medical_smoke psql -v ON_ERROR_STOP=1 -f supabase/tests/medical-context-rls-smoke.sql
