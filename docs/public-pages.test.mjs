@@ -84,3 +84,13 @@ test("every tool keeps readOnlyHint, destructiveHint, and openWorldHint", () => 
     "annotations: closed",
   ]);
 });
+
+test("privacy explains optional medical context, strict allowlist and deletion in both copies", () => {
+  for (const page of [privacy, read("../Privacy.md")]) {
+    assert.match(page, /Private medical context/);
+    assert.match(page, /cannot create, change, or delete them/);
+    assert.match(page, /not a diagnosis/);
+    assert.match(page, /invite-only/);
+    assert.match(page, /Deleting optional data/);
+  }
+});

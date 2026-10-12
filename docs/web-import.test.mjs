@@ -80,7 +80,12 @@ test("browser-first pages have no automatic installation or live health upload",
   const html=readFileSync(new URL("./dashboard/index.html", import.meta.url),"utf8");
   const js=readFileSync(new URL("./dashboard.mjs", import.meta.url),"utf8");
   assert.match(html,/no installed companion required/i);
-  assert.doesNotMatch(js,/samsung-health|medical-context|Upload.*click/);
+  // Health files are never uploaded. Medical context (Issue #7 PR 4) may only be
+  // written from the explicit review form, never from a selected file.
+  assert.doesNotMatch(js,/samsung-health|Upload.*click|functions\/v1/);
+  assert.match(js,/mc-reviewed"\)\.checked/);
+  const fileHandler = js.slice(js.indexOf('$("health-file").addEventListener'), js.indexOf('$("medical-refresh")'));
+  assert.doesNotMatch(fileHandler,/saveMedicalContext|updateMedicalContext/);
   assert.match(js,/document\.createElement\("strong"\)/);
   assert.match(js,/textContent/);
 });
