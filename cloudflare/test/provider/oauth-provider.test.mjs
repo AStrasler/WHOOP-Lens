@@ -58,11 +58,11 @@ async function fixture(){
       if(url.endsWith('/logout?scope=local'))return new Response(null,{status:204});
       throw Error('Unexpected outbound request');
     }})});
-  async function start(offline=false){
+  async function start(offline=false,requestedScope='mcp:read offline_access'){
     const verifier=createVerifier();
     const query=new URLSearchParams({client_id:client.clientId,
       redirect_uri:'https://client.invalid/callback',response_type:'code',
-      scope:'mcp:read offline_access',state:'synthetic-client-state',resource:RESOURCE,
+      scope:requestedScope,state:'synthetic-client-state',resource:RESOURCE,
       code_challenge:await createChallenge(verifier),code_challenge_method:'S256'});
     const page=await flow.authorize(request('/authorize?'+query),env);
     assert.equal(page.status,200);
@@ -184,6 +184,26 @@ test('offline consent permits refresh, narrowed scopes cannot be expanded and re
     await f.oauth.revokeGrant(grants.items[0].id,USER);
     assert.equal(await f.server.validateToken(RESOURCE,next.access_token,f.env),null);
     assert.equal((await send({grant_type:'refresh_token',refresh_token:next.refresh_token})).status,400);
+    await Promise.all(pending);
+  }finally{f.db.close();}
+});
+test('a client that never requests offline_access still receives a usable refresh token',async()=>{
+  const f=await fixture();try{
+    const a=await f.start(false,'mcp:read'),pending=[];
+    const send=body=>f.server.fetch(request('/oauth/token','POST',{
+      client_id:f.client.clientId,resource:RESOURCE,...body
+    }),f.env,{waitUntil:p=>pending.push(p)});
+    const done=await f.flow.callback(request(a.callback,'GET',null,a.cookie),f.env);
+    const issued=await send({grant_type:'authorization_code',
+      code:new URL(done.headers.get('location')).searchParams.get('code'),
+      code_verifier:a.verifier,redirect_uri:'https://client.invalid/callback'});
+    assert.equal(issued.status,200);
+    const tokens=await issued.json();
+    assert.equal(tokens.scope,'mcp:read');
+    assert.equal(typeof tokens.refresh_token,'string');
+    const refreshed=await send({grant_type:'refresh_token',refresh_token:tokens.refresh_token});
+    assert.equal(refreshed.status,200);
+    assert.equal((await refreshed.json()).scope,'mcp:read');
     await Promise.all(pending);
   }finally{f.db.close();}
 });

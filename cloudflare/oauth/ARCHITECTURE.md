@@ -267,3 +267,18 @@ The legacy root staging entrypoint remains separate; deploy the OAuth issuer
 and resource configurations, which contain no Supabase network endpoints.
 All launch flags stay false. Supabase remains live until the owner authorizes
 cutover and later retirement; passing checks does not authorize either.
+
+## ChatGPT refresh tokens (2026-10-12)
+
+ChatGPT completes OAuth and then reports "Authentication succeeded, action
+discovery failed" when the token response has no `refresh_token`. Its
+authorize request copies the protected-resource challenge. That challenge
+lists only `mcp:read`, because the pinned provider removes `offline_access`
+from resource scopes before publishing metadata. The member therefore never
+sees the stay-connected checkbox.
+
+Grants for that request set `connectorRefresh` and receive a refresh token.
+A client that requested `offline_access`, and a member who left it unchecked,
+still receives no refresh token, and a later refresh of that grant is
+`invalid_grant`. Reconnect the ChatGPT app after this issuer change so the
+new grant is the one ChatGPT stores.

@@ -7,6 +7,7 @@ import {
   verifyUpstreamCode,UpstreamSignInDenied,CALLBACK_URI
 } from './fixtures/legacy-supabase-upstream.mjs';
 import {makeConsentFlow as baseConsentFlow} from '../oauth/auth-server/src/consent-flow.mjs';
+import {refreshGrantResult} from '../oauth/auth-server/src/refresh-grant.mjs';
 import {consentPage} from '../oauth/consent.mjs';
 import {d1Prepare} from './d1-sqlite.mjs';
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -31,9 +32,9 @@ const req=(path,method='GET',form,headers={})=>new Request('https://auth.whoople
   body:method==='POST'?new URLSearchParams(form):undefined
 });
 const response=value=>new Response(JSON.stringify(value),{status:200,headers:{'content-type':'application/json'}});
-function stub(){
+function stub(scope=['mcp:read','offline_access']){
   const calls={begin:0,approve:0,deny:0,upstream:0,finish:0,complete:0};
-  const request={scope:['mcp:read','offline_access']};
+  const request={scope};
   const oauth={
     async parseAuthRequest(){return request;},
     async describeConsent(){return {clientName:'<script>alert(1)</script>',
@@ -60,9 +61,11 @@ function stub(){
       if(calls.finish>1)throw Error('state replay');
       return {request,data:calls.data,headers:new Headers({'set-cookie':'__Host-oauth-upstream=; Max-Age=0'})};
     },
-    async completeAuthorization({request:r,userId,scope,props}){
-      assert.equal(r,request);assert.equal(userId,A);assert.deepEqual(scope,['mcp:read']);
-      assert.deepEqual(props,{userId:A});calls.complete++;
+    async completeAuthorization({request:r,userId,scope:granted,props}){
+      assert.equal(r,request);assert.equal(userId,A);assert.deepEqual(granted,['mcp:read']);
+      const expected={userId:A};
+      if(!request.scope.includes('offline_access'))expected.connectorRefresh=true;
+      assert.deepEqual(props,expected);calls.complete++;
       return {redirectTo:'https://chatgpt.com/callback?code=synthetic-cloudflare-code'};
     }
   };
@@ -191,6 +194,29 @@ test('Supabase code exchange checks explicit membership and logs out before gran
     const malformed=await attempt('not-a-uuid');
     await assert.rejects(malformed.result,UpstreamSignInDenied);
     assert.equal(malformed.urls.length,3);
+  }finally{db.close();}
+});
+test('chatgpt-sized scope still marks the grant for a connector refresh token',async()=>{
+  const db=fixture();try{
+    const {oauth,calls}=stub(['mcp:read']);
+    const flow=makeConsentFlow({getOAuth:()=>oauth,verifyIdentity:async()=>A});
+    await flow.authorize(req('/authorize','POST',{handle,decision:'approve',scope:'mcp:read'}),env(db));
+    const approved=await flow.callback(req('/oauth/upstream/callback?code=code-123&state='+state,
+      'GET',null,{cookie:'__Host-oauth-upstream=private'}),env(db));
+    assert.equal(approved.status,302);
+    assert.equal(calls.complete,1);
+    assert.equal(refreshGrantResult({grantType:'authorization_code',scope:['mcp:read'],
+      props:{userId:A,connectorRefresh:true}}),undefined);
+    assert.equal(refreshGrantResult({grantType:'refresh_token',scope:['mcp:read'],
+      props:{connectorRefresh:true}}),undefined);
+    assert.deepEqual(refreshGrantResult({grantType:'authorization_code',scope:['mcp:read'],
+      props:{userId:A}}),{refreshTokenTTL:0});
+    assert.deepEqual(refreshGrantResult({grantType:'refresh_token',scope:['mcp:read'],
+      props:{userId:A}}),{reject:true});
+    assert.equal(refreshGrantResult({grantType:'authorization_code',
+      scope:['mcp:read','offline_access'],props:{userId:A}}),undefined);
+    assert.deepEqual(refreshGrantResult({grantType:'authorization_code',scope:['mcp:read'],
+      props:{connectorRefresh:false}}),{refreshTokenTTL:0});
   }finally{db.close();}
 });
 test('upstream callback cannot be tricked into issuing other scopes',async()=>{

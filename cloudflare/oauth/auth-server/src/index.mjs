@@ -3,6 +3,7 @@ import {
 } from '@cloudflare/workers-oauth-provider';
 import {WorkerEntrypoint} from 'cloudflare:workers';
 import {makeConsentFlow} from './consent-flow.mjs';
+import {refreshGrantResult} from './refresh-grant.mjs';
 // The Cloudflare OAuth provider issues tokens only after an explicit member
 // consent and independently validated Cloudflare Access application JWT.
 // All routes remain disabled until a separately approved staging rollout.
@@ -14,12 +15,14 @@ export const server=new OAuthAuthorizationServer({
   clientIdMetadataDocumentEnabled:true,
   clientRegistrationEndpoint:'/oauth/register',
   // The SDK issues refresh tokens by default, independently of scope names.
-  // Honor the member's explicit offline-access selection at the token endpoint.
-  tokenExchangeCallback:({grantType,scope})=>{
-    if(!scope.includes('offline_access')){
-      if(grantType==='refresh_token')throw new OAuthError('invalid_grant');
-      return {refreshTokenTTL:0};
-    }
+  // Honor an explicit offline_access decline. Also issue a refresh token when
+  // the client never requested that scope: ChatGPT follows the resource
+  // challenge, which cannot list offline_access, and discovery fails without
+  // a refresh token.
+  tokenExchangeCallback:input=>{
+    const decision=refreshGrantResult(input);
+    if(decision?.reject)throw new OAuthError('invalid_grant');
+    if(decision)return {refreshTokenTTL:decision.refreshTokenTTL};
   }
 });
 const flow=makeConsentFlow({

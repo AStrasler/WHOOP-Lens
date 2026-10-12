@@ -36,6 +36,9 @@ test('consent + OAuth issuer are disabled until independently approved',async()=
   assert.match(consent,/oauth\.beginUpstream\(approved\.request/);
   assert.match(consent,/oauth\.finishUpstream\(request\)/);
   assert.match(consent,/oauth\.completeAuthorization/);
+  assert.match(consent,/connectorRefresh/);
+  assert.match(issuer,/refreshGrantResult/);
+  assert.match(issuer,/refreshTokenTTL:decision\.refreshTokenTTL/);
   const r=unavailable();
   assert.equal(r.status,503);
   assert.match(await r.text(),/not available/);

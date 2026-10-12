@@ -140,9 +140,13 @@ export function makeConsentFlow({
       // Subject must be validated by Cloudflare Access and ACTIVE D1 membership.
       // No access or refresh tokens enter the Cloudflare OAuth grant.
       const userId=await verifyIdentity({request,code,verifier:data.verifier,env});
+      const props={userId};
+      // See refresh-grant.mjs. Do not copy this flag onto a declined
+      // offline_access selection; that selection must stay without a refresh token.
+      if(!finished.request.scope.includes('offline_access'))props.connectorRefresh=true;
       const completed=await oauth.completeAuthorization({
         request:finished.request,userId,scope:data.grantedScopes,
-        metadata:{},props:{userId}
+        metadata:{},props
       });
       const headers=new Headers(finished.headers);
       headers.set('location',completed.redirectTo);
