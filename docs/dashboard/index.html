@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#090a0b">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://evoiwauqplbcecumiwqn.supabase.co; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; worker-src 'none'">
+<title>Private Workspace · WHOOP Lens</title>
+<meta name="description" content="Invite-only WHOOP Lens web workspace for connecting an account and locally reviewing health data.">
+<link rel="icon" type="image/jpeg" href="/WHOOP-Lens/logo.jpg">
+<link rel="stylesheet" href="/WHOOP-Lens/dashboard.css">
+<script type="module" src="/WHOOP-Lens/dashboard.mjs"></script>
+</head>
+<body>
+<div class="shell">
+<header class="topbar">
+  <div class="brand"><img src="/WHOOP-Lens/logo.jpg" alt="" height="42" width="42"><div><strong>WHOOP Lens</strong><span>Private workspace · browser edition</span></div></div>
+  <div class="header-links"><a href="/WHOOP-Lens/">Account setup</a><a href="/WHOOP-Lens/privacy/">Privacy</a></div>
+</header>
+<main>
+  <section class="hero">
+    <p class="eyebrow">INVITE-ONLY ACCESS</p>
+    <h1>Your health data.<br><em>Your decisions.</em></h1>
+    <p>Connect with your own WHOOP Lens account, then review supported health-data exports right in your browser. No installed companion required.</p>
+    <p class="notice"><strong>Web limitation:</strong> Browsers cannot directly read Android Health Connect. Choose a supported JSON export manually; your file stays on this device while you preview it.</p>
+  </section>
+  <div id="status" class="status" role="status" aria-live="polite">Sign in to your invited account to begin.</div>
+  <section id="login-panel" class="panel">
+    <h2>Sign in to your account</h2>
+    <p>Only accounts approved and connected by the WHOOP Lens owner can enter. There is no public registration.</p>
+    <form id="login-form">
+      <label for="email">Email address</label>
+      <input id="email" type="email" autocomplete="username" maxlength="254" required>
+      <label for="password">Password</label>
+      <input id="password" type="password" autocomplete="current-password" maxlength="1024" required>
+      <button id="login-button" type="submit">Verify private access</button>
+    </form>
+    <p class="muted">Authentication uses Supabase. Passwords and session tokens are never saved in browser storage.</p>
+  </section>
+  <div id="workspace" hidden>
+    <section class="panel session-panel">
+      <div><p class="eyebrow">AUTHORIZED ACCOUNT</p><h2 id="account-label">Signed in</h2><p id="connection-label"></p></div>
+      <button id="logout" type="button" class="secondary">Sign out &amp; clear</button>
+    </section>
+    <div class="grid">
+      <section class="panel">
+        <p class="eyebrow">01 · REVIEW</p>
+        <h2>Import preview</h2>
+        <p>Choose a WHOOP Lens Health Connect v2 JSON file or FHIR R4 Bundle. This preview is local and read-only.</p>
+        <label for="health-file">Select a JSON file (maximum 500 KB)</label>
+        <input id="health-file" type="file" accept=".json,application/json">
+        <p class="muted">Only deliberately selected files are read. Unsupported formats are rejected. No file or medical record is automatically transferred.</p>
+      </section>
+      <section class="panel">
+        <p class="eyebrow">02 · CONTROL</p>
+        <h2>Synchronization</h2>
+        <div class="chip">Uploads disabled for private beta review</div>
+        <p id="sync-copy">The preview will show what is in your selected file. Cloud upload and deletion will be enabled only after the backend has passed release review.</p>
+        <p class="muted">Medical-context FHIR imports require a separate review path and are never sent to the Health Connect measurement endpoint.</p>
+      </section>
+    </div>
+    <section class="panel" id="preview-panel" hidden aria-live="polite">
+      <div class="heading-row"><div><p class="eyebrow">LOCAL PREVIEW</p><h2 id="preview-title">File reviewed</h2></div><button id="clear-preview" type="button" class="secondary">Clear preview</button></div>
+      <p id="preview-meta"></p>
+      <div id="summary" class="summary"></div>
+      <h3>Sample records (up to 12)</h3>
+      <div id="records" class="records"></div>
+      <p class="muted">No data has been uploaded. File details are not saved between sessions or page refreshes.</p>
+    </section>
+  </div>
+</main>
+<footer>WHOOP Lens is independent and is not affiliated with WHOOP. <a href="/WHOOP-Lens/terms/">Terms</a> · <a href="/WHOOP-Lens/support/">Support</a></footer>
+</div>
+<noscript>Please enable JavaScript to use this private workspace.</noscript>
+</body>
+</html>

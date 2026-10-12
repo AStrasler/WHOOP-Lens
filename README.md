@@ -2,6 +2,12 @@
 
 Hosted ChatGPT and Codex plugin for reading a person's own WHOOP data. It can also read Samsung Health records that were uploaded for that same person. This is an independent project. It is not affiliated with WHOOP.
 
+## Browser-first private workspace (new direction)
+
+**The web app is the primary interface.** Invited users can open the browser-based [WHOOP Lens workspace](https://astrasler.github.io/WHOOP-Lens/dashboard/) on Android, a laptop, or another device without installing anything.
+
+The web app verifies Supabase credentials and an existing WHOOP connection, then provides local-only previews of supported WHOOP Lens Health Connect v2 JSON files and FHIR R4 Bundles. No arbitrary Samsung/Health Connect file formats are silently assumed compatible. Web browsers cannot directly read Android Health Connect; the Android companion is preserved only as an **optional future bridge**, never required for normal use. Live health-file uploads remain disabled pending review and production approval. See [Web workspace guide](docs/WEB_WORKSPACE.md).
+
 ## Installation
 
 WHOOP Lens connects your WHOOP account to your own ChatGPT account. Setup has two parts: authorize WHOOP, then connect ChatGPT.
@@ -61,6 +67,16 @@ For an already installed plugin, its ChatGPT settings page is not the WHOOP auth
 If a consent request says it could not be completed after you already returned to ChatGPT, that request may have been consumed. Use the setup website to finish WHOOP authorization; start a fresh ChatGPT connection request only if the ChatGPT connection itself is still incomplete.
 
 If an older page keeps skipping WHOOP setup, reload the setup website with **Ctrl+Shift+R** on Windows or **Command+Shift+R** on macOS. During a connection started from ChatGPT, allow the separate WHOOP tab to open, then return to the original consent tab.
+
+## Explore capabilities and limitations
+
+Connected MCP clients can call **get_capabilities** and ask:
+
+- "What can WHOOP Lens do?"
+- "What patterns could my data reveal that I have not thought to ask about?"
+- "What are WHOOP Lens's limitations?"
+
+See [the capability directory](docs/CAPABILITIES.md), including required data and what each feature **cannot** conclude. The deployed MCP catalog is the runtime source of truth; planned items in GitHub are not automatically available in ChatGPT or other AI clients. Supported charts and outside research depend on the connected AI host, and users can opt out of visuals. WHOOP Stress Monitor zone history is not in the official API, so WHOOP Lens does not estimate it from strain or heart rate. If an existing chat does not show the newer tools, follow the [refresh guide](docs/REFRESH.md).
 
 ## How it is hosted
 

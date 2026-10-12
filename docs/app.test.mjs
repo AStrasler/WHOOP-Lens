@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const source = readFileSync(new URL("./app.mjs", import.meta.url), "utf8")
-  .replace(/^import .*;\n/gm, "")
+  .replace(/^import .*;\r?\n/gm, "")
   .replace("const auth = createAuthClient();", "const auth = testAuth;");
 const settle = () => new Promise(resolve => setImmediate(resolve));
 function setup({ connected = false, approved = false, blocked = false, failConnect = false } = {}) {
