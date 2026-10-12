@@ -82,3 +82,32 @@ test('both Workers have all launch gates off and no public route',()=>{
   assert.match(resource,/activeMembership\(env\.DB,id\)/);
   assert.match(resource,/verifyIdentity:async\(\)=>id/);
 });
+
+test('consent HTML uses same-origin referrer policy without weakening POST CSRF',async()=>{
+  const {makeConsentFlow}=await import('../oauth/auth-server/src/consent-flow.mjs');
+  const flow=makeConsentFlow({getOAuth:()=>({
+    parseAuthRequest:async()=>({scope:['mcp:read']}),
+    describeConsent:async()=>({clientName:'Synthetic',redirectHost:'chatgpt.com',scope:['mcp:read']}),
+    beginConsent:async()=>({handle:'A'.repeat(43),headers:new Headers({
+      'set-cookie':'__Host-oauth-consent=synthetic; Path=/; Secure; HttpOnly'
+    })})
+  })});
+  const env={OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true'};
+  const get=await flow.authorize(new Request('https://auth.whooplens.tech/authorize'),env);
+  assert.equal(get.status,200);
+  assert.equal(get.headers.get('referrer-policy'),'same-origin');
+  assert.match(get.headers.get('content-security-policy'),/form-action 'self'/);
+  assert.match(get.headers.get('set-cookie'),/__Host-oauth-consent/);
+  const badPost=await flow.authorize(new Request('https://auth.whooplens.tech/authorize',{
+    method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',
+      origin:'null','sec-fetch-site':'same-origin'},
+    body:new URLSearchParams({handle:'A'.repeat(43),decision:'approve',scope:'mcp:read'})
+  }),env);
+  assert.equal(badPost.status,403);
+  const foreignPost=await flow.authorize(new Request('https://auth.whooplens.tech/authorize',{
+    method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',
+      origin:'https://other.invalid','sec-fetch-site':'cross-site'},
+    body:new URLSearchParams({handle:'A'.repeat(43),decision:'approve',scope:'mcp:read'})
+  }),env);
+  assert.equal(foreignPost.status,403);
+});

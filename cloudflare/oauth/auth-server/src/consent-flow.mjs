@@ -52,6 +52,10 @@ export function makeConsentFlow({
         const headers=new Headers(bind.headers);
         for(const [key,value] of Object.entries(noStoreHeaders('text/html; charset=utf-8')))
           headers.set(key,value);
+        // Form navigation POSTs from no-referrer documents use Origin: null.
+        // Only this HTML consent document needs same-origin referrer policy;
+        // keep strict Origin validation and one-time consent cookies intact.
+        headers.set('referrer-policy','same-origin');
         return new Response(consentPage(description,bind.handle),{status:200,headers});
       }catch{return oauthError();}
     }
