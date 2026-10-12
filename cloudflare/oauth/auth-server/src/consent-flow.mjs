@@ -30,6 +30,21 @@ function checkBrowserPost(request){
     (origin===null||origin===ORIGIN) &&
     (fetchSite===null||fetchSite==='same-origin'||fetchSite==='none');
 }
+const ACCESS_TEAM_ORIGIN=/^https:\/\/[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/;
+export function consentFormActionOrigins(env,description){
+  const origins=["'self'"];
+  if(ACCESS_TEAM_ORIGIN.test(env?.ACCESS_ISSUER||''))origins.push(env.ACCESS_ISSUER);
+  try{
+    const target=new URL(description?.redirectUri);
+    const loopback=['localhost','127.0.0.1','[::1]'].includes(target.hostname);
+    if((target.protocol==='https:'||(target.protocol==='http:'&&loopback))&&!origins.includes(target.origin))
+      origins.push(target.origin);
+  }catch{}
+  return origins;
+}
+function consentCsp(env,description){
+  return "default-src 'none'; form-action "+consentFormActionOrigins(env,description).join(' ')+"; frame-ancestors 'none'; base-uri 'none'";
+}
 export function makeConsentFlow({
   getOAuth,checkConfig=checkUpstreamConfig,verifyIdentity=verifyUpstreamCode,
   startUrl=upstreamAuthorizationUrl,pkceVerifier=createVerifier,
@@ -56,6 +71,11 @@ export function makeConsentFlow({
         // Only this HTML consent document needs same-origin referrer policy;
         // keep strict Origin validation and one-time consent cookies intact.
         headers.set('referrer-policy','same-origin');
+        // Chrome enforces form-action on every redirect after the form POST:
+        // POST /authorize -> /oauth/upstream/callback -> Cloudflare Access login
+        // (or, with a live Access session, straight to the client redirect_uri).
+        // form-action 'self' alone blocks that chain, so allow exactly those origins.
+        headers.set('content-security-policy',consentCsp(env,description));
         return new Response(consentPage(description,bind.handle),{status:200,headers});
       }catch{return oauthError();}
     }

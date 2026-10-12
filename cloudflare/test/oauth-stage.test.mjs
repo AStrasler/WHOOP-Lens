@@ -111,3 +111,20 @@ test('consent HTML uses same-origin referrer policy without weakening POST CSRF'
   }),env);
   assert.equal(foreignPost.status,403);
 });
+
+test('consent CSP form-action allows the Access login and client redirect origins (Chrome checks redirects)',async()=>{
+  const {makeConsentFlow,consentFormActionOrigins}=await import('../oauth/auth-server/src/consent-flow.mjs');
+  const flow=makeConsentFlow({getOAuth:()=>({
+    parseAuthRequest:async()=>({scope:['mcp:read']}),
+    describeConsent:async()=>({clientName:'ChatGPT',redirectHost:'chatgpt.com',redirectUri:'https://chatgpt.com/connector_platform_oauth_redirect',scope:['mcp:read']}),
+    beginConsent:async()=>({handle:'A'.repeat(43),headers:new Headers()})
+  })});
+  const env={OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true',ACCESS_ISSUER:'https://whoop-lens.cloudflareaccess.com'};
+  const get=await flow.authorize(new Request('https://auth.whooplens.tech/authorize'),env);
+  assert.equal(get.status,200);
+  assert.equal(get.headers.get('content-security-policy'),
+    "default-src 'none'; form-action 'self' https://whoop-lens.cloudflareaccess.com https://chatgpt.com; frame-ancestors 'none'; base-uri 'none'");
+  assert.deepEqual(consentFormActionOrigins({ACCESS_ISSUER:'https://evil.example.com'},{redirectUri:'javascript:alert(1)'}),["'self'"]);
+  assert.deepEqual(consentFormActionOrigins({},{redirectUri:'http://evil.example.com/cb'}),["'self'"]);
+  assert.deepEqual(consentFormActionOrigins({},{redirectUri:'http://127.0.0.1:8080/cb'}),["'self'",'http://127.0.0.1:8080']);
+});
