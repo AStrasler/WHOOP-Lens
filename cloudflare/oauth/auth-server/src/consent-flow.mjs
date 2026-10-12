@@ -26,9 +26,12 @@ async function readForm(request){
 function checkBrowserPost(request){
   const origin=request.headers.get('origin');
   const fetchSite=request.headers.get('sec-fetch-site');
+  // A same-origin form can be reported as same-site. Cross-site posts stay
+  // rejected. The literal Origin "null" stays rejected; only a missing Origin
+  // header is treated as absent.
   return new URL(request.url).origin===ORIGIN &&
     (origin===null||origin===ORIGIN) &&
-    (fetchSite===null||fetchSite==='same-origin'||fetchSite==='none');
+    (fetchSite===null||fetchSite==='same-origin'||fetchSite==='same-site'||fetchSite==='none');
 }
 export function makeConsentFlow({
   getOAuth,checkConfig=checkUpstreamConfig,verifyIdentity=verifyUpstreamCode,

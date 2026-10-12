@@ -96,7 +96,8 @@ test('consent HTML uses same-origin referrer policy without weakening POST CSRF'
   const get=await flow.authorize(new Request('https://auth.whooplens.tech/authorize'),env);
   assert.equal(get.status,200);
   assert.equal(get.headers.get('referrer-policy'),'same-origin');
-  assert.match(get.headers.get('content-security-policy'),/form-action 'self'/);
+  assert.match(get.headers.get('content-security-policy'),
+    /form-action 'self' https:\/\/auth\.whooplens\.tech https:\/\/whoop-lens\.cloudflareaccess\.com/);
   assert.match(get.headers.get('set-cookie'),/__Host-oauth-consent/);
   const badPost=await flow.authorize(new Request('https://auth.whooplens.tech/authorize',{
     method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',
@@ -110,4 +111,16 @@ test('consent HTML uses same-origin referrer policy without weakening POST CSRF'
     body:new URLSearchParams({handle:'A'.repeat(43),decision:'approve',scope:'mcp:read'})
   }),env);
   assert.equal(foreignPost.status,403);
+  const sameSite=await flow.authorize(new Request('https://auth.whooplens.tech/authorize',{
+    method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',
+      origin:'https://auth.whooplens.tech','sec-fetch-site':'same-site'},
+    body:new URLSearchParams({handle:'A'.repeat(43),decision:'approve',scope:'mcp:read'})
+  }),env);
+  assert.equal(sameSite.status,400);
+  const sameSiteForeign=await flow.authorize(new Request('https://auth.whooplens.tech/authorize',{
+    method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',
+      origin:'https://whooplens.tech','sec-fetch-site':'same-site'},
+    body:new URLSearchParams({handle:'A'.repeat(43),decision:'approve',scope:'mcp:read'})
+  }),env);
+  assert.equal(sameSiteForeign.status,403);
 });

@@ -33,8 +33,12 @@ export function consentPage(details,handle){
     '</main></body></html>';
 }
 export function noStoreHeaders(contentType='text/plain; charset=utf-8'){
+  // Chrome treats the whole redirect chain of a form POST as the form target.
+  // After approval the browser must be able to follow the same-origin callback
+  // through to the Cloudflare Access login host. 'self' alone aborts that hop,
+  // drops the authorize query, and the next load is "Authorization unavailable".
   return {'content-type':contentType,'cache-control':'no-store',
-    'content-security-policy':"default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    'content-security-policy':"default-src 'none'; form-action 'self' https://auth.whooplens.tech https://whoop-lens.cloudflareaccess.com; frame-ancestors 'none'; base-uri 'none'",
     'referrer-policy':'no-referrer','x-frame-options':'DENY',
     'x-content-type-options':'nosniff'};
 }
