@@ -90,7 +90,7 @@ Runtime secrets for the Supabase function stay in the Supabase function environm
 
 `supabase/config.toml` sets `verify_jwt = false` for `whoop-mcp`. Leave it false. The function checks the Supabase user and the WHOOP OAuth state itself, and the WHOOP callback does not carry a gateway JWT.
 
-The private connector is the Cloudflare Worker `whoop-lens` on `whooplens.tech`. Its issuer is the Worker `whoop-lens-auth` on `auth.whooplens.tech`. GitHub Workers Builds on `main` do not auto-run `npx wrangler deploy`. Where Wrangler settings are checked in, their activation flags stay off so a repository deploy cannot turn the live private MCP off.
+The private connector is the Cloudflare Worker `whoop-lens` on `whooplens.tech`. Its issuer is the Worker `whoop-lens-auth` on `auth.whooplens.tech`. GitHub Workers Builds on `main` do not auto-run `npx wrangler deploy`. Cloudflare preview builds are off, so a push does not run `npx wrangler preview` or add a failed Workers Builds check. Where Wrangler settings are checked in, their activation flags stay off so a repository deploy cannot turn the live private MCP off.
 
 ## Tests
 

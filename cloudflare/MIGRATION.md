@@ -8,7 +8,7 @@ Status as of 2026-10-12: **Supabase stays live. The private MCP is also live on 
 - `workers.dev` and preview URLs are disabled.
 - WHOOP OAuth on Cloudflare is on. The Worker has `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET`. A connection is stored only after a separate WHOOP authorization, and the WHOOP app must allow `https://whooplens.tech/api/whoop/callback`.
 - D1 has one membership and zero WHOOP connections. Refresh tokens are not copied from Supabase.
-- GitHub Workers Builds on `main` do not auto-run `npx wrangler deploy`.
+- GitHub Workers Builds on `main` do not auto-run `npx wrangler deploy`. Cloudflare preview builds are off, so a push does not run `npx wrangler preview`.
 - The sections below are the 2026-10-11 staging log. They describe that day's upload, not the current deployment.
 
 Cloudflare account: dedicated WHOOP Lens account.
