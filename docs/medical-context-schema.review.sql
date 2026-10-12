@@ -1,4 +1,4 @@
--- REVIEW ONLY. Must be put in an approved Supabase CLI-generated migration before execution.
+-- SUPERSEDED: applied form lives in supabase/migrations/20261011120000_medical_context_entries.sql. Kept for review history only.
 -- Separate from WHOOP and Health Connect measurements. No public document storage.
 create table if not exists public.medical_context_entries (
   id uuid primary key default gen_random_uuid(),

@@ -15,6 +15,8 @@ import {
 const userA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const userB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const developer = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+// Strict allowlist: tests act as approved members unless a case overrides the rows.
+const DEFAULT_MEMBERS = [userA, userB, developer].map((user_id) => ({ user_id, active: true }));
 const encKey = "test-only-encryption-key";
 const secretMarkers = [
   "test-client-secret",
@@ -36,7 +38,7 @@ function createMemoryDb(initial = {}) {
   const tables = {
     whoop_connections: clone(initial.whoop_connections ?? []),
     whoop_oauth_states: clone(initial.whoop_oauth_states ?? []),
-    whoop_members: clone(initial.whoop_members ?? []),
+    whoop_members: clone(initial.whoop_members ?? DEFAULT_MEMBERS),
     whoop_waitlist: clone(initial.whoop_waitlist ?? []),
     samsung_health_records: clone(initial.samsung_health_records ?? []),
     health_connect_records: clone(initial.health_connect_records ?? []),
@@ -291,7 +293,7 @@ test("auth rejects missing and unknown sessions and allows a disabled check to w
   assert.equal((await missing.json()).error, "Authentication required");
   const unknown = await harness.handle(request("/status", { token: "not-a-session" }));
   assert.equal(unknown.status, 401);
-  harness.memory.tables.whoop_members.push({ user_id: userA, active: false });
+  harness.memory.tables.whoop_members.find((m) => m.user_id === userA).active = false;
   const disabled = await harness.handle(request("/status", { token: "session-do-not-log-a" }));
   assert.equal(disabled.status, 403);
   assert.equal((await disabled.json()).error, "This account is disabled.");
@@ -620,7 +622,7 @@ test("a second user cannot read the first user's connection, tokens, or health r
   await harness.handle(request("/connect", { method: "POST", token: "session-do-not-log-a", body: {} }));
   await harness.handle(request("/callback", { search: "?code=oauth-code-do-not-log-a&state=11111111-1111-4111-8111-111111111111" }));
   const harnessB = createHarness({
-    rows: { whoop_connections: harness.memory.tables.whoop_connections, samsung_health_records: harness.memory.tables.samsung_health_records, whoop_oauth_states: [], whoop_members: [], whoop_waitlist: [] },
+    rows: { whoop_connections: harness.memory.tables.whoop_connections, samsung_health_records: harness.memory.tables.samsung_health_records, whoop_oauth_states: [], whoop_members: DEFAULT_MEMBERS, whoop_waitlist: [] },
     fetch: async (url, init) => {
       if (tokenFetch(url)) return jsonResponse(issuedTokens("b"));
       assert.equal(init.headers.authorization, "Bearer access-do-not-log-b");
@@ -851,7 +853,7 @@ test("catalog respects authentication and member disable gate", async () => {
   const h = createHarness({ fetch: async () => jsonResponse({}) });
   const anon = await catalogCall(h, undefined);
   assert.equal(anon.response.status, 401);
-  h.memory.tables.whoop_members.push({ user_id: userA, active: false });
+  h.memory.tables.whoop_members.find((m) => m.user_id === userA).active = false;
   const disabled = await catalogCall(h, "session-do-not-log-a");
   assert.equal(disabled.response.status, 403);
 });
@@ -891,4 +893,25 @@ test("medical context MCP reads only reviewed current-account entries and never 
   assert.equal(other.entries.length,0);
   assert.equal(mine.provenance,"user_approved_medical_context");
   assertSafe(h.logs);
+});
+
+test("strict allowlist: a signed-in user with no whoop_members row is denied everywhere", async () => {
+  let called = false;
+  const harness = createHarness({
+    rows: {
+      whoop_members: [{ user_id: userB, active: true }],
+      whoop_oauth_states: [{ state: "missing-member-state", user_id: userA, expires_at: new Date(2_000_000_000_000).toISOString() }],
+    },
+    fetch: async () => { called = true; return jsonResponse(issuedTokens("a")); },
+  });
+  const status = await harness.handle(request("/status", { token: "session-do-not-log-a" }));
+  assert.equal(status.status, 403);
+  const callback = await harness.handle(request("/callback", { search: "?code=oauth-code-do-not-log&state=missing-member-state" }));
+  assert.equal(callback.status, 302);
+  assert.equal(new URL(callback.headers.get("location")).searchParams.get("disabled"), "1");
+  assert.equal(called, false);
+  assert.equal(harness.memory.tables.whoop_connections.length, 0);
+  const other = await harness.handle(request("/status", { token: "session-do-not-log-b" }));
+  assert.notEqual(other.status, 403);
+  assertSafe(harness.logs);
 });

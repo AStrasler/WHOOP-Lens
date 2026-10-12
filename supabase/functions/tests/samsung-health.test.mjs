@@ -6,7 +6,7 @@ const userA="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const userB="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const eventDate="2026-10-10T12:00:00Z";
 function fixture(){
-  const store={whoop_connections:[{user_id:userA},{user_id:userB}],whoop_members:[],samsung_health_records:[],health_connect_records:[]};
+  const store={whoop_connections:[{user_id:userA},{user_id:userB}],whoop_members:[{user_id:userA,active:true},{user_id:userB,active:true}],samsung_health_records:[],health_connect_records:[]};
   const auth={a:userA,b:userB};
   let writes=0;
   const db={
@@ -69,7 +69,7 @@ test("new v2 source verifies bearer, existing WHOOP access and active membership
   assert.equal((await t.call(null,v2())).status,401);
   assert.equal((await t.call("wrong",v2())).status,401);
   assert.equal((await t.call("a",v2())).status,200);
-  t.store.whoop_members.push({user_id:userA,active:false});
+  t.store.whoop_members.find(m=>m.user_id===userA).active=false;
   assert.equal((await t.call("a",v2())).status,403);
   assert.equal((await t.call("b",v2())).status,200);
   t.store.whoop_connections.pop();
@@ -133,4 +133,12 @@ test("user-approved v2 DELETE only removes owner-matching records and never Sams
   assert.equal(t.store.samsung_health_records.length,1);
   const again=await t.call("a",item,"DELETE");
   assert.equal(again.body.deleted,0);
+});
+test("strict allowlist: missing whoop_members row is denied even with a WHOOP connection",async()=>{
+  const t=fixture();
+  t.store.whoop_members.splice(t.store.whoop_members.findIndex(m=>m.user_id===userA),1);
+  const r=await t.call("a",v2());
+  assert.equal(r.status,403);
+  assert.equal(t.store.health_connect_records.length,0);
+  assert.equal((await t.call("b",v2())).status,200);
 });

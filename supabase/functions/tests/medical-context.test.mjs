@@ -6,7 +6,7 @@ const a="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const b="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const id="11111111-1111-4111-8111-111111111111";
 function fixture(){
-  const tables={whoop_connections:[{user_id:a},{user_id:b}],whoop_members:[],medical_context_entries:[]};
+  const tables={whoop_connections:[{user_id:a},{user_id:b}],whoop_members:[{user_id:a,active:true},{user_id:b,active:true}],medical_context_entries:[]};
   const db={
     auth:{async getUser(token){return {data:{user:token==="a"?{id:a}:token==="b"?{id:b}:null},error:null}}},
     from(table){
@@ -51,7 +51,7 @@ test("medical context requires authenticated existing, active member",async()=>{
   assert.equal((await h.call(null,"GET")).status,401);
   assert.equal((await h.call("bogus","GET")).status,401);
   assert.equal((await h.call("a","GET")).status,200);
-  h.tables.whoop_members.push({user_id:a,active:false});
+  h.tables.whoop_members.find(m=>m.user_id===a).active=false;
   assert.equal((await h.call("a","GET")).status,403);
   h.tables.whoop_connections.splice(1,1);
   assert.equal((await h.call("b","GET")).status,403);
@@ -87,4 +87,10 @@ test("malformed and unapproved requests never reveal or store private body",asyn
   assert.equal(JSON.stringify(error.body).includes("x".repeat(20)),false);
   assert.equal((await h.call("a","POST",{...entry(),detail_json:{title:"a".repeat(3000)}})).status,400);
   assert.equal(h.tables.medical_context_entries.length,0);
+});
+test("strict allowlist: missing whoop_members row is denied even with a WHOOP connection",async()=>{
+  const h=fixture();
+  h.tables.whoop_members.splice(h.tables.whoop_members.findIndex(m=>m.user_id===a),1);
+  assert.equal((await h.call("a","GET")).status,403);
+  assert.equal((await h.call("b","GET")).status,200);
 });
