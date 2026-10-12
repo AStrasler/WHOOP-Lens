@@ -86,7 +86,7 @@ test("six WHOOP endpoints honor fixed resource paths and bounded pagination",asy
         assert.equal(new URL(got.url).searchParams.get("nextToken"),"abc.next-1");
       }
       assert.equal(got.options.method,"GET");
-      assert.equal(got.options.redirect,"error");
+      assert.equal(got.options.redirect,"manual");
     }
   }finally{d.close();}
 });
@@ -107,6 +107,7 @@ test("expired tokens rotate securely via fixed WHOOP token endpoint; old tokens 
     assert.equal(value,"synthetic-access-rotated");
     assert.equal(requests.length,1);
     assert.equal(requests[0].url,"https://api.prod.whoop.com/oauth/oauth2/token");
+    assert.equal(requests[0].opts.redirect,"manual");
     assert.equal(requests[0].opts.body.get("grant_type"),"refresh_token");
     assert.equal(requests[0].opts.body.get("refresh_token"),"test-refresh-"+A);
     const row=d.sqlite.prepare("SELECT * FROM whoop_connections WHERE user_id=?").get(A);
@@ -168,5 +169,18 @@ test("WHOOP routes are disabled separately, bounded and read-only even when stag
     d.sqlite.prepare("UPDATE whoop_members SET active=0 WHERE user_id=?").run(A);
     assert.equal((await router(apiReq("/v1/whoop/recovery?limit=25"),enabled)).status,403);
     assert.equal(count,1);
+  }finally{d.close();}
+});
+
+test("WHOOP API redirects are never followed and cannot leak bearer tokens",async()=>{
+  const d=dbFixture();
+  try{
+    await connect(d,A);
+    await assert.rejects(callWhoop(d,A,"profile",env,{}, {
+      now:()=>now,fetcher:async (_url,options)=>{
+        assert.equal(options.redirect,"manual");
+        return new Response(null,{status:302,headers:{location:"https://attacker.invalid/redirect"}});
+      }
+    }),/WHOOP API request failed/);
   }finally{d.close();}
 });

@@ -52,7 +52,7 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
   });
   const response=await fetcher(TOKEN_ENDPOINT,{
     method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},
-    body:form,redirect:"error",cache:"no-store",credentials:"omit",signal:timeout()
+    body:form,redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
   });
   if(!response.ok)throw Error("WHOOP refresh failed");
   const tokens=await boundedJson(response);
@@ -92,7 +92,7 @@ export async function callWhoop(db,userId,resource,env,opts={},deps={}){
   const url=API+spec.path+(search.size?"?"+search:"");
   const response=await (deps.fetcher||fetch)(url,{
     method:"GET",headers:{authorization:"Bearer "+token,"accept":"application/json"},
-    redirect:"error",cache:"no-store",credentials:"omit",signal:timeout()
+    redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
   });
   if(!response.ok)throw Error("WHOOP API request failed");
   const data=await boundedJson(response);

@@ -76,6 +76,7 @@ test("one-time WHOOP callback stores encrypted developer tokens and refuses repl
       calls++;
       assert.equal(url,"https://api.prod.whoop.com/oauth/oauth2/token");
       assert.equal(options.method,"POST");
+      assert.equal(options.redirect,"manual");
       assert.equal(options.body.get("grant_type"),"authorization_code");
       assert.equal(options.body.get("redirect_uri"),"https://whooplens.tech/api/whoop/callback");
       return json({access_token:"synthetic-access",refresh_token:"synthetic-refresh",expires_in:3600,scope:"offline"});
@@ -153,5 +154,18 @@ test("OAuth HTTP routes remain disabled independently and require verified sessi
     d.sqlite.prepare("UPDATE whoop_members SET active=0 WHERE user_id=?").run(A);
     assert.equal((await router(incoming("/v1/whoop/connect"),on)).status,403);
     assert.equal(initiated,1);
+  }finally{d.close();}
+});
+
+test("WHOOP OAuth token exchange rejects redirects without following them",async()=>{
+  const d=fixture();try{
+    const start=await createWhoopAuthorization(d,A,env,{now:()=>base});
+    await assert.rejects(acceptWhoopCallback(d,callbackUrl(start),env,{
+      now:()=>base,fetcher:async(_url,opts)=>{
+        assert.equal(opts.redirect,"manual");
+        return new Response(null,{status:302,headers:{location:"https://attacker.invalid/"}});
+      }
+    }),/WHOOP token exchange failed/);
+    assert.equal(d.sqlite.prepare("SELECT COUNT(*) c FROM whoop_connections WHERE user_id=?").get(A).c,0);
   }finally{d.close();}
 });

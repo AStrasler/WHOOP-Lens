@@ -78,7 +78,7 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
       grant_type:"authorization_code",code,client_id:env.WHOOP_CLIENT_ID,
       client_secret:env.WHOOP_CLIENT_SECRET,redirect_uri:REDIRECT
     }),
-    redirect:"error",cache:"no-store",credentials:"omit",signal:AbortSignal.timeout(12000)
+    redirect:"manual",cache:"no-store",credentials:"omit",signal:AbortSignal.timeout(12000)
   });
   if(!response.ok)throw Error("WHOOP token exchange failed");
   const data=await safeJson(response);
