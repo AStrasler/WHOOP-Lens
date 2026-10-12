@@ -31,6 +31,21 @@ test("terms cover independence, read-only access, revocation, and retained answe
 
 test("support points at the GitHub issues page", () => {
   assert.match(support, /https:\/\/github\.com\/AStrasler\/WHOOP-Lens\/issues/);
+  assert.match(support, /href="\/WHOOP-Lens\/refresh\/"/);
+});
+
+test("refresh guide tells existing users how to check a server update", () => {
+  const page = read("../docs/refresh/index.html");
+  const guide = read("../docs/REFRESH.md");
+  for (const text of [page, guide]) {
+    assert.match(text, /new ChatGPT conversation|new conversation/i);
+    assert.match(text, /Stress Monitor/);
+    assert.match(text, /does not convert strain|must not turn strain/i);
+    assert.match(text, /https:\/\/astrasler\.github\.io\/WHOOP-Lens\//);
+    assert.match(text, /whoop-mcp\/mcp/);
+    assert.match(text, /Do not send passwords/);
+    assert.doesNotMatch(text, /access_token|refresh_token|service_role/i);
+  }
 });
 
 test("privacy is published as a Pages page", () => {
@@ -71,12 +86,15 @@ test("every tool keeps readOnlyHint, destructiveHint, and openWorldHint", () => 
   assert.match(source, /const readOnly = \{ readOnlyHint: true, destructiveHint: false, openWorldHint: true \}/);
   assert.match(source, /const closed = \{ readOnlyHint: true, destructiveHint: false, openWorldHint: false \}/);
   const list = source.slice(source.indexOf('body.method === "tools/list"'), source.indexOf('body.method === "tools/call"'));
-  for (const name of ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_samsung_health", "connect_whoop"]) {
+  for (const name of ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_samsung_health", "get_health_connect", "get_medical_context", "get_capabilities", "connect_whoop"]) {
     assert.match(list, new RegExp(name));
   }
   assert.deepEqual(list.match(/annotations: (?:readOnly|closed)/g), [
     "annotations: readOnly",
     "annotations: readOnly",
+    "annotations: closed",
+    "annotations: closed",
+    "annotations: closed",
     "annotations: closed",
     "annotations: closed",
   ]);

@@ -39,9 +39,20 @@ function createMemoryDb(initial = {}) {
     whoop_members: clone(initial.whoop_members ?? []),
     whoop_waitlist: clone(initial.whoop_waitlist ?? []),
     samsung_health_records: clone(initial.samsung_health_records ?? []),
+    health_connect_records: clone(initial.health_connect_records ?? []),
+    medical_context_entries: clone(initial.medical_context_entries ?? []),
   };
   let upsertError = null;
   function from(name) {
+    if (memoryApi.missingTables?.has(name)) {
+      const query = {
+        select() { return query; }, eq() { return query; }, order() { return query; }, range() { return query; },
+        then(resolve, reject) {
+          return Promise.resolve({ data: null, error: { code: "42P01", message: "relation does not exist in schema cache" } }).then(resolve, reject);
+        },
+      };
+      return query;
+    }
     if (!Object.hasOwn(tables, name)) throw new Error("Unknown table " + name);
     const filters = [];
     const orders = [];
@@ -108,11 +119,13 @@ function createMemoryDb(initial = {}) {
     }
     return query;
   }
-  return {
+  const memoryApi = {
     from,
     tables,
+    missingTables: new Set(),
     failNextUpsert(error) { upsertError = error; },
   };
+  return memoryApi;
 }
 
 function createHarness(options = {}) {
@@ -474,7 +487,7 @@ test("pagination stays on the caller token and stops on a repeated cursor", asyn
     body: { jsonrpc: "2.0", id: 1, method: "tools/list" },
   }));
   const tools = (await listed.json()).result.tools.map((tool) => tool.name);
-  assert.deepEqual(tools, ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_samsung_health", "connect_whoop"]);
+  assert.deepEqual(tools, ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_capabilities", "get_medical_context", "get_health_connect", "get_samsung_health", "connect_whoop"]);
   const paged = await harness.handle(request("/mcp", {
     method: "POST",
     token: "session-do-not-log-b",
@@ -782,4 +795,135 @@ test("an existing connection can reconnect when seats are full and a lost race s
   assert.equal(JSON.stringify(lost.headers.get("location")).includes("oauth-code-do-not-log"), false);
   assertSafe(harness.logs);
   assertSafe(raced.logs);
+});
+
+// PR 1: catalog is account-scoped, truthful about missing data, and safe across clients.
+async function catalogCall(harness, token, argumentsObject = {}, method = "tools/call") {
+  const response = await harness.handle(request("/mcp", {
+    method: "POST",
+    token,
+    body: { jsonrpc: "2.0", id: 901, method, params: { name: "get_capabilities", arguments: argumentsObject } },
+  }));
+  return { response, rpc: await response.json() };
+}
+
+test("capability directory is available without WHOOP history but does not invent a connection", async () => {
+  const h = createHarness({ fetch: async () => jsonResponse({}) });
+  const { rpc } = await catalogCall(h, "session-do-not-log-a");
+  const result = JSON.parse(rpc.result.content[0].text);
+  assert.equal(result.source, "bundled_deployed_catalog");
+  assert.equal(result.registry_version, "1.2.0-pr1");
+  assert.ok(result.global_limitations.some((item) => item.includes("diagnoses")));
+  assert.equal(result.capabilities.find((item) => item.id === "directory").status, "available");
+  assert.equal(result.capabilities.find((item) => item.id === "recovery").status, "requires_connection_or_data");
+  assert.equal(result.capabilities.find((item) => item.id === "samsung").status, "requires_connection_or_data");
+  assert.equal(result.capabilities.find((item) => item.id === "health-connect").status, "planned");
+  assert.equal(result.capabilities.find((item) => item.id === "ehr-writeback").status, "unsupported");
+  assert.equal(result.capabilities.find((item) => item.id === "stress-monitor").status, "unsupported");
+  assert.equal(result.capabilities.find((item) => item.id === "stress-summary-note").status, "available");
+  assert.match(result.global_limitations.join(" "), /Stress Monitor/);
+  assert.ok(result.capabilities.every((item) => item.limitations.length && item.data_requirements.length));
+  assert.equal(JSON.stringify(result).includes("session-do-not-log"), false);
+  assertSafe(h.logs);
+});
+
+test("capability discovery keeps optional uploads and WHOOP account status isolated", async () => {
+  const h = createHarness({
+    rows: {
+      whoop_connections: [{ user_id: userA, seat_role: "public" }],
+      samsung_health_records: [{ user_id: userA, id: "record-a", metric: "sleep" }],
+    },
+    fetch: async () => jsonResponse({}),
+  });
+  const a = JSON.parse((await catalogCall(h, "session-do-not-log-a")).rpc.result.content[0].text);
+  const b = JSON.parse((await catalogCall(h, "session-do-not-log-b")).rpc.result.content[0].text);
+  assert.equal(a.capabilities.find((item) => item.id === "samsung").status, "available");
+  assert.equal(b.capabilities.find((item) => item.id === "samsung").status, "requires_connection_or_data");
+  assert.equal(a.capabilities.find((item) => item.id === "recovery").status, "available");
+  assert.equal(b.capabilities.find((item) => item.id === "recovery").status, "requires_connection_or_data");
+  assert.equal(JSON.stringify(a).includes("record-a"), false);
+  assert.equal(JSON.stringify(a).includes(userA), false);
+  assert.equal(JSON.stringify(b).includes(userA), false);
+  assertSafe(h.logs);
+});
+
+test("catalog supports bounded filtering, pagination and optional planned features", async () => {
+  const h = createHarness({ fetch: async () => jsonResponse({}) });
+  const { rpc } = await catalogCall(h, "session-do-not-log-a", { category: "whoop", limit: 2 });
+  const page = JSON.parse(rpc.result.content[0].text);
+  assert.equal(page.capabilities.length, 2);
+  assert.equal(page.next_offset, 2);
+  assert.ok(page.capabilities.every((item) => item.category === "whoop"));
+  const filtered = JSON.parse((await catalogCall(h, "session-do-not-log-a", { include_planned: false })).rpc.result.content[0].text);
+  assert.ok(filtered.capabilities.every((item) => !["planned", "unsupported"].includes(item.status)));
+  const invalid = (await catalogCall(h, "session-do-not-log-a", { limit: 500 })).rpc;
+  assert.equal(invalid.error.code, -32603);
+  assert.equal(invalid.error.message, "The tool could not be completed.");
+});
+
+test("catalog respects authentication and member disable gate", async () => {
+  const h = createHarness({ fetch: async () => jsonResponse({}) });
+  const anon = await catalogCall(h, undefined);
+  assert.equal(anon.response.status, 401);
+  h.memory.tables.whoop_members.push({ user_id: userA, active: false });
+  const disabled = await catalogCall(h, "session-do-not-log-a");
+  assert.equal(disabled.response.status, 403);
+});
+
+test("missing Health Connect and medical storage report unavailable without leaking the database error", async () => {
+  const h = createHarness({ fetch: async () => jsonResponse({}) });
+  h.memory.missingTables = new Set(["health_connect_records", "medical_context_entries"]);
+  const call = async (name) => {
+    const response = await h.handle(request("/mcp", {
+      method: "POST", token: "session-do-not-log-a",
+      body: { jsonrpc: "2.0", id: 77, method: "tools/call", params: { name, arguments: {} } },
+    }));
+    return JSON.parse((await response.json()).result.content[0].text);
+  };
+  const health = await call("get_health_connect");
+  const medical = await call("get_medical_context");
+  assert.equal(health.available, false);
+  assert.deepEqual(health.records, []);
+  assert.equal(medical.available, false);
+  assert.deepEqual(medical.entries, []);
+  assert.equal(JSON.stringify(health).includes("does not exist"), false);
+  assert.equal(JSON.stringify(medical).includes("schema cache"), false);
+  assertSafe(h.logs);
+});
+
+test("Health Connect MCP reads only current user's imported rows and labels the source", async () => {
+  const row = {user_id:userA, metric:"steps_daily", record_key:"daily:2026-10-10:UTC", origin_package:null,
+    observed_at:"2026-10-10T12:00:00Z", local_date:"2026-10-10", unit:"steps", payload:{count:5000}};
+  const h=createHarness({rows:{health_connect_records:[row]},fetch:async()=>jsonResponse({})});
+  const reqFor=(token,args)=>request("/mcp",{method:"POST",token,
+    body:{jsonrpc:"2.0",id:900,method:"tools/call",params:{name:"get_health_connect",arguments:args}}});
+  const mine=await (await h.handle(reqFor("session-do-not-log-a",{limit:10}))).json();
+  const result=JSON.parse(mine.result.content[0].text);
+  assert.equal(result.records.length,1);
+  assert.equal(result.records[0].payload.count,5000);
+  assert.equal(result.source,"health_connect");
+  assert.equal(result.transport,"health_connect_companion");
+  assert.equal(JSON.stringify(result).includes(userA),false);
+  const other=await (await h.handle(reqFor("session-do-not-log-b",{}))).json();
+  assert.equal(JSON.parse(other.result.content[0].text).records.length,0);
+  const bad=await (await h.handle(reqFor("session-do-not-log-a",{limit:1000}))).json();
+  assert.equal(bad.error.code,-32603);
+  assertSafe(h.logs);
+});
+
+test("medical context MCP reads only reviewed current-account entries and never exposes another account",async()=>{
+  const row={id:"11111111-1111-4111-8111-111111111111",user_id:userA,category:"note",
+    detail_json:{title:"Synthetic test question"},source_type:"self_reported",source_label:"test",reviewed_at:"2026-10-10T12:00:00Z"};
+  const h=createHarness({rows:{medical_context_entries:[row]},fetch:async()=>jsonResponse({})});
+  const read=async(token)=> (await (await h.handle(request("/mcp",{method:"POST",token,
+    body:{jsonrpc:"2.0",id:920,method:"tools/call",params:{name:"get_medical_context",arguments:{}}}
+  }))).json());
+  const mine=JSON.parse((await read("session-do-not-log-a")).result.content[0].text);
+  const other=JSON.parse((await read("session-do-not-log-b")).result.content[0].text);
+  assert.equal(mine.entries.length,1);
+  assert.equal(mine.entries[0].source_type,"self_reported");
+  assert.equal(mine.entries[0].user_id,undefined);
+  assert.equal(other.entries.length,0);
+  assert.equal(mine.provenance,"user_approved_medical_context");
+  assertSafe(h.logs);
 });
