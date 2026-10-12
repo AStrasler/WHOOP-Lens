@@ -537,8 +537,8 @@ export function createWhoopMcp({
   async function memberActive(userId) {
     const { data: member, error } = await db.from("whoop_members").select("active").eq("user_id", userId).maybeSingle();
     if (error) return { error: true };
-    if (member && member.active === false) return { active: false };
-    return { active: true };
+    // Strict allowlist: a missing whoop_members row means NOT a member.
+    return { active: member?.active === true };
   }
 
   async function storeConnection(userId, tokenBody, role) {

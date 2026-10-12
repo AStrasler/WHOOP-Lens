@@ -67,7 +67,7 @@ export function createSamsungHealthHandler({db,now=()=>Date.now()}) {
       if(authError||!user||!uuid.test(user.id)) return respond({error:"Invalid session"},401);
       const {data:member,error:memberError}=await db.from("whoop_members").select("active").eq("user_id",user.id).maybeSingle();
       if(memberError) return respond({error:"Membership check failed"},500);
-      if(member && member.active===false) return respond({error:"This account is disabled."},403);
+      if(member?.active!==true) return respond({error:member?"This account is disabled.":"WHOOP Lens membership required"},403); // strict allowlist
       const {data:connection,error:connectionError}=await db.from("whoop_connections").select("user_id").eq("user_id",user.id).maybeSingle();
       if(connectionError) return respond({error:"Connection check failed"},500);
       if(!connection) return respond({error:"WHOOP Lens access required"},403);
