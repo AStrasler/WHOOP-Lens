@@ -17,12 +17,12 @@ Sign-in is a Cloudflare Access email one-time PIN. The password form on the GitH
 
 The private server answers an unauthenticated request with an OAuth challenge. It does not return WHOOP measurements yet:
 
-- The Worker has no WHOOP client id or secret, so WHOOP connect stays off.
-- `https://whooplens.tech/api/whoop/callback` returns 503.
-- The Cloudflare database has one membership and zero WHOOP connections.
+- The WHOOP client id and secret are saved on the Worker, and WHOOP connect is on.
+- The WHOOP app must allow the redirect `https://whooplens.tech/api/whoop/callback`.
+- The Cloudflare database has one membership and zero WHOOP connections. A connection is stored only after a separate WHOOP authorization.
 - `https://whoop-lens.whoop-lens.workers.dev` is disabled.
 
-A signed-in tool call still needs the owner to finish Access sign-in. Even then, WHOOP measurements wait on a separate Cloudflare WHOOP connection.
+A signed-in tool call still needs the owner to finish Access sign-in and complete that WHOOP authorization. WHOOP refresh tokens stay separate from the Supabase connector.
 
 WHOOP Stress Monitor history is not in the official WHOOP developer API. There is no measurement of low, medium, or high stress-zone duration, non-activity high stress, or a Stress Monitor timeline. Do not estimate those durations from cycle strain, average heart rate, HRV, resting heart rate, or workouts. If someone pastes their own Stress Trends summary, label it user-provided, keep it separate from synced WHOOP measurements, and do not store it.
 

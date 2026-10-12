@@ -16,7 +16,7 @@ This information is used to answer your questions and produce the summaries you 
 
 ## Processing and sharing
 
-The GitHub Pages site is the sign-in and consent screen for the existing Supabase connector. Supabase Auth handles that sign-in. The Supabase edge function `whoop-mcp` exchanges and refreshes WHOOP tokens, calls the WHOOP API, and reads Samsung Health records stored for your user. That processing runs on Supabase, not only on your computer. WHOOP refresh tokens from that connector are not copied to Cloudflare. The private Cloudflare connector stores a WHOOP connection only after a separate WHOOP authorization, which is not active.
+The GitHub Pages site is the sign-in and consent screen for the existing Supabase connector. Supabase Auth handles that sign-in. The Supabase edge function `whoop-mcp` exchanges and refreshes WHOOP tokens, calls the WHOOP API, and reads Samsung Health records stored for your user. That processing runs on Supabase, not only on your computer. WHOOP refresh tokens from that connector are not copied to Cloudflare. The private Cloudflare connector stores a WHOOP connection only after a separate WHOOP authorization. That authorization is on, and no Cloudflare WHOOP connection is stored yet.
 
 Data returned to ChatGPT or Codex is processed by OpenAI under your OpenAI account settings and the OpenAI privacy policy: https://openai.com/policies/privacy-policy/.
 
