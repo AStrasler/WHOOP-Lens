@@ -18,6 +18,7 @@ test("public pages name the private Cloudflare MCP and the existing Supabase pat
   assert.match(readme, /WHOOP Stress Monitor history is not in the official WHOOP developer API/);
   assert.match(readme, /https:\/\/evoiwauqplbcecumiwqn\.supabase\.co\/functions\/v1\/whoop-mcp\/mcp/);
   assert.match(readme, /WHOOP connect is on/);
+  assert.match(readme, /Cloudflare preview builds are off/);
   assert.doesNotMatch(readme, /WHOOP connect stays off/);
   for (const page of pages) {
     assert.match(page, /https:\/\/whooplens\.tech\/mcp/);
