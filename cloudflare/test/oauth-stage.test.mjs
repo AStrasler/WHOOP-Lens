@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import test from 'node:test';
 import {readFileSync} from 'node:fs';
-import {escapeHtml,consentPage,unavailable} from '../oauth/consent.mjs';
+import {escapeHtml,consentPage,noStoreHeaders,unavailable} from '../oauth/consent.mjs';
 const file=path=>readFileSync(new URL(path,import.meta.url),'utf8');
 const issuer=file('../oauth/auth-server/src/index.mjs');
 const consent=file('../oauth/auth-server/src/consent-flow.mjs');
@@ -50,14 +51,26 @@ test('consent escapes hostile client metadata without collecting passwords',()=>
     scope:['mcp:read','offline_access'],
     redirectIsLoopback:true
   },'H'.repeat(43));
-  assert.match(html,/access will be sent/i);
-  assert.match(html,/Verified client metadata domain/);
+  assert.match(html,/Access sent to/);
+  assert.match(html,/class="verified"/);
+  assert.match(html,/&#60;b&#62;bad&#60;\/b&#62;/);
   assert.match(html,/application on your computer/);
   assert.match(html,/Continue to secure sign-in/);
-  assert.doesNotMatch(html,/<script>|<iframe|<img/);
+  assert.match(html,/name="scope" value="mcp:read"/);
+  assert.match(html,/name="scope" value="offline_access"/);
+  assert.doesNotMatch(html,/<script>|<iframe|<img|fonts\.googleapis|fonts\.gstatic/);
   assert.doesNotMatch(html,/type="password"|name="password"|name="email"/);
   assert.match(html,/name="decision" value="deny"/);
+  const deny=html.split('<form').find(part=>part.includes('value="deny"'));
+  assert.ok(deny);
+  assert.doesNotMatch(deny,/name="scope"/);
   assert.match(html,/&#60;/);
+  const style=html.match(/<style>([\s\S]*)<\/style>/)[1];
+  const digest=createHash('sha256').update(style).digest('base64');
+  const htmlCsp=noStoreHeaders('text/html; charset=utf-8')['content-security-policy'];
+  assert.ok(htmlCsp.includes("style-src 'sha256-"+digest+"'"));
+  assert.match(htmlCsp,/form-action 'self' https:\/\/auth\.whooplens\.tech https:\/\/whoop-lens\.cloudflareaccess\.com/);
+  assert.doesNotMatch(noStoreHeaders()['content-security-policy'],/style-src|fonts\.googleapis/);
   assert.doesNotMatch(consent,/password\s*[:=]/);
   assert.doesNotMatch(upstream,/grant_type=password/);
 });
