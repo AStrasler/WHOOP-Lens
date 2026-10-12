@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#000000">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Privacy statement · WHOOP Lens</title>
-<meta name="description" content="How WHOOP Lens handles WHOOP data, Samsung Health records, and answers already returned to ChatGPT.">
+<meta name="description" content="How WHOOP Lens handles WHOOP data, Samsung Health and Health Connect records, private medical context, and answers already returned to ChatGPT.">
 <link rel="icon" href="/WHOOP-Lens/logo.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="/WHOOP-Lens/logo.jpg">
 <link rel="stylesheet" href="/WHOOP-Lens/style.css">
@@ -20,13 +20,19 @@
 <span class="wordmark">WHOOP Lens</span>
 </div>
 <h1>Privacy statement</h1>
-<p class="note">Last updated: October 4, 2026</p>
+<p class="note">Last updated: October 11, 2026 (draft for the private beta; optional features are marked)</p>
 </header>
 <p>WHOOP Lens is a hosted plugin that lets a person connect their own WHOOP account so ChatGPT and Codex can read that person's data with their permission. Each person signs in with their own Supabase user. The project is operated by Aaron Strasler. It is not affiliated with WHOOP.</p>
 <h2>Data accessed and purpose</h2>
 <p>With your authorization, the plugin reads WHOOP recovery, sleep, physiological cycles and strain, workouts, profile information, and body measurements. The WHOOP connection requests read scopes only (<code>read:profile</code>, <code>read:body_measurement</code>, <code>read:recovery</code>, <code>read:sleep</code>, <code>read:workout</code>, and <code>read:cycles</code>), plus <code>offline</code> so access can be refreshed.</p>
 <p>If Samsung Health records have been uploaded for your Supabase user, the plugin can also read those stored records, such as sleep, heart rate, blood oxygen, steps, activity, exercise, body composition, skin temperature, energy score, blood pressure, and profile. Samsung Health records are kept separate from WHOOP data.</p>
 <p>This information is used to answer your questions and produce the summaries you request in ChatGPT or Codex.</p>
+<h2>Health Connect measurements (when enabled)</h2>
+<p>When this optional feature is enabled for the private beta, you can choose to send Android Health Connect measurements (daily steps, sleep sessions, heart rate and exercise sessions) to your own WHOOP Lens account. Records are stored in a separate table tied to your Supabase user, labelled with their source app where Android reports one, and are readable only by your account. Nothing is collected in the background: data is sent only when you deliberately sync or upload it.</p>
+<h2>Private medical context (optional, when enabled)</h2>
+<p>You can choose to save private medical context, such as a condition, medication, allergy, or a note or question for a clinician. Each entry is typed or reviewed by you and saved only after you confirm it. Entries are labelled as self-reported or from a provider document, are stored in a separate table tied to your Supabase user, and are visible only to your account. ChatGPT and Codex can read your saved entries through WHOOP Lens but cannot create, change, or delete them. Original documents are not stored: a FHIR R4 file you pick in the web workspace is previewed in your browser, and only the entries you review and save are sent. Medical context is not shared with other WHOOP Lens users, including family members, and it is not combined with anyone else's records.</p>
+<h2>Health information is context, not advice</h2>
+<p>WHOOP Lens can help you organize questions, summarize your own data, and point to published research. That is general, contextual information. It is not a diagnosis, treatment plan, or personal clinical advice, and it does not replace your clinician.</p>
 <h2>Processing and sharing</h2>
 <p>The GitHub Pages site is the sign-in and consent screen. Supabase Auth handles that sign-in. The Supabase edge function <code>whoop-mcp</code> exchanges and refreshes WHOOP tokens, calls the WHOOP API, and reads Samsung Health records stored for your user. That processing runs on Supabase, not only on your computer.</p>
 <p>Data returned to ChatGPT or Codex is processed by OpenAI under your OpenAI account settings and the OpenAI privacy policy: <a href="https://openai.com/policies/privacy-policy/">https://openai.com/policies/privacy-policy/</a>.</p>
@@ -34,8 +40,10 @@
 <h2>Credentials, retention, and revocation</h2>
 <p>WHOOP access and refresh tokens are encrypted per Supabase user and stored in Supabase so the plugin can read WHOOP and refresh authorization. They are not stored only on your computer. The Pages app does not put your Supabase session in browser storage.</p>
 <p>You can revoke the plugin in your WHOOP account settings. Revocation stops future authorized WHOOP access. It does not automatically delete information already included in ChatGPT or Codex conversations. Conversations remain subject to your OpenAI settings and controls.</p>
-<p>Sign out of the Pages app to end the in-memory Supabase session. Disabling a Supabase user through the optional <code>whoop_members</code> kill switch stops that user from calling the plugin.</p>
+<p>Sign out of the Pages app to end the in-memory Supabase session. Access is invite-only: a Supabase user must have an active <code>whoop_members</code> approval to use the plugin, the web workspace, or any upload. A user with no approval, or whose approval is switched off, is refused.</p>
 <p>WHOOP Lens has 9 public connection seats and 1 developer seat. A person who does not already have a WHOOP connection cannot complete a new one once the public seats are full. The developer seat is one Supabase user chosen outside this repository. When a public seat is unavailable, the plugin can store a waitlist intake for that signed-in user: the Supabase user id, the account email when it matches a normal address, the time, and the notice destination whoop-lens@outlook.com. That intake does not include WHOOP access tokens, refresh tokens, client secrets, authorization codes, or health data. Storing the intake does not send mail.</p>
+<h2>Deleting optional data</h2>
+<p>You can delete any saved medical context entry yourself in the web workspace at any time; deletion removes it from WHOOP Lens storage. To delete Health Connect measurements or your whole account, contact the operator below. Deleting your Supabase user deletes your stored WHOOP Lens records with it. Information already returned in a ChatGPT or Codex conversation stays subject to your OpenAI settings.</p>
 <h2>Contact</h2>
 <p>For privacy questions, contact Aaron Strasler at the contact email specified in the WHOOP developer application.</p>
 <h2>Changes</h2>
