@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { createStagingRouter } from "../src/router.mjs";
 import { AccessDenied, verifySupabaseSession } from "../src/identity.mjs";
 import { activeMembership, connectionStatus, readHistory } from "../src/storage.mjs";
+import { d1Prepare } from "./d1-sqlite.mjs";
 
 const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -19,14 +20,7 @@ function createDb() {
   // This adapter uses an actual in-memory SQLite engine with D1-style methods.
   return {
     sqlite,
-    prepare(sql) {
-      let args=[];
-      return {
-        bind(...params){args=params;return this;},
-        async first(){return sqlite.prepare(sql).get(...args)??null;},
-        async all(){return {success:true,results:sqlite.prepare(sql).all(...args)};}
-      };
-    },
+    prepare: d1Prepare(sqlite),
     close(){sqlite.close();}
   };
 }

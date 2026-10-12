@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { createWhoopAuthorization,acceptWhoopCallback } from "../src/whoop-oauth.mjs";
 import { openWhoopToken } from "../src/token-crypto.mjs";
 import { createStagingRouter } from "../src/router.mjs";
+import { d1Prepare } from "./d1-sqlite.mjs";
 
 const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -30,14 +31,7 @@ function fixture(){
   }
   return {
     sqlite,close(){sqlite.close();},
-    prepare(query){
-      let args=[];
-      return {
-        bind(...values){args=values;return this;},
-        async first(){return sqlite.prepare(query).get(...args)??null;},
-        async run(){const r=sqlite.prepare(query).run(...args);return {success:true,meta:{changes:r.changes}};}
-      };
-    }
+    prepare: d1Prepare(sqlite)
   };
 }
 function callbackUrl(start){

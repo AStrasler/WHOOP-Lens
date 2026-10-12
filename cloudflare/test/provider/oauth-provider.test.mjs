@@ -7,6 +7,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {makeConsentFlow as baseConsentFlow} from '../../oauth/auth-server/src/consent-flow.mjs';
 import {checkUpstreamConfig,upstreamAuthorizationUrl,createVerifier,createChallenge,verifyUpstreamCode} from '../fixtures/legacy-supabase-upstream.mjs';
+import {d1Prepare} from '../d1-sqlite.mjs';
 registerHooks({resolve(specifier,context,next){
   if(specifier==='cloudflare:workers')return {
     url:'data:text/javascript,export class WorkerEntrypoint {}',shortCircuit:true
@@ -42,8 +43,7 @@ async function fixture(){
   db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(USER);
   const env={OAUTH_KV:kv,OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true',
     SUPABASE_UPSTREAM_CLIENT_ID:'synthetic-client',SUPABASE_PUBLIC_KEY:'synthetic-key',
-    DB:{prepare(sql){let args=[];return {bind(...values){args=values;return this;},
-      async first(){return db.prepare(sql).get(...args)??null;}};}}};
+    DB:{prepare:d1Prepare(db)}};
   const oauth=server.getOAuthApi(env),http=[],verifiers=[];
   const client=await oauth.createClient({clientName:'Synthetic client',
     redirectUris:['https://client.invalid/callback'],tokenEndpointAuthMethod:'none',

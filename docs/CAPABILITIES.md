@@ -24,6 +24,8 @@ Try: "What can you do?", "What patterns could I explore?", "What are your limita
 
 - Android Health Connect and medical-context integrations are planned, not live.
 
+- The official WHOOP developer API does not provide Stress Monitor zone durations. Do not infer them from strain, heart rate, or HRV.
+
 ## Feature directory
 
 ### WHOOP profile (available)
@@ -183,6 +185,24 @@ Automatic uploads or writes into hospital portals.
 **Needs:** Separate vendor-specific authorization and implementation
 
 **Limits:** No direct hospital network access or writes. Preparing a briefing does not send it.
+
+### User-provided stress summary (available)
+
+Read a Stress Trends summary the user pastes from the WHOOP app. This is not a synced Stress Monitor feed.
+
+**Needs:** A summary the user chooses to paste; optional connected recovery, sleep, or cycle data kept as a separate source
+
+**Limits:** Not synced WHOOP Stress Monitor data, and this tool does not store the paste. Cannot calculate non-activity high-stress hours from strain, heart rate, or HRV.
+
+**Try:** Here is my WHOOP stress summary. Label it as user-provided and compare it only with my recovery and sleep.
+
+### WHOOP Stress Monitor history (unsupported)
+
+Daily low, medium, and high physiological stress durations, including non-activity high stress.
+
+**Needs:** An official WHOOP Stress Monitor endpoint, which the public developer API does not provide
+
+**Limits:** No stress-zone timeline or high-stress duration totals are returned. Strain, average heart rate, and HRV must not be converted into stress hours.
 
 
 

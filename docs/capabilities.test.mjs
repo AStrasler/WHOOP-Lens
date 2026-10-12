@@ -51,6 +51,12 @@ test("active data tools are exactly registered in the handler and not invented",
   assert.match(source, /stop charts immediately when the user opts out/);
   assert.match(source, /No EHR integration or automatic clinical record sharing/);
   assert.match(source, /Never invent studies/);
+  assert.match(source, /WHOOP Stress Monitor history is not in the official WHOOP developer API/);
+  assert.match(source, /Do not estimate those durations from cycle strain/);
+  const stress = doc.capabilities.find((item) => item.id === "stress-monitor");
+  assert.equal(stress.status, "unsupported");
+  assert.equal(stress.tools.length, 0);
+  assert.equal(doc.capabilities.find((item) => item.id === "stress-summary-note").delivery, "host_assisted");
 });
 
 test("public catalog never includes private measurements, credentials or account identifiers", () => {

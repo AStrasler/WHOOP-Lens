@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {verifyUpstreamCode,upstreamAuthorizationUrl,CALLBACK_URI} from '../oauth/auth-server/src/upstream.mjs';
+import {d1Prepare} from './d1-sqlite.mjs';
 const issuer='https://synthetic.cloudflareaccess.com',aud='a'.repeat(64),now=1800000000000;
 const pair=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
 const jwk={...await crypto.subtle.exportKey('jwk',pair.publicKey),kid:'synthetic',alg:'RS256',use:'sig'};
@@ -16,7 +17,7 @@ function fixture(){
  for(const path of ['0001_initial.sql','0005_access_identity_links.sql'])db.exec(readFileSync(new URL('../migrations/'+path,import.meta.url),'utf8'));
  db.exec("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','cloudflare_access','subject-a'); INSERT INTO whoop_members(user_id,active) VALUES('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',1);");
  db.prepare('INSERT INTO access_identity_links VALUES(?,?,?,1,?)').run(issuer,'subject-a','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','2026-10-11');
- const env={ACCESS_ISSUER:issuer,ACCESS_AUD:aud,DB:{prepare(sql){let args=[];return {bind(...a){args=a;return this;},async first(){return db.prepare(sql).get(...args)??null;}};}}};
+ const env={ACCESS_ISSUER:issuer,ACCESS_AUD:aud,DB:{prepare:d1Prepare(db)}};
  const seen=[];
  async function verify(jwt,overrides={}){return verifyUpstreamCode({request:new Request(CALLBACK_URI+'?code=access',{headers:{'cf-access-jwt-assertion':jwt}}),code:'access',env,now,fetcher:async url=>{seen.push(url);assert.equal(url,issuer+'/cdn-cgi/access/certs');return Response.json({keys:[jwk]});},...overrides});}
  return {db,env,seen,verify};

@@ -8,6 +8,7 @@ import {
 } from './fixtures/legacy-supabase-upstream.mjs';
 import {makeConsentFlow as baseConsentFlow} from '../oauth/auth-server/src/consent-flow.mjs';
 import {consentPage} from '../oauth/consent.mjs';
+import {d1Prepare} from './d1-sqlite.mjs';
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const env=db=>({
@@ -22,10 +23,7 @@ function fixture(){
     sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
   sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(A);
   sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,0)').run(B);
-  return {sqlite,close:()=>sqlite.close(),prepare(sql){let args=[];return {
-    bind(...v){args=v;return this;},
-    async first(){return sqlite.prepare(sql).get(...args)??null;}
-  };}};
+  return {sqlite,close:()=>sqlite.close(),prepare:d1Prepare(sqlite)};
 }
 const state='S'.repeat(43),handle='H'.repeat(43);
 const req=(path,method='GET',form,headers={})=>new Request('https://auth.whooplens.tech'+path,{

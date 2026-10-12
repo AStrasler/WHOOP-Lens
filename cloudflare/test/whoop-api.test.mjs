@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { sealWhoopToken, openWhoopToken } from "../src/token-crypto.mjs";
 import { callWhoop, whoopAccessToken } from "../src/whoop-api.mjs";
 import { createStagingRouter } from "../src/router.mjs";
+import { d1Prepare } from "./d1-sqlite.mjs";
 
 const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -23,17 +24,7 @@ function dbFixture() {
   }
   return {
     sqlite,close(){sqlite.close();},
-    prepare(sql){
-      let args=[];
-      return {
-        bind(...values){args=values;return this;},
-        async first(){return sqlite.prepare(sql).get(...args)??null;},
-        async run(){
-          const info=sqlite.prepare(sql).run(...args);
-          return {success:true,meta:{changes:info.changes}};
-        }
-      };
-    }
+    prepare: d1Prepare(sqlite)
   };
 }
 async function connect(db,id,{expiry=now+3600000,role="public"}={}){

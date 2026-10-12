@@ -1,13 +1,14 @@
 {
   "schema_version": 1,
-  "registry_version": "1.1.0-pr1",
+  "registry_version": "1.2.0-pr1",
   "global_limitations": [
     "Measurements and patterns are not diagnoses or proofs of causation.",
     "No record is never proof of no symptoms or activity.",
     "Only current authorized account data may be read.",
     "Charts and research depend on the connected AI client.",
     "No automatic WHOOP setting changes or healthcare provider contact.",
-    "Android Health Connect and medical-context integrations are planned, not live."
+    "Android Health Connect and medical-context integrations are planned, not live.",
+    "The official WHOOP developer API does not provide Stress Monitor zone durations. Do not infer them from strain, heart rate, or HRV."
   ],
   "capabilities": [
     {
@@ -345,6 +346,45 @@
       "limitations": [
         "No direct hospital network access or writes.",
         "Preparing a briefing does not send it."
+      ],
+      "example_prompts": []
+    },
+    {
+      "id": "stress-summary-note",
+      "name": "User-provided stress summary",
+      "category": "explore",
+      "description": "Read a Stress Trends summary the user pastes from the WHOOP app. This is not a synced Stress Monitor feed.",
+      "provides": "A labeled comparison of that user-supplied summary with authorized recovery, sleep, and strain.",
+      "delivery": "host_assisted",
+      "status": "available",
+      "tools": [],
+      "data_requirements": [
+        "A summary the user chooses to paste",
+        "Optional connected recovery, sleep, or cycle data kept as a separate source"
+      ],
+      "limitations": [
+        "Not synced WHOOP Stress Monitor data, and this tool does not store the paste.",
+        "Cannot calculate non-activity high-stress hours from strain, heart rate, or HRV."
+      ],
+      "example_prompts": [
+        "Here is my WHOOP stress summary. Label it as user-provided and compare it only with my recovery and sleep."
+      ]
+    },
+    {
+      "id": "stress-monitor",
+      "name": "WHOOP Stress Monitor history",
+      "category": "unsupported",
+      "description": "Daily low, medium, and high physiological stress durations, including non-activity high stress.",
+      "provides": "Not available from the official WHOOP developer API.",
+      "delivery": "unsupported",
+      "status": "unsupported",
+      "tools": [],
+      "data_requirements": [
+        "An official WHOOP Stress Monitor endpoint, which the public developer API does not provide"
+      ],
+      "limitations": [
+        "No stress-zone timeline or high-stress duration totals are returned.",
+        "Strain, average heart rate, and HRV must not be converted into stress hours."
       ],
       "example_prompts": []
     }

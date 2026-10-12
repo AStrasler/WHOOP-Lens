@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {readExtraTool,extraArguments} from '../src/extra-tools.mjs';
 import {createStagingRouter} from '../src/router.mjs';
+import {d1Prepare} from './d1-sqlite.mjs';
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 function fixture(){
   const sql=new DatabaseSync(':memory:');
@@ -19,9 +20,7 @@ function fixture(){
       sql.prepare("INSERT INTO medical_context(id,user_id,source_type,source_label,category,detail_json,reviewed_at) VALUES(?,?,'self_reported','Synthetic fixture','note',?,?)").run(key,id,raw,i===0?null:'2026-10-11');
     }
   }
-  return {sql,prepare(query){let args=[];return {bind(...values){args=values;return this;},
-    async first(){return sql.prepare(query).get(...args)||null;},
-    async all(){return {success:true,results:sql.prepare(query).all(...args)};}};}};
+  return {sql,prepare:d1Prepare(sql)};
 }
 test('local reads isolate accounts, deserialize JSON and paginate deterministically',async()=>{
   const db=fixture();try{
@@ -66,6 +65,10 @@ test('capability availability is scoped to existing records and bounded filters'
     const absent=await readExtraTool(db,A,'get_capabilities',{});
     assert.equal(absent.capabilities.find(c=>c.id==='samsung').status,'requires_connection_or_data');
     assert.ok(absent.capabilities.find(c=>c.id==='health-connect').tools.includes('get_health_connect'));
+    const stress=absent.capabilities.find(c=>c.id==='stress-monitor');
+    assert.equal(stress.status,'unsupported');
+    assert.deepEqual(stress.tools,[]);
+    assert.match(absent.global_limitations.join(' '),/Stress Monitor/);
   }finally{db.sql.close();}
 });
 test('connect MCP dispatch uses verified identity and separate connection gate',async()=>{

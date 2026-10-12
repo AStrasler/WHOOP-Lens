@@ -801,13 +801,16 @@ test("capability directory is available without WHOOP history but does not inven
   const { rpc } = await catalogCall(h, "session-do-not-log-a");
   const result = JSON.parse(rpc.result.content[0].text);
   assert.equal(result.source, "bundled_deployed_catalog");
-  assert.equal(result.registry_version, "1.1.0-pr1");
+  assert.equal(result.registry_version, "1.2.0-pr1");
   assert.ok(result.global_limitations.some((item) => item.includes("diagnoses")));
   assert.equal(result.capabilities.find((item) => item.id === "directory").status, "available");
   assert.equal(result.capabilities.find((item) => item.id === "recovery").status, "requires_connection_or_data");
   assert.equal(result.capabilities.find((item) => item.id === "samsung").status, "requires_connection_or_data");
   assert.equal(result.capabilities.find((item) => item.id === "health-connect").status, "planned");
   assert.equal(result.capabilities.find((item) => item.id === "ehr-writeback").status, "unsupported");
+  assert.equal(result.capabilities.find((item) => item.id === "stress-monitor").status, "unsupported");
+  assert.equal(result.capabilities.find((item) => item.id === "stress-summary-note").status, "available");
+  assert.match(result.global_limitations.join(" "), /Stress Monitor/);
   assert.ok(result.capabilities.every((item) => item.limitations.length && item.data_requirements.length));
   assert.equal(JSON.stringify(result).includes("session-do-not-log"), false);
   assertSafe(h.logs);
