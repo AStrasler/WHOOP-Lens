@@ -11,6 +11,20 @@ const privacy = read("../docs/privacy/index.html");
 const source = read("../supabase/functions/whoop-mcp/handler.mjs");
 const entry = read("../supabase/functions/whoop-mcp/index.ts");
 
+test("public pages name the private Cloudflare MCP and the existing Supabase path", () => {
+  const readme = read("../README.md");
+  assert.match(readme, /https:\/\/whooplens\.tech\/mcp/);
+  assert.match(readme, /https:\/\/auth\.whooplens\.tech/);
+  assert.match(readme, /WHOOP Stress Monitor history is not in the official WHOOP developer API/);
+  assert.match(readme, /https:\/\/evoiwauqplbcecumiwqn\.supabase\.co\/functions\/v1\/whoop-mcp\/mcp/);
+  for (const page of pages) {
+    assert.match(page, /https:\/\/whooplens\.tech\/mcp/);
+    assert.match(page, /Existing Supabase MCP address/);
+  }
+  assert.match(privacy, /https:\/\/whooplens\.tech\/mcp/);
+  assert.match(read("../Privacy.md"), /https:\/\/whooplens\.tech\/mcp/);
+});
+
 test("sign-in and consent link privacy, terms, and support", () => {
   for (const page of pages) {
     assert.match(page, /href="\/WHOOP-Lens\/privacy\/"/);

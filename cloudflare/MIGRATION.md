@@ -1,11 +1,21 @@
 # WHOOP Lens: Supabase to Cloudflare migration
 
-Status: **Supabase remains PRIMARY; Cloudflare is PARALLEL STAGING only.** An existing Cloudflare Worker deployment was discovered on 2026-10-11, but OUR tested staging version has been UPLOADED ONLY, NOT DEPLOYED. No domain cutover or live data copy.
+Status as of 2026-10-12: **Supabase stays live. The private MCP is also live on Cloudflare.**
+
+- Private server: `https://whooplens.tech/mcp` on Worker `whoop-lens`.
+- Authorization server: `https://auth.whooplens.tech` on Worker `whoop-lens-auth`.
+- Scope: `mcp:read`. Resource name: WHOOP Lens (private read-only MCP).
+- `workers.dev` and preview URLs are disabled.
+- WHOOP OAuth on Cloudflare is disabled. The Worker has no WHOOP client id or secret. `https://whooplens.tech/api/whoop/callback` returns 503.
+- D1 has one membership and zero WHOOP connections. Refresh tokens are not copied from Supabase.
+- GitHub Workers Builds on `main` do not auto-run `npx wrangler deploy`.
+- The sections below are the 2026-10-11 staging log. They describe that day's upload, not the current deployment.
+
 Cloudflare account: dedicated WHOOP Lens account.
-Cloudflare Worker name (planned, not deployed): `whoop-lens`.
-Custom domain target (reserved, not attached): `whooplens.tech`.
-Default workers.dev and preview URLs: disabled in configuration.
-API runtime flag: `MIGRATION_API_ENABLED=false`; no public API.
+Cloudflare Worker name: `whoop-lens`.
+Custom domain: `whooplens.tech` for the resource Worker and `auth.whooplens.tech` for the issuer.
+Default workers.dev and preview URLs: disabled.
+Live API flags: `MCP_ENABLED`, `MIGRATION_API_ENABLED`, `OAUTH_RESOURCE_ENABLED`, and `WHOOP_READS_ENABLED` are true. `WHOOP_OAUTH_ENABLED` is false.
 D1 database: whoop-lens-migration, ID 58250de2-cad7-4a8a-a061-d9b41c7b24d2.
 The database was created and the exact SQL in migrations/0001_initial.sql was applied successfully on 2026-10-11.
 

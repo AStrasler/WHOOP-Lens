@@ -1,98 +1,63 @@
 # WHOOP Lens
 
-Hosted ChatGPT and Codex plugin for reading a person's own WHOOP data. It can also read Samsung Health records that were uploaded for that same person. This is an independent project. It is not affiliated with WHOOP.
+Private, read-only MCP for a person's own WHOOP data. It can also read Samsung Health records that were uploaded for that same person. This is an independent project. It is not affiliated with WHOOP.
 
-## Browser-first private workspace (new direction)
+## Private connector
 
-**The web app is the primary interface.** Invited users can open the browser-based [WHOOP Lens workspace](https://astrasler.github.io/WHOOP-Lens/dashboard/) on Android, a laptop, or another device without installing anything. This dashboard is currently part of **draft PR #11**; the URL becomes available only after approved deployment of the website.
+Use this connector in ChatGPT or Codex:
 
-The web app verifies Supabase credentials and an existing WHOOP connection, then provides local-only previews of supported WHOOP Lens Health Connect v2 JSON files and FHIR R4 Bundles. No arbitrary Samsung/Health Connect file formats are silently assumed compatible. Web browsers cannot directly read Android Health Connect; the Android companion is preserved only as an **optional future bridge**, never required for normal use. Live health-file uploads remain disabled pending review and production approval. See [Web workspace guide](docs/WEB_WORKSPACE.md).
+- Name: **WHOOP Lens**
+- Server URL: `https://whooplens.tech/mcp`
+- Authentication: OAuth
+- Authorization server: `https://auth.whooplens.tech`
+- Scope: `mcp:read`
+- Protected resource metadata: `https://whooplens.tech/.well-known/oauth-protected-resource/mcp`
 
-## Installation
+Sign-in is a Cloudflare Access email one-time PIN. The password form on the GitHub Pages site belongs to the existing Supabase connector.
 
-WHOOP Lens connects your WHOOP account to your own ChatGPT account. Setup has two parts: authorize WHOOP, then connect ChatGPT.
+The private server answers an unauthenticated request with an OAuth challenge. It does not return WHOOP measurements yet:
 
-### Before you start
+- The Worker has no WHOOP client id or secret, so WHOOP connect stays off.
+- `https://whooplens.tech/api/whoop/callback` returns 503.
+- The Cloudflare database has one membership and zero WHOOP connections.
+- `https://whoop-lens.whoop-lens.workers.dev` is disabled.
 
-- Have an active WHOOP account and access to ChatGPT's custom MCP plugin setup.
-- Request access to the invite-only beta and obtain your own WHOOP Lens sign-in credentials from the maintainer.
-- Use your own account for both sign-ins. WHOOP Lens credentials sign you into this integration through Supabase Auth; your WHOOP credentials are entered on WHOOP's authorization page. You do not need a Supabase dashboard account.
-- A new WHOOP connection requires an available seat.
+A signed-in tool call still needs the owner to finish Access sign-in. Even then, WHOOP measurements wait on a separate Cloudflare WHOOP connection.
 
-### 1. Connect your WHOOP account
+WHOOP Stress Monitor history is not in the official WHOOP developer API. There is no measurement of low, medium, or high stress-zone duration, non-activity high stress, or a Stress Monitor timeline. Do not estimate those durations from cycle strain, average heart rate, HRV, resting heart rate, or workouts. If someone pastes their own Stress Trends summary, label it user-provided, keep it separate from synced WHOOP measurements, and do not store it.
+
+## Existing Supabase connector
+
+The Supabase function stays up. It is the working path for an existing WHOOP connection.
+
+- Server URL: `https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/mcp`
+- Setup and consent: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/)
+- Sign-in uses that person's Supabase user. WHOOP credentials are entered on WHOOP's authorization page.
+- WHOOP refresh tokens stay in Supabase. They are not copied to Cloudflare.
+
+### Connect WHOOP on the existing connector
 
 1. Open [WHOOP Lens setup](https://astrasler.github.io/WHOOP-Lens/).
-2. Enter your WHOOP Lens sign-in email and password, then click **Sign in securely**.
+2. Enter the WHOOP Lens email and password, then click **Sign in securely**.
 3. Under **WHOOP connection**, click **Connect WHOOP**.
-4. On WHOOP's page, sign in with your own WHOOP credentials and approve the requested access.
-5. WHOOP returns you to WHOOP Lens with a connection confirmation. If you sign in again to check the status, it should say **Your WHOOP account is connected.**
+4. On WHOOP's page, sign in with the WHOOP account and approve read access.
+5. The setup page should then say **Your WHOOP account is connected.**
 
-### 2. Add WHOOP Lens to ChatGPT
+To add this existing connector in ChatGPT, use the Supabase server URL above, choose OAuth, and approve access with the same WHOOP Lens sign-in. A new WHOOP connection needs an open seat.
 
-1. Open ChatGPT in the account that will use your WHOOP data.
-2. Open **Plugins**, click **Add**, and choose **Add custom MCP server**.
-3. Enter **WHOOP Lens** as the name.
-4. Enter this **Server URL**:
+## Browser workspace
 
-   `https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/mcp`
+The Pages site includes a browser workspace at [https://astrasler.github.io/WHOOP-Lens/dashboard/](https://astrasler.github.io/WHOOP-Lens/dashboard/). It checks the Supabase sign-in and an existing WHOOP connection, then previews supported Health Connect v2 JSON and FHIR R4 bundles in the browser. Live health-file uploads stay disabled. The Android companion is an optional future bridge. See [Web workspace guide](docs/WEB_WORKSPACE.md).
 
-5. Choose **OAuth** for authentication. Review the displayed notice, select its acknowledgment checkbox, and continue the setup.
-6. On the WHOOP Lens consent page, sign in with the same WHOOP Lens credentials used in part 1.
-7. Review the requesting app and return address, then click **Approve access**. If this app was already approved, the button may say **Continue**.
-8. Return to ChatGPT. WHOOP Lens should appear with your connected account.
+## Capabilities
 
-If you start with ChatGPT before connecting WHOOP, the consent page first shows **Connect WHOOP**. Click it, authorize WHOOP in the separate tab, then return to the original consent tab and click **Refresh**. Finish with **Approve access** or **Continue**. Keep the original tab open during this flow.
+Connected clients can call **get_capabilities**. The deployed catalog is the source of truth. See [the capability directory](docs/CAPABILITIES.md).
 
-### 3. Check the connection
-
-In a ChatGPT conversation with WHOOP Lens available, ask:
-
-- “Use WHOOP Lens to show my WHOOP profile so I can confirm you're accessing my account.”
-- “What is my latest recovery score, HRV, and resting heart rate? Include the date.”
-- “How much did I sleep last night, and what was my sleep performance?”
-
-Confirm the profile belongs to you and compare the dated readings with your WHOOP app. If the profile request fails, resolve that failure before testing the other readings.
-
-### If ChatGPT is connected but WHOOP is not
-
-A connected account in ChatGPT, or **Previously approved app** on the consent page, confirms the ChatGPT authorization. It does not by itself confirm WHOOP authorization.
-
-1. Open [WHOOP Lens setup](https://astrasler.github.io/WHOOP-Lens/) in the same browser session.
-2. Sign in with the WHOOP Lens credentials associated with that ChatGPT connection.
-3. Click **Connect WHOOP**, sign in to WHOOP, and approve access.
-4. After WHOOP Lens confirms the connection, return to ChatGPT and retry the profile question. You do not need to add the MCP server again.
-
-For an already installed plugin, its ChatGPT settings page is not the WHOOP authorization page. Use the setup website above.
-
-If a consent request says it could not be completed after you already returned to ChatGPT, that request may have been consumed. Use the setup website to finish WHOOP authorization; start a fresh ChatGPT connection request only if the ChatGPT connection itself is still incomplete.
-
-If an older page keeps skipping WHOOP setup, reload the setup website with **Ctrl+Shift+R** on Windows or **Command+Shift+R** on macOS. During a connection started from ChatGPT, allow the separate WHOOP tab to open, then return to the original consent tab.
-
-## Explore capabilities and limitations
-
-When the PR 1 capability discovery update is deployed, connected MCP clients can call **get_capabilities** and ask:
-
-- "What can WHOOP Lens do?"
-- "What patterns could my data reveal that I have not thought to ask about?"
-- "What are WHOOP Lens's limitations?"
-
-See [the capability directory](docs/CAPABILITIES.md), including required data and what each feature **cannot** conclude. The deployed MCP catalog is the runtime source of truth; planned items in GitHub are not automatically available in ChatGPT or other AI clients. Supported charts and outside research depend on the connected AI host, and users can opt out of visuals.
-
-## How it is hosted
-
-The consent and connection UI in `docs/` is the GitHub Pages site: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/). Each person signs in with their own Supabase user. This repository does not add a separate account system.
-
-WHOOP requests are handled by the Supabase edge function `whoop-mcp`. Its source is `supabase/functions/whoop-mcp/` (`index.ts` plus `handler.mjs` and `challenge.mjs`). Those files are the bytes that should be deployed. `supabase/whoop-mcp.SOURCE.sha256` is a checksum of them, and `node --test` fails if the files drift from that lock. Supabase processes those requests. The integration does not run only on the visitor's computer.
-
-WHOOP access and refresh tokens are encrypted per Supabase user and stored in Supabase. They are not stored only in the browser. The Pages app keeps the Supabase sign-in session in memory for the open tab.
-
-Runtime secrets stay in the Supabase function environment. Do not commit tokens, WHOOP credentials, or service keys. When OpenAI issues a domain-verification token, set `OPENAI_APPS_CHALLENGE` in that environment. A GET to `/.well-known/openai-apps-challenge` returns that value as plain text. If the variable is missing, the route returns 404.
-
-`supabase/config.toml` sets `verify_jwt = false` for `whoop-mcp`. Leave it false. The function checks the Supabase user and the WHOOP OAuth state itself, and the WHOOP callback does not carry a gateway JWT.
+WHOOP Lens reads profile, body measurements, recovery, sleep, workouts, and cycles. Charts and outside research depend on the connected AI host.
 
 ## Seats
 
-A new WHOOP connection needs an open seat. There are 9 public seats and 1 developer seat. A person who already has a connection can reconnect and keep using MCP. A person without a connection cannot finish a new one when the matching seat is unavailable: `/connect`, `connect_whoop`, and the WHOOP callback all stop before storing tokens.
+A new WHOOP connection on the Supabase connector needs an open seat. There are 9 public seats and 1 developer seat. A person who already has a connection can reconnect and keep using MCP. A person without a connection cannot finish a new one when the matching seat is unavailable: `/connect`, `connect_whoop`, and the WHOOP callback all stop before storing tokens.
 
 The developer seat is the Supabase Auth user id in the function environment variable `WHOOP_LENS_DEVELOPER_USER_ID`. It is not stored in git. If that variable is unset or is not a UUID, nobody gets the developer seat and only the 9 public seats exist. The designated user can connect while public seats are full, unless another connection already has `seat_role = developer`. Changing the variable does not move an existing developer row; clear or reconnect that row first. Until the designated user reconnects, an older connection stays `public` and counts as a public seat.
 
@@ -100,7 +65,7 @@ Someone past the public cap gets HTTP 403 with `code` `seat_full`. The callback 
 
 ## Waitlist
 
-When public seats are full, the function stores one `whoop_waitlist` row for that Supabase user. The row can contain only:
+When public seats are full, the Supabase function stores one `whoop_waitlist` row for that Supabase user. The row can contain only:
 
 - `user_id`
 - `contact_email` (the Supabase account email, and only when it matches the normal address pattern)
@@ -111,7 +76,21 @@ It does not contain WHOOP access tokens, refresh tokens, client secrets, authori
 
 ## Logging
 
-The function writes one JSON object per metric through `console.log`. Fields are limited to the metric name, outcome, status, route, duration, tool name, seat kind, page count, and Supabase user id. Tokens, authorization headers, OAuth codes, refresh tokens, emails, and health payloads are not fields on that object.
+The Supabase function writes one JSON object per metric through `console.log`. Fields are limited to the metric name, outcome, status, route, duration, tool name, seat kind, page count, and Supabase user id. Tokens, authorization headers, OAuth codes, refresh tokens, emails, and health payloads are not fields on that object.
+
+## How it is hosted
+
+The consent and connection UI in `docs/` is the GitHub Pages site: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/). That site signs a person into the existing Supabase connector. This repository does not add a separate account system for that path.
+
+WHOOP requests for the existing connector are handled by the Supabase edge function `whoop-mcp`. Its source is `supabase/functions/whoop-mcp/` (`index.ts` plus `handler.mjs` and `challenge.mjs`). Those files are the bytes that should be deployed. `supabase/whoop-mcp.SOURCE.sha256` is a checksum of them, and `node --test` fails if the files drift from that lock. Supabase processes those requests.
+
+WHOOP access and refresh tokens for that connector are encrypted per Supabase user and stored in Supabase. They are not stored only in the browser. The Pages app keeps the Supabase sign-in session in memory for the open tab. Those tokens are not copied to Cloudflare.
+
+Runtime secrets for the Supabase function stay in the Supabase function environment. Do not commit tokens, WHOOP credentials, or service keys. When OpenAI issues a domain-verification token, set `OPENAI_APPS_CHALLENGE` in that environment. A GET to `/.well-known/openai-apps-challenge` returns that value as plain text. If the variable is missing, the route returns 404.
+
+`supabase/config.toml` sets `verify_jwt = false` for `whoop-mcp`. Leave it false. The function checks the Supabase user and the WHOOP OAuth state itself, and the WHOOP callback does not carry a gateway JWT.
+
+The private connector is the Cloudflare Worker `whoop-lens` on `whooplens.tech`. Its issuer is the Worker `whoop-lens-auth` on `auth.whooplens.tech`. GitHub Workers Builds on `main` do not auto-run `npx wrangler deploy`. Where Wrangler settings are checked in, their activation flags stay off so a repository deploy cannot turn the live private MCP off.
 
 ## Tests
 
@@ -121,9 +100,15 @@ node --test docs/*.test.mjs supabase/functions/tests/*.test.mjs
 
 GitHub Actions runs that command on every push and every pull request. The tests do not need a live WHOOP account or real secrets. They do not prove production isolation against two live WHOOP accounts; they prove the function filters by the signed-in Supabase user when the database and WHOOP client are faked.
 
+Where the Cloudflare sources are present, also run:
+
+```bash
+node --test cloudflare/test/mcp.test.mjs cloudflare/test/extra-tools.test.mjs
+```
+
 ## WHOOP access
 
-Connecting WHOOP requests these read scopes: `read:profile`, `read:body_measurement`, `read:recovery`, `read:sleep`, `read:workout`, and `read:cycles`, plus `offline` so the function can refresh access. The plugin does not request write access to WHOOP.
+Connecting WHOOP on the Supabase connector requests these read scopes: `read:profile`, `read:body_measurement`, `read:recovery`, `read:sleep`, `read:workout`, and `read:cycles`, plus `offline` so the function can refresh access. The plugin does not request write access to WHOOP.
 
 ## Samsung Health
 
@@ -131,15 +116,14 @@ Connecting WHOOP requests these read scopes: `read:profile`, `read:body_measurem
 
 ## Revocation
 
-Revoke the integration in your WHOOP account settings to stop future WHOOP reads. Revocation does not delete information already returned to ChatGPT or Codex. Sign out of the Pages app to drop the in-memory Supabase session. A Supabase user can also be disabled with the optional `whoop_members` kill switch. A new WHOOP connection still needs an open seat, as described above.
+Revoke the integration in the WHOOP account settings to stop future WHOOP reads. Revocation does not delete information already returned to ChatGPT or Codex. Sign out of the Pages app to drop the in-memory Supabase session. A Supabase user can also be disabled with the optional `whoop_members` kill switch. A new WHOOP connection still needs an open seat, as described above.
 
 See the [privacy statement](https://astrasler.github.io/WHOOP-Lens/privacy/) for how data is handled. The same text is in [Privacy.md](Privacy.md).
 
-## Public listing
-
-These are the public addresses for someone connecting the ChatGPT plugin:
+## Published pages
 
 - Website: https://astrasler.github.io/WHOOP-Lens/
 - Privacy: https://astrasler.github.io/WHOOP-Lens/privacy/
 - Terms: https://astrasler.github.io/WHOOP-Lens/terms/
 - Support: https://astrasler.github.io/WHOOP-Lens/support/
+- Private MCP: https://whooplens.tech/mcp
