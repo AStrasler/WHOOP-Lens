@@ -1,6 +1,6 @@
 # Independent Cloudflare release and rollback plan
 
-Status as of 2026-10-12: the private MCP at `https://whooplens.tech/mcp` answers unauthenticated OAuth requests, and Supabase stays live. Authenticated tool calls and Cloudflare WHOOP measurements are not verified. WHOOP OAuth on Cloudflare stays disabled.
+Status as of 2026-10-12: the private MCP at `https://whooplens.tech/mcp` answers unauthenticated OAuth requests, and Supabase stays live. WHOOP OAuth on Cloudflare is on. Authenticated tool calls and Cloudflare WHOOP measurements are not verified, and D1 still has zero WHOOP connections.
 Owner approval is required for verification activation, cutover and retirement.
 Successful tests alone do not authorize any of those actions. Supabase stays live.
 

@@ -6,7 +6,7 @@ Status as of 2026-10-12: **Supabase stays live. The private MCP is also live on 
 - Authorization server: `https://auth.whooplens.tech` on Worker `whoop-lens-auth`.
 - Scope: `mcp:read`. Resource name: WHOOP Lens (private read-only MCP).
 - `workers.dev` and preview URLs are disabled.
-- WHOOP OAuth on Cloudflare is disabled. The Worker has no WHOOP client id or secret. `https://whooplens.tech/api/whoop/callback` returns 503.
+- WHOOP OAuth on Cloudflare is on. The Worker has `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET`. A connection is stored only after a separate WHOOP authorization, and the WHOOP app must allow `https://whooplens.tech/api/whoop/callback`.
 - D1 has one membership and zero WHOOP connections. Refresh tokens are not copied from Supabase.
 - GitHub Workers Builds on `main` do not auto-run `npx wrangler deploy`.
 - The sections below are the 2026-10-11 staging log. They describe that day's upload, not the current deployment.
@@ -15,7 +15,7 @@ Cloudflare account: dedicated WHOOP Lens account.
 Cloudflare Worker name: `whoop-lens`.
 Custom domain: `whooplens.tech` for the resource Worker and `auth.whooplens.tech` for the issuer.
 Default workers.dev and preview URLs: disabled.
-Live API flags: `MCP_ENABLED`, `MIGRATION_API_ENABLED`, `OAUTH_RESOURCE_ENABLED`, and `WHOOP_READS_ENABLED` are true. `WHOOP_OAUTH_ENABLED` is false.
+Live API flags: `MCP_ENABLED`, `MIGRATION_API_ENABLED`, `OAUTH_RESOURCE_ENABLED`, `WHOOP_READS_ENABLED`, and `WHOOP_OAUTH_ENABLED` are true.
 D1 database: whoop-lens-migration, ID 58250de2-cad7-4a8a-a061-d9b41c7b24d2.
 The database was created and the exact SQL in migrations/0001_initial.sql was applied successfully on 2026-10-11.
 
