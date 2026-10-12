@@ -44,7 +44,7 @@ export async function verifyUpstreamCode({request,code,env,fetcher=fetch,now=Dat
       throw new UpstreamSignInDenied();
     // Never follow jku/x5u or a URL from the JWT. Only the configured team's certs.
     const response=await fetcher(issuer+'/cdn-cgi/access/certs',{
-      redirect:'error',credentials:'omit',signal:AbortSignal.timeout(8000)});
+      redirect:'manual',credentials:'omit',signal:AbortSignal.timeout(8000)});
     if(!response.ok||Number(response.headers.get('content-length'))>65536)throw new UpstreamSignInDenied();
     const body=await response.text();
     if(body.length>65536)throw new UpstreamSignInDenied();
