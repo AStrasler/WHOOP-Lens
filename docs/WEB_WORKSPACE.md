@@ -1,6 +1,6 @@
 # WHOOP Lens browser-first workspace
 
-**Primary interface:** The browser. This is the preferred path for invited testers on a phone, laptop or tablet. No companion APK, installation, or separate hosting service is required. The existing WHOOP Lens Supabase backend and GitHub Pages setup page remain unchanged until the draft PR is reviewed and merged.
+**Primary interface:** The browser. Invited testers can open the Pages workspace on a phone, laptop, or tablet. No companion APK is required for that preview. The private MCP is `https://whooplens.tech/mcp`. The GitHub Pages setup page remains the sign-in and WHOOP connect flow for the existing Supabase connector.
 
 ## Entry points
 

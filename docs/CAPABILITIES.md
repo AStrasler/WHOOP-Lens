@@ -1,6 +1,8 @@
 # WHOOP Lens capabilities and limitations
 
-This is the planned Build PR 1 catalog. When deployed, WHOOP Lens serves the matching catalog through the `get_capabilities` MCP tool. A GitHub branch may be ahead of the currently deployed version.
+WHOOP Lens serves this catalog through the `get_capabilities` MCP tool. The deployed catalog is the runtime source of truth. A GitHub branch may be ahead of the currently deployed version.
+
+The private connector is `https://whooplens.tech/mcp`. It has no stored WHOOP connection, so WHOOP measurement tools on that server do not return measurements yet. The existing Supabase connector remains the working WHOOP data path.
 
 ## Ask WHOOP Lens
 

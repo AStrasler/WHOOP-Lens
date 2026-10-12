@@ -22,7 +22,8 @@
 <span class="wordmark">WHOOP Lens</span>
 </div>
 <h1 id="heading">Your data.<br>Your permission.</h1>
-<p id="intro">Connect your WHOOP account to ChatGPT and Codex. You decide which apps can access your data.</p>
+<p id="intro">Connect your WHOOP account to ChatGPT and Codex through the existing Supabase connector. You decide which apps can access your data.</p>
+<p class="note">Private MCP server: https://whooplens.tech/mcp. Authorization server: https://auth.whooplens.tech. Scope: mcp:read. WHOOP connect on that Cloudflare server is not active. This page is the working Supabase path.</p>
 </header>
 <div id="message" role="status" aria-live="polite"></div>
 <div class="card">
@@ -55,7 +56,7 @@
 <p id="connection-status">Checking your connection…</p>
 <button id="connect" type="button" hidden>Connect WHOOP</button>
 <hr>
-<p class="eyebrow">Remote MCP address</p>
+<p class="eyebrow">Existing Supabase MCP address</p>
 <code id="endpoint"></code>
 <p class="note">Use this address when adding the integration to ChatGPT or Codex after setup is complete.</p>
 </section>
