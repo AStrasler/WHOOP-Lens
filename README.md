@@ -6,7 +6,7 @@ Hosted ChatGPT and Codex plugin for reading a person's own WHOOP data. It can al
 
 **The web app is the primary interface.** Invited users can open the browser-based [WHOOP Lens workspace](https://astrasler.github.io/WHOOP-Lens/dashboard/) on Android, a laptop, or another device without installing anything. This dashboard is currently part of **draft PR #11**; the URL becomes available only after approved deployment of the website.
 
-The web app verifies Supabase credentials and an existing WHOOP connection, then provides local-only previews of supported WHOOP Lens Health Connect v2 JSON files and FHIR R4 Bundles. No arbitrary Samsung/Health Connect file formats are silently assumed compatible. Web browsers cannot directly read Android Health Connect; the Android companion is preserved only as an **optional future bridge**, never required for normal use. Live health-file uploads remain disabled pending review and production approval. See [Web workspace guide](docs/WEB_WORKSPACE.md).
+The web app verifies Supabase credentials and an existing WHOOP connection, then provides local-only previews of supported WHOOP Lens Health Connect v2 JSON files and FHIR R4 Bundles. No arbitrary Samsung/Health Connect file formats are silently assumed compatible. Web browsers cannot directly read Android Health Connect; the Android companion is preserved only as an **optional future bridge**, never required for normal use. Live health-file uploads remain disabled pending review and production approval. See [Web workspace guide](docs/WEB_WORKSPACE.md). Existing users: see the [refresh and reconnect guide (draft, ChatGPT UI steps not yet verified)](docs/REFRESH_AND_RECONNECT.md).
 
 ## Installation
 
