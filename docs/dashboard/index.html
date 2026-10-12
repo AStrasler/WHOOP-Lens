@@ -58,9 +58,33 @@
         <h2>Synchronization</h2>
         <div class="chip">Uploads disabled for private beta review</div>
         <p id="sync-copy">The preview will show what is in your selected file. Cloud upload and deletion will be enabled only after the backend has passed release review.</p>
-        <p class="muted">Medical-context FHIR imports require a separate review path and are never sent to the Health Connect measurement endpoint.</p>
+        <p class="muted">FHIR records in a preview can be copied into the Medical context form as unsaved drafts. They are never sent to the Health Connect measurement endpoint, and nothing is saved until you review each entry.</p>
       </section>
     </div>
+    <section class="panel" id="medical-panel" aria-labelledby="medical-heading">
+      <div class="heading-row"><div><p class="eyebrow">03 · MEDICAL CONTEXT</p><h2 id="medical-heading">Your private medical context</h2></div><button id="medical-refresh" type="button" class="secondary">Refresh</button></div>
+      <p>Optional. Add only what you want WHOOP Lens to know, such as a condition, medication, allergy or a question for your clinician. Nothing is saved until you review it and press Save. ChatGPT can only read entries you saved, and never changes them.</p>
+      <p id="medical-state" class="muted" role="status" aria-live="polite">Medical context loads after sign-in.</p>
+      <div id="medical-entries" class="records"></div>
+      <form id="medical-form" novalidate>
+        <h3 id="medical-form-title">Add an entry</h3>
+        <label for="mc-category">Category</label>
+        <select id="mc-category" required><option value="">Choose…</option><option value="condition">Condition</option><option value="medication">Medication</option><option value="allergy">Allergy</option><option value="note">Note or question</option></select>
+        <label for="mc-title">Title</label>
+        <input id="mc-title" type="text" maxlength="200" required>
+        <label for="mc-description">Details (optional)</label>
+        <textarea id="mc-description" maxlength="2000" rows="3"></textarea>
+        <label for="mc-source-type">Where did this come from?</label>
+        <select id="mc-source-type" required><option value="self_reported">I am reporting it myself</option><option value="provider_document">A provider document or record</option></select>
+        <label for="mc-source-label">Source label (optional)</label>
+        <input id="mc-source-label" type="text" maxlength="160" placeholder="For example: Clinic visit summary">
+        <label for="mc-source-date">Source date (optional)</label>
+        <input id="mc-source-date" type="date">
+        <label class="check"><input id="mc-reviewed" type="checkbox"> I reviewed this entry and want it saved to my private WHOOP Lens account.</label>
+        <div class="actions"><button id="mc-save" type="submit">Save reviewed entry</button><button id="mc-cancel" type="button" class="secondary" hidden>Cancel edit</button></div>
+      </form>
+      <p class="muted">Medical context is stored separately from WHOOP and Health Connect measurements, is visible only to your account, and can be deleted here at any time. It is context, not a diagnosis.</p>
+    </section>
     <section class="panel" id="preview-panel" hidden aria-live="polite">
       <div class="heading-row"><div><p class="eyebrow">LOCAL PREVIEW</p><h2 id="preview-title">File reviewed</h2></div><button id="clear-preview" type="button" class="secondary">Clear preview</button></div>
       <p id="preview-meta"></p>

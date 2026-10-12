@@ -1,5 +1,6 @@
 import { createAuthClient } from "./auth-client.mjs";
 import { parseLocalImport, importSummary, MAX_FILE_BYTES } from "./web-import.mjs";
+import { buildMedicalEntry, draftFromFhirCandidate, describeEntry } from "./medical-context-ui.mjs";
 
 const auth = createAuthClient();
 const $ = id => document.getElementById(id);
@@ -19,9 +20,82 @@ function clearPreview() {
   $("summary").replaceChildren();
   $("records").replaceChildren();
 }
+let editingId = null;
+function medicalState(text, error = false) {
+  $("medical-state").textContent = text;
+  $("medical-state").classList.toggle("error", error);
+}
+function resetMedicalForm() {
+  editingId = null;
+  $("medical-form").reset();
+  $("medical-form-title").textContent = "Add an entry";
+  $("mc-cancel").hidden = true;
+}
+function fillMedicalForm(d) {
+  $("mc-category").value = d.category ?? "";
+  $("mc-title").value = d.title ?? "";
+  $("mc-description").value = d.description ?? "";
+  $("mc-source-type").value = d.source_type ?? "self_reported";
+  $("mc-source-label").value = d.source_label ?? "";
+  $("mc-source-date").value = d.source_date ?? "";
+  $("mc-reviewed").checked = false;
+}
+function renderMedical(entries) {
+  const fragment = document.createDocumentFragment();
+  for (const entry of entries) {
+    const box = document.createElement("div");
+    box.className = "record";
+    const { title, meta } = describeEntry(entry);
+    const strong = document.createElement("strong");
+    strong.textContent = title;
+    const span = document.createElement("span");
+    span.textContent = meta;
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const edit = document.createElement("button");
+    edit.type = "button"; edit.className = "secondary"; edit.textContent = "Edit";
+    edit.addEventListener("click", () => {
+      editingId = entry.id;
+      fillMedicalForm({ ...entry, title: entry.detail_json?.title, description: entry.detail_json?.description });
+      $("medical-form-title").textContent = "Edit entry";
+      $("mc-cancel").hidden = false;
+      $("mc-title").focus();
+    });
+    const del = document.createElement("button");
+    del.type = "button"; del.className = "secondary"; del.textContent = "Delete";
+    del.addEventListener("click", async () => {
+      if (!window.confirm("Delete this entry from your private WHOOP Lens account?")) return;
+      try { await auth.deleteMedicalContext(entry.id); await loadMedical(); medicalState("Entry deleted."); }
+      catch (error) { medicalState(error.message || "Delete failed.", true); }
+    });
+    actions.append(edit, del);
+    box.append(strong, span, actions);
+    fragment.appendChild(box);
+  }
+  $("medical-entries").replaceChildren(fragment);
+}
+async function loadMedical() {
+  if (!verified) return;
+  const attempt = epoch;
+  medicalState("Loading your saved entries...");
+  try {
+    const data = await auth.listMedicalContext();
+    if (attempt !== epoch || !verified) return;
+    const entries = Array.isArray(data.entries) ? data.entries : [];
+    renderMedical(entries);
+    medicalState(entries.length ? entries.length + " saved entr" + (entries.length === 1 ? "y" : "ies") + "." : "No saved entries yet.");
+  } catch (error) {
+    if (attempt !== epoch) return;
+    $("medical-entries").replaceChildren();
+    medicalState(/not ready/i.test(error.message || "") ? "Medical context is not enabled on the server yet." : (error.message || "Unable to load medical context."), true);
+  }
+}
 function locked() {
   verified = false;
   clearPreview();
+  resetMedicalForm();
+  $("medical-entries").replaceChildren();
+  medicalState("Medical context loads after sign-in.");
   $("workspace").hidden = true;
   $("login-panel").hidden = false;
   $("login-button").disabled = false;
@@ -65,6 +139,17 @@ function renderPreview(result, fileName) {
     if (result.kind === "fhir_preview") {
       title.textContent = row.type + ": " + row.name;
       meta.textContent = "Source: FHIR R4 · " + row.date + " · not an automated medical decision";
+      const use = document.createElement("button");
+      use.type = "button"; use.className = "secondary"; use.textContent = "Copy to medical context form";
+      use.addEventListener("click", () => {
+        resetMedicalForm();
+        fillMedicalForm(draftFromFhirCandidate(row));
+        medicalState("Draft copied. Review it, tick the confirmation box, then save. Nothing is saved yet.");
+        $("mc-title").focus();
+      });
+      box.append(title, meta, use);
+      fragment.appendChild(box);
+      continue;
     } else {
       title.textContent = row.metric.replaceAll("_", " ");
       const value = Object.entries(row.payload).map(([key, val]) => key + ": " + val).join(" · ");
@@ -105,6 +190,7 @@ $("login-form").addEventListener("submit", async event => {
     $("login-panel").hidden = true;
     $("workspace").hidden = false;
     setStatus("Private account verified. You can inspect a supported file locally.");
+    void loadMedical();
   } catch (error) {
     if (attempt !== epoch) return;
     // Even a successful password exchange is not authorization to enter.
@@ -161,4 +247,29 @@ $("health-file").addEventListener("change", async event => {
       setStatus(message, true);
     }
   }
+});
+
+$("medical-refresh").addEventListener("click", () => { void loadMedical(); });
+$("mc-cancel").addEventListener("click", () => resetMedicalForm());
+$("medical-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!verified) { medicalState("Sign in with an authorized account first.", true); return; }
+  let entry;
+  try {
+    entry = buildMedicalEntry({
+      reviewed: $("mc-reviewed").checked, category: $("mc-category").value, source_type: $("mc-source-type").value,
+      title: $("mc-title").value, description: $("mc-description").value,
+      source_label: $("mc-source-label").value, source_date: $("mc-source-date").value,
+    });
+  } catch (error) { medicalState(error.message, true); return; }
+  $("mc-save").disabled = true;
+  try {
+    if (editingId) await auth.updateMedicalContext(editingId, entry);
+    else await auth.saveMedicalContext(entry);
+    resetMedicalForm();
+    await loadMedical();
+    medicalState("Saved to your private account.");
+  } catch (error) {
+    medicalState(error.message || "Save failed.", true);
+  } finally { $("mc-save").disabled = false; }
 });
