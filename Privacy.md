@@ -1,8 +1,10 @@
 # WHOOP Lens — Privacy Statement
 
-Last updated: October 4, 2026
+Last updated: October 12, 2026
 
-WHOOP Lens is a hosted plugin that lets a person connect their own WHOOP account so ChatGPT and Codex can read that person's data with their permission. Each person signs in with their own Supabase user. The project is operated by Aaron Strasler. It is not affiliated with WHOOP.
+WHOOP Lens is a private, read-only MCP that lets a person connect their own WHOOP account so ChatGPT and Codex can read that person's data with their permission. The project is operated by Aaron Strasler. It is not affiliated with WHOOP.
+
+Two connectors are in operation. The private MCP at https://whooplens.tech/mcp runs on Cloudflare. Its sign-in is a Cloudflare Access email one-time PIN, and its authorization server is https://auth.whooplens.tech. That connector does not currently store a WHOOP connection. The existing connector is the Supabase edge function `whoop-mcp`. Each person using that connector signs in with their own Supabase user.
 
 ## Data accessed and purpose
 
@@ -14,7 +16,7 @@ This information is used to answer your questions and produce the summaries you 
 
 ## Processing and sharing
 
-The GitHub Pages site is the sign-in and consent screen. Supabase Auth handles that sign-in. The Supabase edge function `whoop-mcp` exchanges and refreshes WHOOP tokens, calls the WHOOP API, and reads Samsung Health records stored for your user. That processing runs on Supabase, not only on your computer.
+The GitHub Pages site is the sign-in and consent screen for the existing Supabase connector. Supabase Auth handles that sign-in. The Supabase edge function `whoop-mcp` exchanges and refreshes WHOOP tokens, calls the WHOOP API, and reads Samsung Health records stored for your user. That processing runs on Supabase, not only on your computer. WHOOP refresh tokens from that connector are not copied to Cloudflare. The private Cloudflare connector stores a WHOOP connection only after a separate WHOOP authorization, which is not active.
 
 Data returned to ChatGPT or Codex is processed by OpenAI under your OpenAI account settings and the OpenAI privacy policy: https://openai.com/policies/privacy-policy/.
 

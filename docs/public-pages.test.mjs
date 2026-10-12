@@ -11,6 +11,20 @@ const privacy = read("../docs/privacy/index.html");
 const source = read("../supabase/functions/whoop-mcp/handler.mjs");
 const entry = read("../supabase/functions/whoop-mcp/index.ts");
 
+test("public pages name the private Cloudflare MCP and the existing Supabase path", () => {
+  const readme = read("../README.md");
+  assert.match(readme, /https:\/\/whooplens\.tech\/mcp/);
+  assert.match(readme, /https:\/\/auth\.whooplens\.tech/);
+  assert.match(readme, /WHOOP Stress Monitor history is not in the official WHOOP developer API/);
+  assert.match(readme, /https:\/\/evoiwauqplbcecumiwqn\.supabase\.co\/functions\/v1\/whoop-mcp\/mcp/);
+  for (const page of pages) {
+    assert.match(page, /https:\/\/whooplens\.tech\/mcp/);
+    assert.match(page, /Existing Supabase MCP address/);
+  }
+  assert.match(privacy, /https:\/\/whooplens\.tech\/mcp/);
+  assert.match(read("../Privacy.md"), /https:\/\/whooplens\.tech\/mcp/);
+});
+
 test("sign-in and consent link privacy, terms, and support", () => {
   for (const page of pages) {
     assert.match(page, /href="\/WHOOP-Lens\/privacy\/"/);
@@ -31,21 +45,6 @@ test("terms cover independence, read-only access, revocation, and retained answe
 
 test("support points at the GitHub issues page", () => {
   assert.match(support, /https:\/\/github\.com\/AStrasler\/WHOOP-Lens\/issues/);
-  assert.match(support, /href="\/WHOOP-Lens\/refresh\/"/);
-});
-
-test("refresh guide tells existing users how to check a server update", () => {
-  const page = read("../docs/refresh/index.html");
-  const guide = read("../docs/REFRESH.md");
-  for (const text of [page, guide]) {
-    assert.match(text, /new ChatGPT conversation|new conversation/i);
-    assert.match(text, /Stress Monitor/);
-    assert.match(text, /does not convert strain|must not turn strain/i);
-    assert.match(text, /https:\/\/astrasler\.github\.io\/WHOOP-Lens\//);
-    assert.match(text, /whoop-mcp\/mcp/);
-    assert.match(text, /Do not send passwords/);
-    assert.doesNotMatch(text, /access_token|refresh_token|service_role/i);
-  }
 });
 
 test("privacy is published as a Pages page", () => {
