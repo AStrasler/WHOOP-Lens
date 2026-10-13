@@ -2,7 +2,7 @@
 // Not active in production. Requires WHOOP_OAUTH_ENABLED=true, which is disabled in Wrangler.
 // Source Supabase WHOOP OAuth redirect remains unchanged until separate cutover approval.
 import { activeMembership } from "./storage.mjs";
-import { sealWhoopToken } from "./token-crypto.mjs";
+import { sealWithKeyring, tokenKeyring } from "./token-crypto.mjs";
 const AUTH="https://api.prod.whoop.com/oauth/oauth2/auth";
 const TOKEN="https://api.prod.whoop.com/oauth/oauth2/token";
 const REDIRECT="https://whooplens.tech/api/whoop/callback";
@@ -12,7 +12,7 @@ const ALNUM=/^[A-Za-z0-9_-]{32,512}$/;
 const NOW=()=>Date.now();
 const decoder=new TextDecoder();
 function requireConfig(env) {
-  if(!env?.WHOOP_CLIENT_ID||!env?.WHOOP_CLIENT_SECRET||!env?.WHOOP_TOKEN_AES256_KEY)
+  if(!env?.WHOOP_CLIENT_ID||!env?.WHOOP_CLIENT_SECRET||(!env?.WHOOP_TOKEN_AES256_KEY&&!env?.WHOOP_TOKEN_AES256_KEY_NEXT))
     throw Error("WHOOP OAuth credentials not configured");
   if(env.WHOOP_REDIRECT_URI!==REDIRECT)
     throw Error("WHOOP redirect not configured for approved domain");
@@ -96,22 +96,22 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
      !Number.isFinite(Number(data.expires_in))||Number(data.expires_in)<60||
      Number(data.expires_in)>31_536_000)
     throw Error("Invalid WHOOP token response");
-  const key=env.WHOOP_TOKEN_AES256_KEY;
-  const access=await sealWhoopToken(data.access_token,{userId:id,purpose:"access",key});
-  const refresh=await sealWhoopToken(data.refresh_token,{userId:id,purpose:"refresh",key});
+  const keys=tokenKeyring(env);
+  const access=await sealWithKeyring(data.access_token,{userId:id,purpose:"access",keys});
+  const refresh=await sealWithKeyring(data.refresh_token,{userId:id,purpose:"refresh",keys});
   const expiresAt=new Date(now()+Number(data.expires_in)*1000).toISOString();
   // Seat limit and one-developer-seat constraints are enforced by SQLite
   // migration 0002, including concurrent callbacks.
   const saved=await db.prepare(
     "INSERT INTO whoop_connections(user_id,expires_at,scope,encrypted_access_token,"+
     "encrypted_refresh_token,encryption_key_version,seat_role) "+
-    "SELECT ?1,?2,?3,?4,?5,'v1',?6 WHERE NOT EXISTS ("+
+    "SELECT ?1,?2,?3,?4,?5,?8,?6 WHERE NOT EXISTS ("+
     "SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7) "+
     "ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at,scope=excluded.scope,"+
     "encrypted_access_token=excluded.encrypted_access_token,"+
-    "encrypted_refresh_token=excluded.encrypted_refresh_token,updated_at=CURRENT_TIMESTAMP "+
+    "encrypted_refresh_token=excluded.encrypted_refresh_token,encryption_key_version=excluded.encryption_key_version,updated_at=CURRENT_TIMESTAMP "+
     "WHERE NOT EXISTS (SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7)"
-  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role,stateCreated).run();
+  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role,stateCreated,keys.current==="k2"?"k2":"v1").run();
   if(!saved?.success||saved.meta?.changes!==1){
     const blocked=await db.prepare(
       "SELECT user_id FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?2"

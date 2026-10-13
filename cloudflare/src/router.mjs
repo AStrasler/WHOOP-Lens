@@ -1,3 +1,4 @@
+import { resolveSecrets } from "./secrets.mjs";
 import { AccessDenied } from "./access-denied.mjs";
 import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
 import { callWhoop } from "./whoop-api.mjs";
@@ -19,7 +20,8 @@ function json(data, status=200) {
 }
 export function createStagingRouter({ verifyIdentity = async()=>{throw new AccessDenied(401);}, whoopRequest = callWhoop,
   whoopAuthorize = createWhoopAuthorization, whoopCallback = acceptWhoopCallback } = {}) {
-  return async function stagingFetch(request, env) {
+  return async function stagingFetch(request, rawEnv) {
+    const env = await resolveSecrets(rawEnv);
     // Deliberately disabled. This is not enabled by creating a D1 database or
     // deploying a Worker; a separately reviewed release must opt in explicitly.
     if (env?.MIGRATION_API_ENABLED !== "true")
