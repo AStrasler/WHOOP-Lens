@@ -8,7 +8,7 @@ Status as of 2026-10-12: **Supabase stays live. The private MCP is also live on 
 - `workers.dev` and preview URLs are disabled.
 - WHOOP OAuth on Cloudflare is on. The Worker has `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET`. A connection is stored only after a separate WHOOP authorization, and the WHOOP app must allow `https://whooplens.tech/api/whoop/callback`.
 - D1 has one membership and zero WHOOP connections. Refresh tokens are not copied from Supabase.
-- AI summaries are implemented and left off. `AI_SUMMARY_ENABLED` is `"false"` in every Wrangler file. Migration `migrations/0009_ai_usage.sql` stores daily neuron counters only and is not applied here. No stress estimate is included.
+- AI summaries are implemented and left off. `AI_SUMMARY_ENABLED` is `"false"` in every Wrangler file. They cover WHOOP measurement reads and stored Health Connect reads. Migration `migrations/0009_ai_usage.sql` stores daily neuron counters only and is not applied here. No stress estimate is included.
 - GitHub Workers Builds on `main` do not auto-run `npx wrangler deploy`. Cloudflare preview builds are off, so a push does not run `npx wrangler preview`.
 - The sections below are the 2026-10-11 staging log. They describe that day's upload, not the current deployment.
 

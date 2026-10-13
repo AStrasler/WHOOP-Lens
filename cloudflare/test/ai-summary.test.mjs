@@ -6,8 +6,9 @@ import {handleMcpRpc,mcpTools} from "../src/mcp.mjs";
 import {d1Database} from "./d1-sqlite.mjs";
 import {reconcileQuota,reserveQuota,userScope} from "../src/ai-quota.mjs";
 import {
-  DEFAULT_MODEL,attachSummary,buildSummaryFacts,neuronsFor,outputAcceptable,
-  reservationEstimate,selectModel,templateText
+  DEFAULT_MODEL,MAX_INPUT_TOKENS,MAX_OUTPUT_TOKENS,attachSummary,buildSummaryFacts,
+  inputTokenEstimate,neuronsFor,outputAcceptable,reservationEstimate,selectModel,
+  summaryTools,templateText
 } from "../src/ai-summary.mjs";
 
 const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -200,17 +201,15 @@ test("prompt injection in record text is not followed",async()=>{
     const summary=summaryOf(body);
     assert.equal(summary.status,"template");
     assert.doesNotMatch(summary.text,/Ignore previous|99999|see a doctor/i);
-    const medical={entries:[{
-      category:"note",source_label:"Synthetic fixture",source_date:"2026-10-05",
-      detail_json:{text:injection}
-    }],next_offset:null,provenance:"user_approved_medical_context"};
-    let medicalCalls=0;
-    const skipped=await attachSummary(medical,{
-      db,userId:A,tool:"get_medical_context",env:{AI_SUMMARY_ENABLED:"true",AI:{async run(){medicalCalls++;return {response:"no"};}}}
-    });
-    assert.equal(medicalCalls,0);
-    assert.equal(skipped.summary.status,"template");
-    assert.doesNotMatch(skipped.summary.text,/99999|Ignore previous/);
+    for(const name of ["get_profile","get_medical_context","get_samsung_health"]){
+      let upstream=0;
+      const args=name==="get_profile"?{summary:true}:{limit:10,summary:true};
+      const rejected=await handleMcpRpc(rpc(name,args),{
+        db,userId:A,env:{AI_SUMMARY_ENABLED:"true"},whoopRequest:async()=>{upstream++;return pageA;}
+      },modern);
+      assert.equal(rejected.error?.code,-32602,name);
+      assert.equal(upstream,0,name);
+    }
     const connected=buildSummaryFacts({
       records:[{observed_at:"2026-10-04T00:00:00Z",record_key:"synthetic",origin_package:"com.example.synthetic",
         payload:{count:100,note:injection}}],
@@ -370,5 +369,126 @@ test("parallel reservations never exceed the user or global cap",async()=>{
     assert.equal(refunded.action,"refunded");
     assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=?").get(userScope(A)).used,5);
     assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope='global'").get().used,5);
+  }finally{db.close();}
+});
+
+test("dates do not authorize stray digits and hedged advice is rejected",()=>{
+  const september=buildSummaryFacts({records:[recovery(52,"2026-09-01")]},"get_recovery");
+  const stats=september.stats;
+  assert.equal(outputAcceptable(templateText(stats),stats),true);
+  assert.equal(outputAcceptable("The recovery score was 52 on 2026-09-01.",stats),true);
+  assert.equal(outputAcceptable("The recovery score was 9 on 2026-09-01.",stats),false);
+  assert.equal(outputAcceptable("The recovery score was 2026 on 2026-09-01.",stats),false);
+  assert.equal(outputAcceptable("Your recovery of 9 looks low; consider sleeping more tonight.",stats),false);
+  const rejected=[
+    "You might want to rest more and take it easy since recovery is 52.",
+    "consider sleeping more tonight",
+    "I recommend that you try to sleep more tonight.",
+    "You should make sure to rest more after a score of 52.",
+    "It is important to reduce strain when recovery is 52.",
+    "It's important to avoid hard work and drink more water today.",
+    "Take it easy and get more rest after this score of 52.",
+    "You might want to eat more and take medication tonight."
+  ];
+  for(const text of rejected){
+    assert.ok(text.length>=20,text);
+    assert.equal(outputAcceptable(text,stats),false,text);
+  }
+  assert.equal(outputAcceptable("Resting heart rate is absent, and the recovery score is 52.",stats),true);
+  const negative=buildSummaryFacts({records:[
+    recovery(40,"2026-10-01"),recovery(38,"2026-10-02")
+  ]},"get_recovery");
+  assert.equal(negative.stats.metrics["score.recovery_score"].change,-2);
+  assert.equal(outputAcceptable(templateText(negative.stats),negative.stats),true);
+});
+
+test("summaries use only WHOOP and Health Connect allowlisted fields",async()=>{
+  assert.deepEqual([...summaryTools],[
+    "get_body_measurements","get_recovery","get_sleep","get_workouts","get_cycles","get_health_connect"
+  ]);
+  const db=openDb();
+  try{
+    const listed=await handleMcpRpc({jsonrpc:"2.0",id:2,method:"tools/list",params:{}},{
+      db,userId:A,env:{AI_SUMMARY_ENABLED:"true"},whoopRequest:async()=>pageA
+    },modern);
+    const withSummary=listed.result.tools.filter(tool=>tool.inputSchema.properties?.summary).map(tool=>tool.name);
+    assert.deepEqual(withSummary,[...summaryTools]);
+    for(const name of ["get_profile","get_medical_context","get_samsung_health"])
+      assert.equal(withSummary.includes(name),false,name);
+    const hidden={records:[{
+      created_at:"2026-09-01T00:00:00Z",user_id:A,note:injection,custom_metric:9,
+      score:{recovery_score:52,secret_instruction:9,resting_heart_rate:48}
+    }]};
+    let prompt="";
+    const summarized=await attachSummary(hidden,{
+      db,userId:A,tool:"get_recovery",
+      env:{AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
+        prompt=input.messages[1].content;
+        assert.equal(input.max_tokens,MAX_OUTPUT_TOKENS);
+        return {response:"The recovery score was 52 on 2026-09-01.",
+          usage:{prompt_tokens:40,completion_tokens:12}};
+      }}}
+    });
+    assert.deepEqual(Object.keys(summarized.summary.stats.metrics),["score.recovery_score","score.resting_heart_rate"]);
+    assert.doesNotMatch(prompt,/secret_instruction|custom_metric|Ignore previous|99999/);
+    assert.doesNotMatch(prompt,/(?<![0-9])9(?![0-9])/);
+    assert.equal(summarized.summary.status,"model");
+    const empty={records:[{created_at:"2026-09-02T00:00:00Z",custom_metric:9,score:{secret_instruction:9},note:injection}]};
+    let calls=0;
+    const skipped=await attachSummary(empty,{
+      db,userId:A,tool:"get_recovery",
+      env:{AI_SUMMARY_ENABLED:"true",AI:{async run(){calls++;return {response:"no"};}}}
+    });
+    assert.equal(calls,0);
+    assert.equal(skipped.summary.status,"template");
+    assert.equal(Object.keys(skipped.summary.stats.metrics).length,0);
+    assert.doesNotMatch(skipped.summary.text,/99999|Ignore previous/);
+  }finally{db.close();}
+});
+
+test("the reserved input cap covers the call and over-cap usage is kept",async()=>{
+  const records=[];
+  for(let day=1;day<=25;day++)records.push(recovery(40+day,`2026-01-${String(day).padStart(2,"0")}`));
+  records.push(recovery(70,"2026-09-15"));
+  const db=openDb();
+  try{
+    let request=null;
+    const env={AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
+      request=input;
+      return {response:"There are 26 records from 2026-01-01 to 2026-09-15. The latest recovery score is 70.",
+        usage:{prompt_tokens:100,completion_tokens:20}};
+    }}};
+    const body=await handleMcpRpc(rpc("get_recovery",{summary:true}),{
+      db,userId:A,env,whoopRequest:async()=>({records,next_token:null})
+    },modern);
+    assert.equal(summaryOf(body).status,"model");
+    assert.equal(request.max_tokens,MAX_OUTPUT_TOKENS);
+    const userJson=request.messages[1].content;
+    assert.ok(userJson.length<=4000);
+    assert.ok(inputTokenEstimate(request.messages[0].content,userJson)<=MAX_INPUT_TOKENS);
+    assert.ok(JSON.parse(userJson).stats.missing_dates.length<=8);
+    assert.equal(reservationEstimate(DEFAULT_MODEL),neuronsFor(DEFAULT_MODEL,MAX_INPUT_TOKENS,MAX_OUTPUT_TOKENS));
+    for(const model of [DEFAULT_MODEL,"@cf/google/gemma-4-26b-a4b-it","@cf/zai-org/glm-4.7-flash"]){
+      const worst=reservationEstimate(model);
+      assert.equal(worst,neuronsFor(model,MAX_INPUT_TOKENS,MAX_OUTPUT_TOKENS));
+      assert.ok(worst<2500);
+      assert.ok(neuronsFor(model,100,20)<worst);
+    }
+    const day="2026-10-13";
+    db.sqlite.exec("DELETE FROM ai_usage");
+    db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES(?,?,2495,2500)").run(userScope(A),day);
+    db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES('global',?,7495,7500)").run(day);
+    const recorded=await reconcileQuota(db,{userId:A,day,reserved:5,actual:30});
+    assert.equal(recorded.ok,true);
+    assert.equal(recorded.action,"increased");
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=? AND day=?").get(userScope(A),day).used,2520);
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope='global' AND day=?").get(day).used,7520);
+    const blocked=await reserveQuota(db,{userId:A,day,estimate:1});
+    assert.equal(blocked.ok,false);
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=?").get(userScope(A)).used,2520);
+    const other=await reserveQuota(db,{userId:B,day,estimate:1});
+    assert.equal(other.ok,false);
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope='global'").get().used,7520);
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=?").get(userScope(B)).used,0);
   }finally{db.close();}
 });

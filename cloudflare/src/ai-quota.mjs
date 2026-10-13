@@ -24,6 +24,10 @@ RETURNING scope, used`;
 const REFUND_ONE=`UPDATE ai_usage SET used = used - ?1
 WHERE day = ?2 AND scope = ?3 AND used >= ?1`;
 const ADD_ONE=`UPDATE ai_usage SET used = used + ?1 WHERE day = ?2 AND scope = ?3`;
+const ADD_BOTH=`UPDATE ai_usage
+SET used = used + ?1
+WHERE day = ?2 AND scope IN (?3, 'global')
+RETURNING scope, used`;
 
 export function userScope(userId){return "user:"+userId;}
 export function utcDay(now=Date.now()){
@@ -96,13 +100,20 @@ export async function reconcileQuota(db,{userId,day,reserved,actual}){
     if(actual===reserved)return {ok:true,action:"same"};
     if(actual>reserved){
       const extra=actual-reserved;
-      if(!validEstimate(extra))return {ok:true,action:"kept"};
+      if(!Number.isSafeInteger(extra)||extra<1)return {ok:true,action:"kept"};
+      // No cap predicate. Spent neurons stay on the counters even above the cap,
+      // so the next reserve fails. Never undo this write.
       let update;
-      try{update=await readUpdate(db,RESERVE,[extra,day,scope]);}
+      try{update=await readUpdate(db,ADD_BOTH,[extra,day,scope]);}
       catch{return {ok:false,action:"kept"};}
-      if(accepted(update,scope))return {ok:true,action:"increased"};
-      await undo(db,{day,estimate:extra,scope,rows:update.rows,changes:update.changes});
-      return {ok:false,action:"kept"};
+      const scopes=scopesOf(update.rows);
+      if((scopes.has(scope)&&scopes.has(GLOBAL_SCOPE))||(update.changes===2&&scopes.size===0))
+        return {ok:true,action:"increased"};
+      for(const target of [scope,GLOBAL_SCOPE]){
+        if(scopes.has(target))continue;
+        try{await db.prepare(ADD_ONE).bind(extra,day,target).run();}catch{/* keep the rows already increased */}
+      }
+      return {ok:true,action:"increased"};
     }
     const refund=reserved-actual;
     if(refund<1||refund>reserved)return {ok:false};
