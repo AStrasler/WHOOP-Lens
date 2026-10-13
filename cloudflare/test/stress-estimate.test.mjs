@@ -627,3 +627,54 @@ test("R2-3 all four flag combinations agree across capabilities, host instructio
     }
   }finally{sqlite.close();}
 });
+
+// ---------- round 3: statements that an estimate is unavailable ----------
+const r3={...r2stats,stress_estimate:{...r2stats.stress_estimate,value:72,band:"elevated",confidence:"moderate",
+  estimate_date:"2026-10-13",requested_latest_date:"2026-10-15",is_latest_requested_date:false,unavailable_dates:["2026-10-15","2026-10-14"]}};
+test("R3 valid past estimate plus an unavailable newer date, in separate sentences",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. 2026-10-15 has no estimate.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. The stress estimate is unavailable for 2026-10-15.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13, in the elevated band with moderate confidence. The estimate is not available for 2026-10-14 and 2026-10-15.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. The stress estimate was insufficient for 2026-10-15.",r3),null);
+});
+test("R3 both dates explained correctly in one sentence",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13, and 2026-10-15 has no estimate.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13, while 2026-10-15 is unavailable.",r3),null);
+});
+test("R3 a value claimed for the unavailable date is rejected",()=>{
+  for(const t of ["The stress estimate was 72 on 2026-10-15.",
+    "2026-10-15 has no estimate, and the stress estimate was 72 on 2026-10-15.",
+    "The stress estimate was 72 on 2026-10-13 and 72 on 2026-10-15, which has no estimate.",
+    "The stress estimate is unavailable for 2026-10-15 at 72.",
+    "The stress estimate was unavailable on 2026-10-13, and 72 on 2026-10-15."])
+    assert.equal(outputRejection(t,r3)?.rule,"stress_claim",t);
+  // Unavailable wording may name only dates without an estimate.
+  assert.equal(outputRejection("The stress estimate is unavailable for 2026-10-13.",r3)?.rule,"stress_claim");
+  // A level word attached to the unavailable date is a claim too.
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. 2026-10-15 has no estimate and elevated band.",r3)?.rule,"stress_claim");
+});
+test("R3 wrong value, wrong date or wrong confidence is still rejected",()=>{
+  assert.notEqual(outputRejection("The stress estimate was 73 on 2026-10-13. 2026-10-15 has no estimate.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 40 on 2026-10-13. 2026-10-15 has no estimate.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-14. 2026-10-15 has no estimate.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13 with low confidence, and 2026-10-15 has no estimate.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72. 2026-10-15 has no estimate.",r3)?.rule,"stress_claim"); // past value without its date
+  assert.notEqual(outputRejection("The stress estimate was 72 on 2026-10-13. 2026-10-16 has no estimate.",r3),null); // invented date
+});
+test("R3 medical-safety, advice, unsupported-claim and vocabulary rules still apply",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. 2026-10-15 has no estimate, so you should rest.",r3).rule,"advice");
+  assert.notEqual(outputRejection("The stress estimate was 72 on 2026-10-13. 2026-10-15 has no estimate, which may need a diagnosis.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. The Stress Monitor is unavailable for 2026-10-15.",r3).rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. 2026-10-15 has no estimate amid zebras.",r3).rule,"vocabulary");
+  // Without a valid estimate the unavailable wording is not unlocked (vocabulary identical to main).
+  assert.equal(outputRejection("Recovery score was unavailable, ranging from 35 to 44.",plain)?.rule,"vocabulary");
+});
+test("R3 the model stats list only requested dates without a valid estimate",async()=>{
+  const u=syntheticUser({prefix:"r3"});
+  const page={records:[...u.recoveries.slice(-3,-1),{...u.recoveries.at(-1),score:{...u.recoveries.at(-1).score,resting_heart_rate:null}}],next_token:null};
+  const out=await run(A,{[A]:u},ON,[],[],page);
+  const st=out.summary.stats.stress_estimate;
+  assert.deepEqual(st.unavailable_dates,[day(44)]);
+  assert.equal(st.estimate_date,day(43));
+  assert.equal(outputRejection(`The stress estimate was ${st.value} on ${day(43)}. ${day(44)} has no estimate.`,out.summary.stats),null);
+});

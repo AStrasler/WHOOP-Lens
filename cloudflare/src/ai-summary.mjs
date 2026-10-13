@@ -72,7 +72,7 @@ const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
   "percent percentage degrees celsius beats minute minutes milliseconds ms within").split(" "));
 // Accepted only when stats.stress_estimate is present; with the flag off the
 // vocabulary is identical to main.
-const STRESS_WORDS=new Set("experimental physiological stress estimate lens band elevated low high confidence moderate index".split(" "));
+const STRESS_WORDS=new Set("experimental physiological stress estimate lens band elevated low high confidence moderate index unavailable insufficient".split(" "));
 const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps respiratory "+
   "spo spo2 skin temperature performance score bpm").split(" "));
 const VERBS=new Set(("is are was were be been has have had returned summarize summarized "+
@@ -838,32 +838,88 @@ export function outputRejection(text,stats){
 const UNSUPPORTED_STRESS=/\b(?:stress\s+monitor|stress[-\s]+zones?|non-activity|clinical\w*|burnout|anxi\w*|cortisol|stressed)\b/i;
 const STRESS_CLAIM=/\b(?:stress|estimate|index)\b/i;
 const LEVEL_WORDS=new Set(["low","typical","elevated","high","moderate"]);
-// Every sentence that makes a stress claim is bound to the estimate itself:
-// - it must state exactly stats.stress_estimate.value, and every number in it
-//   (digits or spelled) must be that value, so recovery, HRV or other summary
-//   numbers can never satisfy a stress claim;
-// - level words (low, typical, elevated, high, moderate) must be its band or confidence;
-// - every date in it must be estimate_date, and when the estimate is not for the
-//   newest requested date the sentence must state estimate_date.
-// Applied in addition to every existing check (numbers, dates, advice, medical,
-// vocabulary); it can only reject more.
+// Tight missing-data wording only.
+const UNAVAILABLE=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient)\b/i;
+const DATE_RE=/\b\d{4}-\d{2}-\d{2}\b/g;
+function stressNumbers(text){
+  const bare=text.replace(DATE_RE," ");
+  const digits=(bare.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
+  const spelled=spelledNumbers(bare);
+  if(spelled===null)return null;
+  return [...digits,...spelled.map(span=>span.value)];
+}
+// A measurement statement: exactly the value, matching level words, only
+// estimate_date, and estimate_date when it is not the newest requested date.
+function measurementRejection(part,est,needDate){
+  const dates=part.match(DATE_RE)||[];
+  if(dates.some(d=>d!==est.estimate_date))return {rule:"stress_claim",category:"date"};
+  if(needDate&&!dates.includes(est.estimate_date))return {rule:"stress_claim",category:"date_missing"};
+  const values=stressNumbers(part);
+  if(!values||!values.length||values.some(v=>v!==est.value))return {rule:"stress_claim",category:"value"};
+  const allowedLevels=new Set([est.band,est.confidence].filter(Boolean).map(String));
+  for(const w of (part.toLowerCase().match(/[a-z]+/g)||[]))
+    if(LEVEL_WORDS.has(w)&&!allowedLevels.has(w))return {rule:"stress_claim",category:"level"};
+  return null;
+}
+// An unavailability statement: tight wording, no stress number or level word,
+// and only requested dates that have no valid estimate.
+function unavailableRejection(part,est){
+  const missing=new Set(Array.isArray(est.unavailable_dates)?est.unavailable_dates:[]);
+  const dates=part.match(DATE_RE)||[];
+  if(dates.some(d=>!missing.has(d)))return {rule:"stress_claim",category:"unavailable_date"};
+  const values=stressNumbers(part);
+  if(values===null||values.length)return {rule:"stress_claim",category:"unavailable_value"};
+  for(const w of (part.toLowerCase().match(/[a-z]+/g)||[]))
+    if(LEVEL_WORDS.has(w))return {rule:"stress_claim",category:"unavailable_level"};
+  return null;
+}
+// Every sentence that makes a stress claim is bound to the estimate itself.
+// A sentence either reports the measurement, says an estimate is unavailable,
+// or (when it names both) splits into clauses: the clause with estimate_date
+// carries the value, the clause with an unavailable date carries the
+// unavailable wording, and nothing else may carry a number. Applied in addition
+// to every existing check; it can only reject more.
 function stressClaimRejection(text,stats){
   const est=stats?.stress_estimate;
   if(!est)return null;
   if(UNSUPPORTED_STRESS.test(text))return {rule:"stress_claim",category:"unsupported"};
+  const needDate=est.is_latest_requested_date!==true;
   for(const sentence of text.split(/(?<=[.!?])\s+/)){
     if(!STRESS_CLAIM.test(sentence))continue;
-    const dates=sentence.match(/\b\d{4}-\d{2}-\d{2}\b/g)||[];
-    if(dates.some(d=>d!==est.estimate_date))return {rule:"stress_claim",category:"date"};
-    if(est.is_latest_requested_date!==true&&!dates.includes(est.estimate_date))return {rule:"stress_claim",category:"date_missing"};
-    const bare=sentence.replace(/\b\d{4}-\d{2}-\d{2}\b/g," ");
-    const numbers=(bare.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
-    const spelled=spelledNumbers(bare)||[];
-    const values=[...numbers,...spelled.map(span=>span.value)];
-    if(!values.length||values.some(v=>v!==est.value))return {rule:"stress_claim",category:"value"};
-    const allowedLevels=new Set([est.band,est.confidence].filter(Boolean).map(String));
-    for(const w of (sentence.toLowerCase().match(/[a-z]+/g)||[]))
-      if(LEVEL_WORDS.has(w)&&!allowedLevels.has(w))return {rule:"stress_claim",category:"level"};
+    if(!UNAVAILABLE.test(sentence)){
+      const r=measurementRejection(sentence,est,needDate);
+      if(r)return r;
+      continue;
+    }
+    const dates=sentence.match(DATE_RE)||[];
+    if(!dates.includes(est.estimate_date)){
+      const r=unavailableRejection(sentence,est);
+      if(r)return r;
+      continue;
+    }
+    // Both kinds in one sentence: split into clauses and bind each one.
+    const clauses=sentence.split(/,|;|\b(?:and|but|while|whereas)\b/i).filter(c=>c.trim());
+    let reported=false,explained=false;
+    for(const clause of clauses){
+      const cd=clause.match(DATE_RE)||[];
+      const unavailable=UNAVAILABLE.test(clause);
+      if(cd.includes(est.estimate_date)){
+        if(unavailable)return {rule:"stress_claim",category:"mixed_clause"};
+        const r=measurementRejection(clause,est,true);
+        if(r)return r;
+        reported=true;
+      }else if(unavailable){
+        if(!cd.length)return {rule:"stress_claim",category:"unavailable_date"};
+        const r=unavailableRejection(clause,est);
+        if(r)return r;
+        explained=true;
+      }else{
+        // No date and no unavailable wording: may hold words, never a number or another date.
+        const values=stressNumbers(clause);
+        if(values===null||values.length||cd.length)return {rule:"stress_claim",category:"unbound_value"};
+      }
+    }
+    if(!reported||!explained)return {rule:"stress_claim",category:"mixed_clause"};
   }
   return null;
 }
@@ -1050,6 +1106,9 @@ export async function attachSummary(data,ctx){
         if(stress.available&&v&&v.value!=null)facts.stats.stress_estimate={
           name:STRESS_NAME,experimental:true,estimate_date:v.date,requested_latest_date:stress.requested_latest_date,
           is_latest_requested_date:stress.latest_valid_is_requested_latest,
+          // Requested dates with no valid estimate (newest first, at most 7), so a
+          // summary can truthfully say an estimate is unavailable for them.
+          unavailable_dates:stress.points.filter(p=>p.value==null).map(p=>p.date).sort().reverse().slice(0,7),
           value:v.value,band:v.band,confidence:v.confidence,baseline_days:v.baseline_days
         };
       }

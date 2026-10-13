@@ -101,7 +101,8 @@ Each point: `date`, `label`, `value`, `band`, `status` (`ok`, `insufficient_base
 
 ## AI summary
 Only when the flag is on **and** a valid calculated estimate exists does the model get `stats.stress_estimate`:
-{name, experimental, estimate_date, requested_latest_date, is_latest_requested_date, value, band, confidence, baseline_days}. Only then:
+{name, experimental, estimate_date, requested_latest_date, is_latest_requested_date, unavailable_dates (requested dates with no valid
+estimate, newest first, at most 7), value, band, confidence, baseline_days}. Only then:
 - the system prompt gains one line (name it as the experimental estimate, state the estimate_date, say when the requested latest date has
   no estimate, never call it WHOOP's Stress Monitor, stress-zone time or a diagnosis);
 - every sentence that makes a stress claim (mentions stress, estimate or index) is bound to the estimate (`stress_claim` rule):
@@ -109,6 +110,12 @@ Only when the flag is on **and** a valid calculated estimate exists does the mod
   cannot satisfy it; level words (low, typical, elevated, high, moderate) must be its band or confidence; every date in it must be
   `estimate_date`; and when the estimate is not for the newest requested date the sentence must contain `estimate_date`;
 - the output filter accepts extra neutral words (experimental, physiological, stress, estimate, lens, band, elevated, low, high, confidence, moderate, index);
+- a stress sentence may instead say an estimate is **unavailable**, using only: no estimate, not available, unavailable, insufficient.
+  Such a statement may name only dates in `unavailable_dates` and contains no number or level word. A sentence naming both the estimate
+  date and an unavailable date is split into clauses (`,` `;` and / but / while / whereas): the clause with `estimate_date` carries
+  exactly the value, the clause with the unavailable date carries the unavailable wording, and no other clause carries a number or date.
+  Any value attached to an unavailable date is rejected. Example accepted: "The stress estimate was 72 on 2026-10-13. 2026-10-15 has no estimate."
+  ("unavailable" and "insufficient" are added to the gated stress vocabulary.)
 - the same rule rejects unsupported claims (Stress Monitor, stress zones, non-activity, clinical, burnout, anxiety, cortisol, "stressed").
   It runs in addition to every existing check and can only reject more.
 Flag off, or on with no valid estimate: the prompt is byte-identical to main (`test/fixtures/system-prompt-main.txt`, from main d98346f) and
@@ -137,5 +144,5 @@ travel and noise move the same inputs; no cause is identified; there's no valida
   genuinely insufficient), 429, mixed digest and the real weekly digest with cache, sleep_id join, per-user isolation, no values or tokens in logs, flag off unchanged.
 - `test/extra-tools.test.mjs` and `test/mcp.test.mjs` (F7): discovery off / on / on without account data; initialize instructions off / on.
 - `test/whoop-api.test.mjs`: start/end sent only when given, validated; 429 keeps its status.
-- Round 2 tests are named `R2-1 ...` (claim binding), `R2-2 ...` (sleep completeness) and `R2-3 ...` (four flag combinations).
+- Round 2 tests are named `R2-1 ...` (claim binding), `R2-2 ...` (sleep completeness) and `R2-3 ...` (four flag combinations); round 3 tests `R3 ...` (unavailable-estimate statements).
 - `test/fixtures/stress-estimate-sample.json`: full output for 45 synthetic days. Regenerate with `node test/make-stress-fixture.mjs`.
