@@ -416,7 +416,7 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
     }));
     assert.equal(account.result.summary.status,"template");
     assert.equal(account.result.summary.fallback_reason,"account_check_failed");
-    assert.deepEqual(account.lines,[JSON.stringify({stage:"not_configured"}),"account_check_failed"]);
+    assert.deepEqual(account.lines,[JSON.stringify({stage:"config_invalid",account_ok:false,token_type:"undefined",token_len:0,token_ws:false,token_sha8:null}),"account_check_failed"]);
     const day="2026-10-13";
     db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES(?,?,2500,2500)").run(userScope(A),day);
     db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES('global',?,0,7500)").run(day);
