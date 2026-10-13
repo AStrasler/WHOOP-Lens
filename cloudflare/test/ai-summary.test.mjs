@@ -452,7 +452,7 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
       }})
     }));
     assert.equal(filtered.result.summary.fallback_reason,"filter");
-    assert.deepEqual(filtered.lines,["filter"]);
+    assert.deepEqual(filtered.lines,[JSON.stringify({event:"summary_filter",rule:"advice"}),"filter"]);
     assert.equal(filtered.lines.join("\n").includes("doctor"),false);
     const original=JSON.stringify;
     let copies=0;
@@ -899,4 +899,16 @@ test("chart series and insights are factual on both the model and template paths
     assert.equal(undated.series[0].stats.max,9);
     assert.equal(calls,1);
   }finally{db.close();}
+});
+
+test("outputRejection names the rule without echoing text",async()=>{
+  const {outputRejection}=await import("../src/ai-summary.mjs");
+  const stats={count:2,metrics:{"score.recovery_score":{min:40,max:60,mean:50,median:50}}};
+  const r1=outputRejection("You should rest more because recovery dropped.",stats);
+  assert.equal(r1.rule,"advice");assert.equal(r1.category,"second_person");
+  const r2=outputRejection("Recovery score ranged from 40 to 77 across the period.",stats);
+  assert.equal(r2.rule,"number");assert.equal(r2.unmatched,1);
+  const r3=outputRejection("Recovery score ranged from 40 to 60 amid zebras.",stats);
+  assert.equal(r3.rule,"vocabulary");
+  assert.ok(!JSON.stringify([r1,r2,r3]).match(/zebra|rest|77/));
 });
