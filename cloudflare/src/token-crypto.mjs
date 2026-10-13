@@ -50,3 +50,50 @@ export async function openWhoopToken(envelope,{userId,purpose,key}) {
   );
   return dec.decode(plaintext);
 }
+
+// Key rotation. k1 is WHOOP_TOKEN_AES256_KEY, k2 is WHOOP_TOKEN_AES256_KEY_NEXT.
+// Envelopes sealed with k2 are "v2.k2.<iv>.<ct>". Legacy "v1.<iv>.<ct>" envelopes
+// carry no key id and are tried with k2 first, then k1.
+// While NEXT is absent, sealing stays on v1 with k1, unchanged from before.
+export function tokenKeyring(env){
+  const old=typeof env?.WHOOP_TOKEN_AES256_KEY==="string"?env.WHOOP_TOKEN_AES256_KEY:null;
+  const next=typeof env?.WHOOP_TOKEN_AES256_KEY_NEXT==="string"?env.WHOOP_TOKEN_AES256_KEY_NEXT:null;
+  if(!old&&!next)throw Error("Token key unavailable");
+  return {k1:old,k2:next,current:next?"k2":"k1"};
+}
+export async function sealWithKeyring(rawToken,{userId,purpose,keys}){
+  if(keys.current==="k2"){
+    const legacy=await sealWhoopToken(rawToken,{userId,purpose,key:keys.k2});
+    return "v2.k2."+legacy.slice(3);
+  }
+  return sealWhoopToken(rawToken,{userId,purpose,key:keys.k1});
+}
+export function envelopeKeyId(envelope){
+  if(typeof envelope!=="string")return null;
+  if(envelope.startsWith("v2.k2."))return "k2";
+  if(envelope.startsWith("v2.k1."))return "k1";
+  if(envelope.startsWith("v1."))return "legacy";
+  return null;
+}
+// Returns {token,key}. key is the id that opened it ("k1" or "k2").
+export async function openWithKeyring(envelope,{userId,purpose,keys}){
+  const id=envelopeKeyId(envelope);
+  if(id==="k2"||id==="k1"){
+    const key=keys[id];
+    if(!key)throw Error("Token key unavailable");
+    const token=await openWhoopToken("v1."+envelope.slice(6),{userId,purpose,key});
+    return {token,key:id};
+  }
+  if(id!=="legacy")throw Error("Invalid token envelope");
+  if(keys.k2){
+    try{return {token:await openWhoopToken(envelope,{userId,purpose,key:keys.k2}),key:"k2"};}
+    catch{/* fall back to k1 */}
+  }
+  if(!keys.k1)throw Error("Token key unavailable");
+  return {token:await openWhoopToken(envelope,{userId,purpose,key:keys.k1}),key:"k1"};
+}
+// True when an envelope should be resealed with the current key.
+export function needsReseal(envelope,openedWith,keys){
+  if(keys.current!=="k2")return false;
+  return openedWith!=="k2"||envelopeKeyId(envelope)!=="k2";
+}

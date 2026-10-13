@@ -1,7 +1,8 @@
 // Cloudflare WHOOP data adapter. Development-only: staged Worker is disabled.
 // The incoming caller must already pass verified Supabase Auth and active D1 membership.
 // Tokens are encrypted with a separate Cloudflare key. No Supabase credentials copied.
-import { openWhoopToken, sealWhoopToken } from "./token-crypto.mjs";
+import { openWithKeyring, sealWithKeyring, needsReseal, tokenKeyring } from "./token-crypto.mjs";
+import { migrateConnection, migrateAllTokens } from "./token-migration.mjs";
 import { activeMembership } from "./storage.mjs";
 
 const API="https://api.prod.whoop.com/developer/v2/";
@@ -17,8 +18,24 @@ const resources=Object.freeze({
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const timeout=()=>AbortSignal.timeout(12000);
 function config(env) {
-  if(!env||typeof env.WHOOP_TOKEN_AES256_KEY!=="string")throw Error("Token key unavailable");
-  return env.WHOOP_TOKEN_AES256_KEY;
+  if(!env)throw Error("Token key unavailable");
+  return tokenKeyring(env);
+}
+async function openToken(envelope,id,purpose,keys){
+  return (await openWithKeyring(envelope,{userId:id,purpose,keys})).token;
+}
+async function backgroundMigrate(db,id,row,keys,env){
+  // Never blocks or fails a read. Counts only are logged by the batch pass.
+  try{
+    const opened=await openWithKeyring(row.encrypted_access_token,{userId:id,purpose:"access",keys});
+    const refreshKey=row.encrypted_refresh_token?await openWithKeyring(row.encrypted_refresh_token,{userId:id,purpose:"refresh",keys}):null;
+    if(needsReseal(row.encrypted_access_token,opened.key,keys)||
+       (refreshKey&&needsReseal(row.encrypted_refresh_token,refreshKey.key,keys))){
+      const outcome=await migrateConnection(db,id,row,keys);
+      console.log(JSON.stringify({event:"token_key_lazy",key:keys.current,outcome}));
+    }
+  }catch{console.log(JSON.stringify({event:"token_key_lazy",key:keys.current,outcome:"failed"}));}
+  try{await migrateAllTokens(db,env);}catch{/* counts are logged when it runs */}
 }
 function clientConfig(env){
   if(typeof env?.WHOOP_CLIENT_ID!=="string"||!env.WHOOP_CLIENT_ID||
@@ -50,7 +67,7 @@ async function storedRotation(db,id,previous,key,now){
   if(!row||row.encrypted_refresh_token===previous.encrypted_refresh_token)return null;
   const expiry=Date.parse(row.expires_at);
   if(!Number.isFinite(expiry)||expiry<=now()+60_000)return null;
-  return openWhoopToken(row.encrypted_access_token,{userId:id,purpose:"access",key});
+  return openToken(row.encrypted_access_token,id,"access",key);
 }
 export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
   const id=ownerId(userId),key=config(env);
@@ -60,10 +77,13 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
   ).bind(id).first();
   if(!row)throw Error("WHOOP connection required");
   const currentExpiry=Date.parse(row.expires_at);
-  if(Number.isFinite(currentExpiry)&&currentExpiry>now()+60_000)
-    return openWhoopToken(row.encrypted_access_token,{userId:id,purpose:"access",key});
+  if(Number.isFinite(currentExpiry)&&currentExpiry>now()+60_000){
+    const token=await openToken(row.encrypted_access_token,id,"access",key);
+    if(key.current==="k2")await backgroundMigrate(db,id,row,key,env);
+    return token;
+  }
   clientConfig(env);
-  const refresh=await openWhoopToken(row.encrypted_refresh_token,{userId:id,purpose:"refresh",key});
+  const refresh=await openToken(row.encrypted_refresh_token,id,"refresh",key);
   const form=new URLSearchParams({
     grant_type:"refresh_token",refresh_token:refresh,
     client_id:env.WHOOP_CLIENT_ID,client_secret:env.WHOOP_CLIENT_SECRET
@@ -86,8 +106,8 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
      (tokens.refresh_token!=null&&typeof tokens.refresh_token!=="string"))
     throw Error("Invalid WHOOP refresh response");
   const nextRefresh=tokens.refresh_token||refresh;
-  const nextAccessEnvelope=await sealWhoopToken(tokens.access_token,{userId:id,purpose:"access",key});
-  const nextRefreshEnvelope=await sealWhoopToken(nextRefresh,{userId:id,purpose:"refresh",key});
+  const nextAccessEnvelope=await sealWithKeyring(tokens.access_token,{userId:id,purpose:"access",keys:key});
+  const nextRefreshEnvelope=await sealWithKeyring(nextRefresh,{userId:id,purpose:"refresh",keys:key});
   const expiresAt=new Date(now()+Number(tokens.expires_in)*1000).toISOString();
   // Optimistic update: do not overwrite a connection already refreshed elsewhere.
   const result=await db.prepare(
@@ -100,6 +120,7 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
     if(winner)return winner;
     throw Error("WHOOP refresh raced or failed");
   }
+  if(key.current==="k2"){try{await migrateAllTokens(db,env);}catch{/* logged when it runs */}}
   return tokens.access_token;
 }
 export async function callWhoop(db,userId,resource,env,opts={},deps={}){
