@@ -22,7 +22,12 @@ export const server=new OAuthAuthorizationServer({
   tokenExchangeCallback:input=>{
     const decision=refreshGrantResult(input);
     if(decision?.reject)throw new OAuthError('invalid_grant');
-    if(decision)return {refreshTokenTTL:decision.refreshTokenTTL};
+    // connectorRefresh stays on the grant for later refreshes. The access
+    // token presented to the resource carries only the member id.
+    const userId=input?.props?.userId;
+    const accessTokenProps=typeof userId==='string'?{userId}:undefined;
+    if(decision)return {refreshTokenTTL:decision.refreshTokenTTL,...(accessTokenProps?{accessTokenProps}:{})};
+    return accessTokenProps?{accessTokenProps}:undefined;
   }
 });
 const flow=makeConsentFlow({

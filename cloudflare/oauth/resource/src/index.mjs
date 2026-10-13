@@ -9,7 +9,7 @@ const mcpResource=new OAuthResourceServer({
   resourceMetadata:{
     resource:"https://whooplens.tech/mcp",
     authorization_servers:["https://auth.whooplens.tech"],
-    resource_name:"WHOOP Lens (private read-only MCP)"
+    resource_name:"WHOOP Lens (private MCP)"
   },
   requiredScopes:["mcp:read"],
   validateToken:env=>env.AUTH_SERVER.validateToken,

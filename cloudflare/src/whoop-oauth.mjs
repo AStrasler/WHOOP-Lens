@@ -73,11 +73,12 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
     throw Error("Invalid WHOOP callback");
   // Atomically consume this state, even on error. Replay is impossible.
   const row=await db.prepare(
-    "DELETE FROM whoop_oauth_states WHERE state_hash=?1 AND expires_at>?2 RETURNING user_id"
+    "DELETE FROM whoop_oauth_states WHERE state_hash=?1 AND expires_at>?2 RETURNING user_id,created_at"
   ).bind(await sha256(state),new Date(now()).toISOString()).first();
-  if(!row?.user_id)throw Error("Invalid or expired WHOOP state");
+  if(!row?.user_id||typeof row.created_at!=="string")throw Error("Invalid or expired WHOOP state");
   const id=validateUser(row.user_id);
   if(!await activeMembership(db,id))throw Error("Membership required");
+  const stateCreated=comparableStamp(row.created_at);
   const existing=await db.prepare("SELECT seat_role FROM whoop_connections WHERE user_id=?1").bind(id).first();
   const role=existing?.seat_role||(id===env.WHOOP_LENS_DEVELOPER_USER_ID?"developer":"public");
   const response=await fetcher(TOKEN,{
@@ -103,22 +104,51 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
   // migration 0002, including concurrent callbacks.
   const saved=await db.prepare(
     "INSERT INTO whoop_connections(user_id,expires_at,scope,encrypted_access_token,"+
-    "encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?1,?2,?3,?4,?5,'v1',?6) "+
+    "encrypted_refresh_token,encryption_key_version,seat_role) "+
+    "SELECT ?1,?2,?3,?4,?5,'v1',?6 WHERE NOT EXISTS ("+
+    "SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7) "+
     "ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at,scope=excluded.scope,"+
     "encrypted_access_token=excluded.encrypted_access_token,"+
-    "encrypted_refresh_token=excluded.encrypted_refresh_token,updated_at=CURRENT_TIMESTAMP"
-  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role).run();
-  if(!saved?.success||saved.meta?.changes!==1)throw Error("WHOOP connection save failed");
+    "encrypted_refresh_token=excluded.encrypted_refresh_token,updated_at=CURRENT_TIMESTAMP "+
+    "WHERE NOT EXISTS (SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7)"
+  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role,stateCreated).run();
+  if(!saved?.success||saved.meta?.changes!==1){
+    const blocked=await db.prepare(
+      "SELECT user_id FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?2"
+    ).bind(id,stateCreated).first();
+    if(blocked)throw Error("WHOOP authorization was revoked");
+    throw Error("WHOOP connection save failed");
+  }
   return {connected:true,seat_role:role};
 }
-export async function revokeWhoopConnection(db,userId){
+function utcStamp(ms){
+  return new Date(ms).toISOString().slice(0,19).replace("T"," ");
+}
+function comparableStamp(value){
+  if(typeof value!=="string"||value.length<19)throw Error("Invalid or expired WHOOP state");
+  const iso=value.includes("T")?value:value.slice(0,19).replace(" ","T")+"Z";
+  const parsed=Date.parse(iso);
+  if(!Number.isFinite(parsed))throw Error("Invalid or expired WHOOP state");
+  return utcStamp(parsed);
+}
+export async function revokeWhoopConnection(db,userId,{now=NOW}={}){
   const id=validateUser(userId);
   if(!await activeMembership(db,id))throw Error("Membership required");
-  // Atomic: a pending state must not survive a disconnect and later reconnect.
-  const [states,removed]=await db.batch([
-    db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1").bind(id),
-    db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id)
-  ]);
-  if(!states?.success||!removed?.success)throw Error("WHOOP disconnect failed");
-  return {disconnected:true,removed:removed.meta?.changes===1};
+  if(typeof db.batch!=="function")throw Error("WHOOP disconnect failed");
+  // Atomic with the credential deletion. A callback that already consumed its
+  // state still cannot save tokens created at or before this revocation.
+  let results;
+  try{
+    results=await db.batch([
+      db.prepare(
+        "INSERT INTO whoop_credential_revocations(user_id,revoked_at) VALUES(?1,?2) "+
+        "ON CONFLICT(user_id) DO UPDATE SET revoked_at=excluded.revoked_at"
+      ).bind(id,utcStamp(now())),
+      db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1").bind(id),
+      db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id)
+    ]);
+  }catch{throw Error("WHOOP disconnect failed");}
+  if(!Array.isArray(results)||results.length!==3||results.some(result=>result?.success===false))
+    throw Error("WHOOP disconnect failed");
+  return {disconnected:true,removed:results[2].meta?.changes===1};
 }

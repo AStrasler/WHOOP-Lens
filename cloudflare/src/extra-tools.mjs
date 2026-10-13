@@ -18,7 +18,7 @@ const definitions=[
   ['disconnect_whoop','Delete only this account’s stored WHOOP credentials on WHOOP Lens. The WHOOP account itself is unchanged.',{}],
   ['import_health_connect_file','Store a user-selected WHOOP Lens Health Connect v2 JSON file for the signed-in account. This is a file import, not a live Health Connect sync.',{
     consent:{type:'string',enum:['store-health-connect-file']},
-    file_json:{type:'string',minLength:2,maxLength:12000}}],
+    file_json:{type:'string',minLength:2,maxLength:400000}}],
   ['withdraw_health_connect_import','Delete stored Health Connect records for the signed-in account, record consent withdrawal, and revoke phone ingest tokens.',{
     confirm:{type:'string',enum:['delete-my-health-connect-records']}}],
   ['issue_health_connect_ingest_token','Issue this account’s Health Connect webhook token. Replaces any current token, grants storage consent, and shows the secret once.',{
@@ -54,7 +54,7 @@ export function extraArguments(name,args){
     return args.confirm===REVOKE_CONFIRM?{confirm:args.confirm}:null;
   if(name==='import_health_connect_file'){
     if(args.consent!=='store-health-connect-file'||typeof args.file_json!=='string'||
-       args.file_json.length<2||args.file_json.length>12000)return null;
+       args.file_json.length<2||args.file_json.length>400000)return null;
     return {consent:args.consent,file_json:args.file_json};
   }
   return {limit:25,offset:0,...args};
