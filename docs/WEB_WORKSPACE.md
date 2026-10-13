@@ -27,14 +27,14 @@ A generic Android Health Connect export is **not** necessarily in WHOOP Lens v2 
 
 ## Important Android limitation
 
-Android Health Connect APIs cannot be accessed directly from a normal web page or PWA. That remains true even when the website is opened on a Galaxy phone. To get Health Connect data into the web app, the user must supply a **supported exported file**, or use an optional, separately reviewed native bridge later. No bridge is required for ordinary WHOOP access or local FHIR preview.
+Android Health Connect APIs cannot be accessed directly from a normal web page or PWA. That remains true even when the website is opened on a Galaxy phone. WHOOP Lens does not build or require an Android companion. Health Connect data enters only as a user-selected file. FHIR R4 bundles stay a local preview and are not stored as Health Connect measurements.
 
 ## Privacy and deployment gates
 
-The local preview is read-only. The browser's WEB_HEALTH_UPLOADS_ENABLED flag remains **false** and there is no active upload action. Backend ingestion and RLS code in draft PRs #9 and #11 has not been deployed. A future upload must explicitly show what will be sent, require separate confirmation, derive account ownership from server-side auth, and support deletion. Actual rollout needs owner approval, staging tests and verified migration.
+The GitHub Pages preview is read-only. The browser's WEB_HEALTH_UPLOADS_ENABLED flag remains **false** and the page does not upload. The Cloudflare source can store a Health Connect v2 file only after a verified WHOOP Lens bearer, the exact consent string, and `WEB_HEALTH_IMPORT_ENABLED=true`. Checked-in flags stay false. Migration `cloudflare/migrations/0006_health_import_consent.sql` is not applied to production. Deletion is per account and records consent withdrawal. This is a file import, not live Health Connect synchronization.
 
 No additional paid hosting services are introduced. Existing service quotas and GitHub Pages limits still apply; zero additional infrastructure cost is a design constraint, **not a guarantee of unlimited usage**.
 
 ## Optional Android bridge
 
-Prior Android code is preserved in the `android/` directory for future direct Health Connect access. It is **not a prerequisite**, is not released and cannot upload while its release gate is false. Private web beta is the primary direction.
+Prior Android code remains in the `android/` directory and is not part of the current architecture. It is not required for WHOOP access, MCP, or Health Connect file import, and it cannot upload while its release gate is false.

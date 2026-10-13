@@ -1,0 +1,52 @@
+name: Cloudflare OAuth build validation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'cloudflare/oauth/**'
+      - 'cloudflare/migrations/0003_oauth_login_limits.sql'
+      - 'cloudflare/test/oauth-*.test.mjs'
+      - 'cloudflare/test/provider/**'
+      - 'cloudflare/package.json'
+      - 'cloudflare/package-lock.json'
+      - '.github/workflows/cloudflare-oauth-staging.yml'
+  pull_request:
+    paths:
+      - 'cloudflare/oauth/**'
+      - 'cloudflare/migrations/0003_oauth_login_limits.sql'
+      - 'cloudflare/test/oauth-*.test.mjs'
+      - 'cloudflare/test/provider/**'
+      - 'cloudflare/package.json'
+      - 'cloudflare/package-lock.json'
+      - '.github/workflows/cloudflare-oauth-staging.yml'
+permissions:
+  contents: read
+jobs:
+  oauth-dry-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+      - name: Test OAuth consent and login with synthetic identities
+        run: node --test cloudflare/test/oauth-*.test.mjs
+      - name: Install pinned OAuth provider and Wrangler locally
+        working-directory: cloudflare
+        run: npm ci --no-audit --no-fund
+      - name: Test real OAuth provider with synthetic upstream and in-memory storage
+        run: node --test cloudflare/test/provider/*.test.mjs
+      - name: Bundle OAuth issuer and MCP resource (DRY RUN ONLY)
+        working-directory: cloudflare
+        run: |
+          ./node_modules/.bin/wrangler deploy --dry-run --config oauth/auth-server/wrangler.jsonc --outdir /tmp/whoop-lens-oauth-issuer
+          ./node_modules/.bin/wrangler deploy --dry-run --config oauth/resource/wrangler.jsonc --outdir /tmp/whoop-lens-oauth-resource
+      - name: Confirm no workflow deployment or secrets
+        run: |
+          test -f /tmp/whoop-lens-oauth-issuer/index.js
+          test -f /tmp/whoop-lens-oauth-resource/index.js
+          if grep -Eq 'https://[^" ]*supabase\.co' /tmp/whoop-lens-oauth-issuer/index.js /tmp/whoop-lens-oauth-resource/index.js; then
+            echo 'Unexpected Supabase endpoint in independent Worker bundle'
+            exit 1
+          fi

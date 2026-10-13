@@ -1,0 +1,19 @@
+{
+  // Staged migration only. No Worker deploy until auth and full integration pass.
+  // Future custom domain: whooplens.tech (NOT attached: no routes or custom_domains).
+  // Do not enable custom routing until the owner approves launch.
+  "name": "whoop-lens",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-11",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": { "MIGRATION_API_ENABLED": "false", "WHOOP_READS_ENABLED": "false", "WHOOP_OAUTH_ENABLED": "false", "MCP_ENABLED": "false", "WEB_HEALTH_IMPORT_ENABLED": "false", "HEALTH_CONNECT_WEBHOOK_ENABLED": "false" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "whoop-lens-migration",
+      "database_id": "58250de2-cad7-4a8a-a061-d9b41c7b24d2",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
