@@ -113,7 +113,9 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
     if(path.includes("auth-server")){
       assert.doesNotMatch(text,/AI_SUMMARY_ENABLED|STRESS_ESTIMATE_ENABLED|WEEKLY_DIGEST_ENABLED/);
       assert.doesNotMatch(text,/"binding"\s*:\s*"AI"/);
+      assert.doesNotMatch(text,/"observability"/);
     }else{
+      assert.match(text,/"observability"\s*:\s*\{\s*"enabled"\s*:\s*true\s*\}/);
       assert.match(text,/"AI_SUMMARY_ENABLED"\s*:\s*"false"/);
       assert.match(text,/"STRESS_ESTIMATE_ENABLED"\s*:\s*"false"/);
       assert.match(text,/"WEEKLY_DIGEST_ENABLED"\s*:\s*"false"/);
@@ -414,7 +416,7 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
     }));
     assert.equal(account.result.summary.status,"template");
     assert.equal(account.result.summary.fallback_reason,"account_check_failed");
-    assert.deepEqual(account.lines,["account_check_failed"]);
+    assert.deepEqual(account.lines,[JSON.stringify({stage:"not_configured"}),"account_check_failed"]);
     const day="2026-10-13";
     db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES(?,?,2500,2500)").run(userScope(A),day);
     db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES('global',?,0,7500)").run(day);

@@ -155,12 +155,55 @@ function freshnessOf(sample,now){
   if(now-freshAt>ANALYTICS_STALE_MS)return null;
   return freshAt;
 }
+function redact(value,token){
+  const text=typeof value==="string"?value:value==null?"":String(value);
+  const hidden=typeof token==="string"&&token.length>0?text.split(token).join("[redacted]"):text;
+  return hidden.length>300?hidden.slice(0,300):hidden;
+}
+function diagnosticErrors(errors,token){
+  return errors.map(error=>{
+    const raw=error?.code??error?.extensions?.code;
+    const code=typeof raw==="string"||typeof raw==="number"?raw:null;
+    const message=redact(typeof error?.message==="string"?error.message:"",token);
+    return {code,message};
+  });
+}
+function logFailure(fields,token){
+  const line={stage:fields.stage};
+  if(fields.status!=null)line.status=fields.status;
+  if(fields.name!=null)line.name=redact(fields.name,token);
+  if(fields.message!=null)line.message=redact(fields.message,token);
+  if(Array.isArray(fields.errors)&&fields.errors.length>0)line.errors=diagnosticErrors(fields.errors,token);
+  console.log(JSON.stringify(line));
+}
+function groupCount(body){
+  const accounts=body?.data?.viewer?.accounts;
+  if(!Array.isArray(accounts))return 0;
+  let count=0;
+  for(const account of accounts){
+    const groups=account?.aiInferenceAdaptiveGroups;
+    if(Array.isArray(groups))count+=groups.length;
+  }
+  return count;
+}
+async function errorList(response){
+  if(!response||typeof response.json!=="function")return null;
+  try{
+    const body=await response.json();
+    return Array.isArray(body?.errors)&&body.errors.length>0?body.errors:null;
+  }catch{
+    return null;
+  }
+}
 async function queryNeurons(env,{accountId,token,start,end}){
   // Test hooks only. A Wrangler var is a string, so it cannot take either path.
   if(typeof env.AI_ANALYTICS_QUERY==="function")
     return reportedSample(await env.AI_ANALYTICS_QUERY({accountId,start,end}));
   const fetchImpl=typeof env.AI_ANALYTICS_FETCH==="function"?env.AI_ANALYTICS_FETCH:globalThis.fetch;
-  if(typeof fetchImpl!=="function")return null;
+  if(typeof fetchImpl!=="function"){
+    logFailure({stage:"not_configured"},token);
+    return null;
+  }
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),ANALYTICS_TIMEOUT_MS);
   try{
@@ -178,9 +221,47 @@ async function queryNeurons(env,{accountId,token,start,end}){
         variables:{accountTag:accountId,start,end}
       })
     });
-    if(!response||response.ok!==true||typeof response.json!=="function")return null;
-    return analyticsSample(await response.json());
-  }catch{
+    if(!response||response.ok!==true){
+      logFailure({
+        stage:"http_status",
+        status:response?.status??null,
+        errors:await errorList(response)
+      },token);
+      return null;
+    }
+    if(typeof response.json!=="function"){
+      logFailure({stage:"bad_shape",status:response.status??null},token);
+      return null;
+    }
+    let body;
+    try{
+      body=await response.json();
+    }catch(error){
+      logFailure({
+        stage:"fetch_throw",
+        status:response.status??null,
+        name:error instanceof Error?error.name:"Error",
+        message:error instanceof Error?error.message:String(error)
+      },token);
+      return null;
+    }
+    if(Array.isArray(body?.errors)&&body.errors.length>0){
+      logFailure({stage:"graphql_errors",status:response.status??null,errors:body.errors},token);
+      return null;
+    }
+    const sample=analyticsSample(body);
+    if(!sample){
+      logFailure({stage:"bad_shape",status:response.status??null},token);
+      return null;
+    }
+    console.debug(JSON.stringify({groups:groupCount(body)}));
+    return sample;
+  }catch(error){
+    logFailure({
+      stage:"fetch_throw",
+      name:error instanceof Error?error.name:"Error",
+      message:error instanceof Error?error.message:String(error)
+    },token);
     return null;
   }finally{
     clearTimeout(timer);
@@ -201,7 +282,11 @@ async function reservationsSince(db,day,endMs,readAt){
 export async function loadAccountBudget(db,env,{day,now}={}){
   try{
     const config=configured(env);
-    if(!config||!db||typeof db.prepare!=="function")return {ok:false};
+    if(!config){
+      logFailure({stage:"not_configured"},env?.[ANALYTICS_TOKEN_SECRET]);
+      return {ok:false};
+    }
+    if(!db||typeof db.prepare!=="function")return {ok:false};
     if(!validDay(day)||!Number.isSafeInteger(now))return {ok:false};
     try{await db.prepare(DROP_OLD_EVENTS).bind(day).run();}catch{return {ok:false};}
     const cached=snapshotOf(await readRow(db,READ_SNAPSHOT,[day]),now);
