@@ -101,8 +101,9 @@ function accountPredicate(snapshotLocal,accountCap){
 const READ_SCOPE=`SELECT used, cap FROM ai_usage WHERE day = ?1 AND scope = ?2`;
 const LOG_RESERVE=`INSERT INTO ai_usage_event(day, at_ms, amount) VALUES (?1, ?2, ?3)`;
 async function noteReserve(db,day,amount){
-  if(!Number.isSafeInteger(amount)||amount<1)return;
-  try{await db.prepare(LOG_RESERVE).bind(day,Date.now(),amount).run();}catch{/* the next ceiling still has the counter */}
+  if(!Number.isSafeInteger(amount)||amount<1)throw Error("quota");
+  const written=await db.prepare(LOG_RESERVE).bind(day,Date.now(),amount).run();
+  if(!written||written.success===false||written.meta?.changes!==1)throw Error("quota");
 }
 function usageNumbers(row,fallbackCap){
   if(!row)return {used:0,cap:fallbackCap,remaining:fallbackCap};
@@ -141,7 +142,11 @@ export async function reserveQuota(db,{userId,day,estimate,snapshotLocal,account
         :await readUpdate(db,RESERVE,[estimate,day,scope]);
     }catch{return {ok:false};}
     if(accepted(update,scope)){
-      await noteReserve(db,day,estimate);
+      try{await noteReserve(db,day,estimate);}
+      catch{
+        await undo(db,{day,estimate,scope,rows:update.rows,changes:update.changes});
+        return {ok:false};
+      }
       return {ok:true,estimate,scope,day};
     }
     await undo(db,{day,estimate,scope,rows:update.rows,changes:update.changes});

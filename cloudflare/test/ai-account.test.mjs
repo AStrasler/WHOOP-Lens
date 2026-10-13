@@ -58,6 +58,8 @@ test("migration 0010 stores only the account neuron snapshot",()=>{
   try{
     const columns=db.sqlite.prepare("PRAGMA table_info(ai_account_snapshot)").all().map(row=>row.name);
     assert.deepEqual(columns,["day","neurons","local_used","fetched_at","recent_local"]);
+    const indexes=db.sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='ai_usage_event'").all().map(row=>row.name);
+    assert.ok(indexes.includes("ai_usage_event_day_at"));
     assert.equal(accountCeiling(8000,200,100),ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN-8100+200);
     assert.equal(accountCeiling(100,500),ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN);
     assert.equal(accountCeiling(8000,200),ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN-8000+200);
@@ -313,7 +315,7 @@ test("the GraphQL analytics query sums neurons and fail closed on a bad response
   }finally{db.close();}
 });
 
-test("analytics lag counts local reservations since the sample, and a stale sample fails closed",async()=>{
+test("analytics lag counts local reservations since the last counted call",async()=>{
   const db=openDb();
   try{
     seed(db,0,200);
@@ -339,19 +341,61 @@ test("analytics lag counts local reservations since the sample, and a stale samp
     assert.equal(localWins.ok,true);
     assert.equal(localWins.recentLocal,0);
     assert.equal(localWins.accountCap,ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN);
-    const staleEnd=new Date(NOW-ANALYTICS_STALE_MS-1000).toISOString();
-    let calls=0;
-    const stale=await attachSummary(page(),{
-      db,userId:A,tool:"get_recovery",now:NOW+ANALYTICS_CACHE_MS+1,
-      env:analyticsEnv(async()=>({neurons:0,end:staleEnd}),{AI:{async run(){calls++;return {response:accepted};}}})
-    });
-    assert.equal(stale.summary.status,"template");
-    assert.equal(calls,0);
     const dated=analyticsSample({data:{viewer:{accounts:[{aiInferenceAdaptiveGroups:[{
       dimensions:{datetime:end},sum:{neurons:10}
     }]}]}}});
     assert.equal(dated.neurons,10);
     assert.equal(dated.endMs,Date.parse(end));
+    assert.equal(dated.freshAt,undefined);
+  }finally{db.close();}
+});
+
+test("a last call hours ago stays fresh, and a stale or failed fetch uses the template",async()=>{
+  const db=openDb();
+  try{
+    const callAt=Date.parse(DAY+"T13:00:00Z");
+    const checkAt=Date.parse(DAY+"T15:00:00Z");
+    seed(db,0,200);
+    db.sqlite.prepare("INSERT INTO ai_usage_event(day,at_ms,amount) VALUES(?,?,?)").run(DAY,callAt+1000,100);
+    db.sqlite.prepare("INSERT INTO ai_usage_event(day,at_ms,amount) VALUES(?,?,?)").run("2026-10-12",callAt,50);
+    let calls=0;
+    const env=analyticsEnv(async()=>({neurons:8000,end:new Date(callAt).toISOString()}),{
+      AI:{async run(){calls++;return {response:accepted,usage:{prompt_tokens:20,completion_tokens:8}};}}
+    });
+    const budget=await loadAccountBudget(db,env,{day:DAY,now:checkAt});
+    assert.equal(budget.ok,true);
+    assert.equal(budget.recentLocal,100);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM ai_usage_event WHERE day='2026-10-12'").get().n,0);
+    const summary=await attachSummary(page(),{db,userId:A,tool:"get_recovery",now:checkAt,env});
+    assert.equal(summary.summary.status,"model");
+    assert.equal(calls,1);
+    db.sqlite.prepare("DELETE FROM ai_account_snapshot").run();
+    calls=0;
+    const stale=await attachSummary(page(),{
+      db,userId:A,tool:"get_recovery",now:checkAt,
+      env:analyticsEnv(async()=>({
+        neurons:0,
+        end:new Date(checkAt).toISOString(),
+        freshAt:new Date(checkAt-ANALYTICS_STALE_MS-1000).toISOString()
+      }),{AI:{async run(){calls++;return {response:accepted};}}})
+    });
+    assert.equal(stale.summary.status,"template");
+    assert.equal(calls,0);
+    assert.equal(snapshot(db),undefined);
+    const failed=await attachSummary(page(),{
+      db,userId:A,tool:"get_recovery",now:checkAt,
+      env:analyticsEnv(async()=>{throw Error("analytics down");},{
+        AI:{async run(){calls++;return {response:accepted};}}
+      })
+    });
+    assert.equal(failed.summary.status,"template");
+    assert.equal(calls,0);
+    db.sqlite.exec("DELETE FROM ai_usage");
+    db.sqlite.exec("DROP TABLE ai_usage_event");
+    const denied=await reserveQuota(db,{userId:A,day:DAY,estimate:10});
+    assert.equal(denied.ok,false);
+    assert.equal(used(db,userScope(A)),0);
+    assert.equal(used(db,"global"),0);
   }finally{db.close();}
 });
 

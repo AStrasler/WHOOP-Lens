@@ -6,4 +6,5 @@ CREATE TABLE IF NOT EXISTS ai_usage_event (
   at_ms INTEGER NOT NULL,
   amount INTEGER NOT NULL
 );
+CREATE INDEX IF NOT EXISTS ai_usage_event_day_at ON ai_usage_event(day, at_ms);
 ALTER TABLE ai_account_snapshot ADD COLUMN recent_local INTEGER NOT NULL DEFAULT 0;

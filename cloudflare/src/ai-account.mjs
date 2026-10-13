@@ -2,10 +2,12 @@
 // The read-only token is the Worker secret AI_ACCOUNT_ANALYTICS_TOKEN
 // (Account Analytics Read). The account id is AI_ANALYTICS_ACCOUNT_ID.
 // Neither value is committed. A failed or stale read fails closed.
-// ANALYTICS_STALE_MS is the oldest analytics sample we will trust. A newer
-// sample still misses local reservations made after that sample, so those
-// reservations are added. If the sample has no time, the ceiling uses the
-// max of the analytics total and this Worker's local counter.
+// ANALYTICS_STALE_MS is the oldest fetch, or explicit data-freshness
+// watermark, we will trust. The newest inference datetime is only the last
+// counted call. A quiet account can go hours without a call and still have
+// a fresh ceiling. Local reservations made after that call are added.
+// If the call time is missing, the ceiling uses the max of the analytics
+// total and this Worker's local counter.
 import {GLOBAL_SCOPE} from "./ai-quota.mjs";
 
 export const ACCOUNT_NEURON_LIMIT=10000;
@@ -41,6 +43,7 @@ ON CONFLICT(day) DO UPDATE SET
   recent_local = excluded.recent_local`;
 const SUM_RECENT=`SELECT COALESCE(SUM(amount),0) AS recent FROM ai_usage_event
 WHERE day = ?1 AND at_ms > ?2 AND at_ms <= ?3`;
+const DROP_OLD_EVENTS=`DELETE FROM ai_usage_event WHERE day < ?1`;
 
 export function accountCeiling(neurons,snapshotLocal,recentLocal=0){
   if(!Number.isSafeInteger(neurons)||neurons<0)return null;
@@ -133,10 +136,24 @@ function snapshotOf(row,now){
 function reportedSample(result){
   const neurons=reportedNeurons(result);
   if(neurons==null)return null;
-  if(result.end==null)return {neurons,endMs:null};
-  const endMs=Date.parse(result.end);
-  if(!Number.isFinite(endMs))return null;
-  return {neurons,endMs};
+  let endMs=null;
+  if(result.end!=null){
+    endMs=Date.parse(result.end);
+    if(!Number.isFinite(endMs))return null;
+  }
+  // freshAt is a data-freshness watermark. It is not the last call time.
+  if(result.freshAt==null)return {neurons,endMs,freshAt:null};
+  if(typeof result.freshAt!=="string")return null;
+  const freshAt=Date.parse(result.freshAt);
+  if(!Number.isFinite(freshAt))return null;
+  return {neurons,endMs,freshAt};
+}
+function freshnessOf(sample,now){
+  if(!sample)return null;
+  const freshAt=sample.freshAt==null?now:sample.freshAt;
+  if(!Number.isSafeInteger(freshAt))return null;
+  if(now-freshAt>ANALYTICS_STALE_MS)return null;
+  return freshAt;
 }
 async function queryNeurons(env,{accountId,token,start,end}){
   // Test hooks only. A Wrangler var is a string, so it cannot take either path.
@@ -186,6 +203,7 @@ export async function loadAccountBudget(db,env,{day,now}={}){
     const config=configured(env);
     if(!config||!db||typeof db.prepare!=="function")return {ok:false};
     if(!validDay(day)||!Number.isSafeInteger(now))return {ok:false};
+    try{await db.prepare(DROP_OLD_EVENTS).bind(day).run();}catch{return {ok:false};}
     const cached=snapshotOf(await readRow(db,READ_SNAPSHOT,[day]),now);
     if(cached&&cached.age>=0&&cached.age<=ANALYTICS_CACHE_MS){
       const hit=budgetFrom(cached.neurons,cached.local_used,cached.recent_local);
@@ -199,8 +217,8 @@ export async function loadAccountBudget(db,env,{day,now}={}){
     const window=dayWindow(day);
     const sample=await queryNeurons(env,{...config,...window});
     if(!sample)return {ok:false};
-    // A sample older than ANALYTICS_STALE_MS is not a safe ceiling.
-    if(sample.endMs!=null&&now-sample.endMs>ANALYTICS_STALE_MS)return {ok:false};
+    // endMs is the last counted call. Freshness is the fetch, or a watermark.
+    if(freshnessOf(sample,now)==null)return {ok:false};
     const recent=await reservationsSince(db,day,sample.endMs,readAt);
     if(recent==null)return {ok:false};
     const written=await db.prepare(UPSERT_SNAPSHOT).bind(day,sample.neurons,snapshotLocal,now,recent).run();
