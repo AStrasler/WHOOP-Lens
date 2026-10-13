@@ -20,7 +20,7 @@ const file={
 };
 function fixture(){
   const sqlite=new DatabaseSync(':memory:');
-  for(const name of ['0001_initial.sql','0004_medical_context_review.sql','0006_health_import_consent.sql'])
+  for(const name of ['0001_initial.sql','0004_medical_context_review.sql','0006_health_import_consent.sql','0007_health_connect_ingest.sql'])
     sqlite.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
   for(const id of [A,B]){
     sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);

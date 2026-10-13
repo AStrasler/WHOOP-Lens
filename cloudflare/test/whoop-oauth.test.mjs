@@ -21,7 +21,7 @@ const env={
 };
 const sql=readFileSync(new URL("../migrations/0001_initial.sql",import.meta.url),"utf8");
 const cap=readFileSync(new URL("../migrations/0002_enforce_seat_limits.sql",import.meta.url),"utf8");
-const revocations=readFileSync(new URL("../migrations/0007_whoop_credential_revocations.sql",import.meta.url),"utf8");
+const revocations=readFileSync(new URL("../migrations/0008_whoop_credential_revocations.sql",import.meta.url),"utf8");
 const json=value=>new Response(JSON.stringify(value),{status:200,headers:{"content-type":"application/json"}});
 function fixture(){
   const sqlite=new DatabaseSync(":memory:");

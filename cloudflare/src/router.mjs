@@ -4,6 +4,7 @@ import { callWhoop } from "./whoop-api.mjs";
 import { createWhoopAuthorization, acceptWhoopCallback } from "./whoop-oauth.mjs";
 import { handleMcpRpc, validateMcpTransport } from "./mcp.mjs";
 import { healthConnectHttp } from "./health-import.mjs";
+import { healthConnectWebhook, WEBHOOK_PATH } from "./health-connect-webhook.mjs";
 
 function json(data, status=200) {
   return new Response(JSON.stringify(data), {
@@ -70,6 +71,8 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
         return json({error:"MCP staging unavailable"},503);
       }
     }
+    if(preliminaryUrl.pathname===WEBHOOK_PATH)
+      return healthConnectWebhook(request,env);
     if(preliminaryUrl.pathname==="/v1/health-connect"||
        preliminaryUrl.pathname==="/v1/health-connect/import"||
        preliminaryUrl.pathname==="/v1/health-connect/status"){

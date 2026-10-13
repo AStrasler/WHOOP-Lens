@@ -107,6 +107,12 @@ export function evaluateSeats({ userId, connections, developerId }) {
   return { allowed: true, existing: false, seat: "public" };
 }
 
+export function storageNotEnabled(error) {
+  const code = error?.code;
+  const message = String(error?.message ?? "");
+  return code === "42P01" || code === "PGRST205" || /does not exist|schema cache/i.test(message);
+}
+
 export function seatRoleForWrite({ userId, connections, developerId }) {
   const rows = connections ?? [];
   const otherDeveloper = rows.some((row) => row.seat_role === "developer" && row.user_id !== userId);
@@ -379,6 +385,9 @@ export function createWhoopMcp({
       const { data, error } = await db.from("medical_context_entries")
         .select("id,category,detail_json,source_type,source_label,source_date,reviewed_at,created_at,updated_at")
         .eq("user_id", uid).order("created_at", { ascending: false }).range(offset, offset + limit);
+      if (error && storageNotEnabled(error)) {
+        return { available: false, entries: [], provenance: "user_approved_medical_context", reason: "Medical context storage is not enabled on this deployment. No records were read." };
+      }
       if (error) throw new Error("Medical context read failed");
       return {
         entries: (data ?? []).slice(0, limit).map(row => ({
@@ -403,6 +412,12 @@ export function createWhoopMcp({
         .range(offset, offset + limit);
       if (args?.metric) query = query.eq("metric", args.metric);
       const { data, error } = await query;
+      if (error && storageNotEnabled(error)) {
+        return {
+          available: false, records: [], source: "health_connect", transport: "health_connect_companion",
+          reason: "Health Connect storage is not enabled on this deployment. No records were read.",
+        };
+      }
       if (error) throw new Error("Health Connect read failed");
       return {
         records: (data ?? []).slice(0, limit).map((row) => ({

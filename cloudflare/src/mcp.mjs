@@ -1,6 +1,7 @@
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
 import {revokeWhoopConnection} from './whoop-oauth.mjs';
 import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
+import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
 import {hostInstructions,serverInfo} from './host-instructions.mjs';
 // Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
@@ -115,8 +116,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }
   if(message.method==="server/discover"){
     if(!modern)return fail(-32601,"Method not found",id);
-    return ok(id,{resultType:"complete",capabilities:{tools:{}},ttlMs:0,cacheScope:"private",
-      serverInfo,instructions:hostInstructions});
+    return ok(id,{resultType:"complete",supportedVersions:[PROTOCOL_CURRENT],capabilities:{tools:{}},ttlMs:0,cacheScope:"private",serverInfo,_meta:{"io.modelcontextprotocol/serverInfo":serverInfo},instructions:hostInstructions});
   }
   if(message.method==="ping")return ok(id,{});
   if(message.method==="tools/list"){
@@ -146,8 +146,15 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       if(env.WEB_HEALTH_IMPORT_ENABLED!=='true')throw Error('Connection disabled');
       data=await importHealthConnectFile(db,userId,args.file_json,args.consent);
     }else if(name==='withdraw_health_connect_import'){
-      if(env.WEB_HEALTH_IMPORT_ENABLED!=='true')throw Error('Connection disabled');
+      if(env.WEB_HEALTH_IMPORT_ENABLED!=='true'&&env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')
+        throw Error('Connection disabled');
       data=await withdrawHealthConnectImport(db,userId,args.confirm);
+    }else if(name==='issue_health_connect_ingest_token'){
+      if(env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')throw Error('Connection disabled');
+      data=await issueIngestToken(db,userId,args.consent);
+    }else if(name==='revoke_health_connect_ingest_token'){
+      if(env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')throw Error('Connection disabled');
+      data=await revokeIngestTokens(db,userId,args.confirm);
     }else if(extraTools.some(t=>t.name===name)){
       data=await readExtraTool(db,userId,name,args);
     }else if(!historyTools.has(name)||!args.auto_page){

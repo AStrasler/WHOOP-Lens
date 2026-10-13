@@ -237,7 +237,7 @@ export function noStoreHeaders(contentType='text/plain; charset=utf-8'){
   // drops the authorize query, and the next load is "Authorization unavailable".
   const style=String(contentType).startsWith('text/html')?" style-src '"+CONSENT_STYLE_HASH+"';":'';
   return {'content-type':contentType,'cache-control':'no-store',
-    'content-security-policy':"default-src 'none';"+style+" form-action 'self' https://auth.whooplens.tech https://whoop-lens.cloudflareaccess.com; frame-ancestors 'none'; base-uri 'none'",
+    'content-security-policy':"default-src 'none';"+style+" form-action 'self' https://auth.whooplens.tech https://whoop-lens.cloudflareaccess.com https://chatgpt.com; frame-ancestors 'none'; base-uri 'none'",
     'referrer-policy':'no-referrer','x-frame-options':'DENY',
     'x-content-type-options':'nosniff'};
 }

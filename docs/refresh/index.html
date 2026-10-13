@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#000000">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
+<title>Refresh · WHOOP Lens</title>
+<meta name="description" content="How an existing WHOOP Lens user checks a server update without reconnecting WHOOP.">
+<link rel="icon" href="/WHOOP-Lens/logo.jpg" type="image/jpeg">
+<link rel="apple-touch-icon" href="/WHOOP-Lens/logo.jpg">
+<link rel="stylesheet" href="/WHOOP-Lens/style.css">
+</head>
+<body>
+<main class="doc">
+<header>
+<div class="brand">
+<img class="mark" src="/WHOOP-Lens/logo.jpg" width="72" height="72" alt="">
+<span class="wordmark">WHOOP Lens</span>
+</div>
+<h1>Already using WHOOP Lens?</h1>
+</header>
+<p>If recovery, sleep, and profile questions still return your own dated WHOOP data, leave that WHOOP connection in place. Start a new ChatGPT conversation and ask:</p>
+<p>What can WHOOP Lens do now? Show the capability directory, and say whether Stress Monitor history is available.</p>
+<p>A current answer names recovery, sleep, cycles, and workouts, and says that WHOOP Stress Monitor zone history is not available from the official API. It does not convert strain, heart rate, or HRV into high-stress hours. Charts appear only when that ChatGPT app can draw them.</p>
+<h2>If the chat looks unchanged</h2>
+<ol>
+<li>Open a new conversation in the same ChatGPT account.</li>
+<li>Ask the question above.</li>
+<li>If the capability directory is still missing, confirm the plugin server URL is <code>https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/mcp</code>.</li>
+<li>Start another new conversation and ask again.</li>
+</ol>
+<p>You do not need to delete the plugin when that server URL is already correct.</p>
+<h2>If you see this, do this</h2>
+<ul>
+<li>An older chat ignores the new question: leave it and open a new conversation.</li>
+<li>Profile or recovery still matches the WHOOP app: the connection is working.</li>
+<li>The reply estimates stress hours from strain or heart rate: ask for <code>get_capabilities</code> and the Stress Monitor limitation.</li>
+<li>ChatGPT says the app was previously approved, but WHOOP reads fail: open <a href="https://astrasler.github.io/WHOOP-Lens/">WHOOP Lens setup</a>, sign in, and choose Connect WHOOP.</li>
+<li>Setup says public seats are full: a new WHOOP connection cannot be stored. An existing connection can stay connected.</li>
+<li>The account is disabled: reconnecting WHOOP does not re-enable it.</li>
+</ul>
+<h2>Two different sign-ins</h2>
+<p>Previously approved on the consent page confirms the ChatGPT connection. Connect WHOOP on the setup site is the separate WHOOP authorization. Reconnect only the part that failed.</p>
+<p>No Android app is required. The optional companion does not upload readings while upload is disabled. A browser file preview stays on this device.</p>
+<p>Do not send passwords, access tokens, refresh tokens, or exported health files to support or into a GitHub issue.</p>
+<footer>
+<a href="/WHOOP-Lens/">Sign in</a><br>
+Independent personal integration. Not affiliated with WHOOP.<br>
+<a href="/WHOOP-Lens/privacy/">Privacy statement</a> · <a href="/WHOOP-Lens/terms/">Terms</a> · <a href="/WHOOP-Lens/support/">Support</a>
+</footer>
+</main>
+</body>
+</html>

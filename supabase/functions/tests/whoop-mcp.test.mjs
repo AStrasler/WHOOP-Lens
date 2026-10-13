@@ -44,6 +44,15 @@ function createMemoryDb(initial = {}) {
   };
   let upsertError = null;
   function from(name) {
+    if (memoryApi.missingTables?.has(name)) {
+      const query = {
+        select() { return query; }, eq() { return query; }, order() { return query; }, range() { return query; },
+        then(resolve, reject) {
+          return Promise.resolve({ data: null, error: { code: "42P01", message: "relation does not exist in schema cache" } }).then(resolve, reject);
+        },
+      };
+      return query;
+    }
     if (!Object.hasOwn(tables, name)) throw new Error("Unknown table " + name);
     const filters = [];
     const orders = [];
@@ -110,11 +119,13 @@ function createMemoryDb(initial = {}) {
     }
     return query;
   }
-  return {
+  const memoryApi = {
     from,
     tables,
+    missingTables: new Set(),
     failNextUpsert(error) { upsertError = error; },
   };
+  return memoryApi;
 }
 
 function createHarness(options = {}) {
@@ -857,6 +868,27 @@ test("catalog respects authentication and member disable gate", async () => {
   h.memory.tables.whoop_members.push({ user_id: userA, active: false });
   const disabled = await catalogCall(h, "session-do-not-log-a");
   assert.equal(disabled.response.status, 403);
+});
+
+test("missing Health Connect and medical storage report unavailable without leaking the database error", async () => {
+  const h = createHarness({ fetch: async () => jsonResponse({}) });
+  h.memory.missingTables = new Set(["health_connect_records", "medical_context_entries"]);
+  const call = async (name) => {
+    const response = await h.handle(request("/mcp", {
+      method: "POST", token: "session-do-not-log-a",
+      body: { jsonrpc: "2.0", id: 77, method: "tools/call", params: { name, arguments: {} } },
+    }));
+    return JSON.parse((await response.json()).result.content[0].text);
+  };
+  const health = await call("get_health_connect");
+  const medical = await call("get_medical_context");
+  assert.equal(health.available, false);
+  assert.deepEqual(health.records, []);
+  assert.equal(medical.available, false);
+  assert.deepEqual(medical.entries, []);
+  assert.equal(JSON.stringify(health).includes("does not exist"), false);
+  assert.equal(JSON.stringify(medical).includes("schema cache"), false);
+  assertSafe(h.logs);
 });
 
 test("Health Connect MCP reads only current user's imported rows and labels the source", async () => {

@@ -1,6 +1,7 @@
 import { OAuthResourceServer, insufficientScope } from "@cloudflare/workers-oauth-provider";
 import { activeMembership } from "../../../src/storage.mjs";
 import { createStagingRouter } from "../../../src/router.mjs";
+import { WEBHOOK_PATH } from "../../../src/health-connect-webhook.mjs";
 
 // Private MCP resource server for https://whooplens.tech/mcp.
 // Supabase whoop-mcp stays live in parallel. Do not copy WHOOP refresh tokens.
@@ -37,8 +38,10 @@ export default {
         status:503,headers:{"cache-control":"no-store"}
       });
     // The WHOOP callback is authenticated by its expiring, atomically consumed
-    // state, not an MCP bearer. All other paths retain OAuth protection.
-    if(new URL(request.url).pathname==='/api/whoop/callback')
+    // state. The Health Connect webhook authenticates its own per-user bearer.
+    // All other paths retain MCP OAuth protection.
+    const path=new URL(request.url).pathname;
+    if(path==='/api/whoop/callback'||path===WEBHOOK_PATH)
       return createStagingRouter()(request,env);
     return mcpResource.fetch(request,env,ctx);
   }

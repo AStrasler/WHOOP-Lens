@@ -209,7 +209,7 @@ test('a client that never requests offline_access still receives a usable refres
     await Promise.all(pending);
   }finally{f.db.close();}
 });
-test('resource routes only the WHOOP callback outside MCP bearer validation',async()=>{
+test('resource routes the WHOOP callback and Health Connect webhook outside MCP bearer validation',async()=>{
   const {default:resource}=await import('../../oauth/resource/src/index.mjs');
   let consumed=0,validated=0;
   const env={OAUTH_RESOURCE_ENABLED:'true',MIGRATION_API_ENABLED:'true',WHOOP_OAUTH_ENABLED:'true',
@@ -224,6 +224,12 @@ test('resource routes only the WHOOP callback outside MCP bearer validation',asy
   assert.equal(result.status,400);assert.equal(consumed,1);assert.equal(validated,0);
   const gated=await resource.fetch(callback,{...env,WHOOP_OAUTH_ENABLED:'false'},{});
   assert.equal(gated.status,503);assert.equal(consumed,1);
+  const webhook=await resource.fetch(new Request('https://whooplens.tech/api/health-connect/webhook',{
+    method:'POST',headers:{'content-type':'application/json',authorization:'Bearer hct_not-a-real-token'},
+    body:'{"timestamp":"2026-10-13T00:00:00Z","app_version":"1.9.22"}'
+  }),env,{});
+  assert.equal(webhook.status,503);
+  assert.equal(validated,0);
   const unauthenticated=await resource.fetch(new Request('https://whooplens.tech/mcp',{
     method:'POST',headers:{'content-type':'application/json'},body:'{}'}),env,{});
   assert.equal(unauthenticated.status,401);
