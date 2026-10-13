@@ -201,7 +201,7 @@ async function queryNeurons(env,{accountId,token,start,end}){
     return reportedSample(await env.AI_ANALYTICS_QUERY({accountId,start,end}));
   const fetchImpl=typeof env.AI_ANALYTICS_FETCH==="function"?env.AI_ANALYTICS_FETCH:globalThis.fetch;
   if(typeof fetchImpl!=="function"){
-    logFailure({stage:"not_configured"},token);
+    logFailure({stage:"no_fetch"},token);
     return null;
   }
   const controller=new AbortController();
@@ -279,11 +279,34 @@ async function reservationsSince(db,day,endMs,readAt){
   if(!Number.isSafeInteger(recent)||recent<0)return null;
   return recent;
 }
+// Safe facts about the analytics settings. Never the token or any header.
+// token_sha8 is the first 8 hex characters of SHA-256(token), for comparing
+// the stored secret with a known value without revealing it.
+export async function configDiagnostic(env){
+  const accountId=env?.[ANALYTICS_ACCOUNT_ID];
+  const token=env?.[ANALYTICS_TOKEN_SECRET];
+  const isString=typeof token==="string";
+  let sha8=null;
+  if(isString&&token.length>0){
+    try{
+      const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(token));
+      sha8=Array.from(new Uint8Array(digest).slice(0,4),b=>b.toString(16).padStart(2,"0")).join("");
+    }catch{sha8=null;}
+  }
+  return {
+    stage:"config_invalid",
+    account_ok:typeof accountId==="string"&&/^[a-f0-9]{32}$/i.test(accountId),
+    token_type:token===null?"null":typeof token,
+    token_len:isString?token.length:0,
+    token_ws:isString?/\s/.test(token):false,
+    token_sha8:sha8
+  };
+}
 export async function loadAccountBudget(db,env,{day,now}={}){
   try{
     const config=configured(env);
     if(!config){
-      logFailure({stage:"not_configured"},env?.[ANALYTICS_TOKEN_SECRET]);
+      console.log(JSON.stringify(await configDiagnostic(env)));
       return {ok:false};
     }
     if(!db||typeof db.prepare!=="function")return {ok:false};

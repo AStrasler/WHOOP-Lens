@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {DatabaseSync} from "node:sqlite";
@@ -439,15 +440,21 @@ test("analytics failure logs name the stage and never include the token",async()
   try{
     const missing=await run({});
     assert.equal(missing.result.ok,false);
-    assert.deepEqual(missing.lines,[{method:"log",text:JSON.stringify({stage:"not_configured"})}]);
+    assert.deepEqual(missing.lines,[{method:"log",text:JSON.stringify({stage:"config_invalid",account_ok:false,token_type:"undefined",token_len:0,token_ws:false,token_sha8:null})}]);
     const badAccount=await run({
       [ANALYTICS_ACCOUNT_ID]:"not-an-account",
       [ANALYTICS_TOKEN_SECRET]:TOKEN
     });
-    assert.deepEqual(badAccount.lines,[{method:"log",text:JSON.stringify({stage:"not_configured"})}]);
+    const sha8=createHash("sha256").update(TOKEN).digest("hex").slice(0,8);
+    assert.deepEqual(badAccount.lines,[{method:"log",text:JSON.stringify({stage:"config_invalid",account_ok:false,token_type:"string",token_len:TOKEN.length,token_ws:false,token_sha8:sha8})}]);
+    const spaced=await run({[ANALYTICS_ACCOUNT_ID]:"a".repeat(32),[ANALYTICS_TOKEN_SECRET]:TOKEN+"\n"});
+    const spacedLine=JSON.parse(spaced.lines[0].text);
+    assert.equal(spacedLine.account_ok,true);
+    assert.equal(spacedLine.token_ws,true);
+    assert.equal(spacedLine.token_len,TOKEN.length+1);
     globalThis.fetch=undefined;
     const noFetch=await run(baseEnv({AI_ANALYTICS_FETCH:"not-a-function"}));
-    assert.deepEqual(noFetch.lines,[{method:"log",text:JSON.stringify({stage:"not_configured"})}]);
+    assert.deepEqual(noFetch.lines,[{method:"log",text:JSON.stringify({stage:"no_fetch"})}]);
     globalThis.fetch=savedFetch;
     const thrown=await run(baseEnv({
       AI_ANALYTICS_FETCH:async()=>{
