@@ -3,7 +3,7 @@ import test from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {createStagingRouter} from '../src/router.mjs';
-import {d1Prepare} from './d1-sqlite.mjs';
+import {d1Prepare,d1Database} from './d1-sqlite.mjs';
 import {handleMcpRpc,validateMcpTransport} from '../src/mcp.mjs';
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -26,7 +26,7 @@ function fixture(){
     sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
     sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(id);
   }
-  return {sqlite,prepare:d1Prepare(sqlite),close(){sqlite.close();}};
+  return {sqlite,...d1Database(sqlite),close(){sqlite.close();}};
 }
 function routeFor(db){
   return createStagingRouter({verifyIdentity:async()=>A});
@@ -90,5 +90,22 @@ test('MCP import and withdrawal use the verified account and stay off without th
     const gone=await call('withdraw_health_connect_import',{confirm:'delete-my-health-connect-records'},true);
     assert.equal(JSON.parse(gone.result.content[0].text).deleted,1);
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) c FROM health_connect_records WHERE user_id=?').get(B).c,0);
+  }finally{db.close();}
+});
+test('a failed row rolls back the whole import, including consent',async()=>{
+  const {importHealthConnectFile,healthConnectStatus,IMPORT_CONSENT}=await import('../src/health-import.mjs');
+  const db=fixture();try{
+    const second={...file.records[0],record_key:'daily:2026-10-09:local',
+      observed_at:'2026-10-09T05:00:00Z',ended_at:'2026-10-10T05:00:00Z',local_date:'2026-10-09'};
+    db.sqlite.exec(`CREATE TRIGGER fail_second BEFORE INSERT ON health_connect_records
+      WHEN NEW.record_key='daily:2026-10-09:local' BEGIN SELECT RAISE(ABORT,'synthetic'); END;`);
+    await assert.rejects(importHealthConnectFile(db,A,{...file,records:[file.records[0],second]},IMPORT_CONSENT,{now}),
+      /Import unavailable/);
+    const status=await healthConnectStatus(db,A);
+    assert.equal(status.stored_records,0);
+    assert.equal(status.consent,'none');
+    db.sqlite.exec('DROP TRIGGER fail_second');
+    const ok=await importHealthConnectFile(db,A,{...file,records:[file.records[0],second]},IMPORT_CONSENT,{now});
+    assert.equal(ok.stored,2);
   }finally{db.close();}
 });

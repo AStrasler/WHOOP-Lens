@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {readExtraTool,extraArguments} from '../src/extra-tools.mjs';
 import {createStagingRouter} from '../src/router.mjs';
-import {d1Prepare} from './d1-sqlite.mjs';
+import {d1Prepare,d1Database} from './d1-sqlite.mjs';
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 function fixture(){
   const sql=new DatabaseSync(':memory:');
@@ -20,7 +20,7 @@ function fixture(){
       sql.prepare("INSERT INTO medical_context(id,user_id,source_type,source_label,category,detail_json,reviewed_at) VALUES(?,?,'self_reported','Synthetic fixture','note',?,?)").run(key,id,raw,i===0?null:'2026-10-11');
     }
   }
-  return {sql,prepare:d1Prepare(sql)};
+  return {sql,...d1Database(sql)};
 }
 test('local reads isolate accounts, deserialize JSON and paginate deterministically',async()=>{
   const db=fixture();try{

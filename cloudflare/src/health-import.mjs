@@ -31,36 +31,42 @@ export async function importHealthConnectFile(db,userId,file,consent,{now=Date.n
   if(parsed.kind!=='health_connect_preview')
     throw Error('Only a Health Connect v2 file can be stored. FHIR bundles stay a local preview.');
   const granted=new Date(now).toISOString();
-  const consentWrite=await db.prepare(
+  // One D1 batch (single transaction): consent and every row land together,
+  // or nothing does. A mid-file failure must not leave a partial import.
+  const statements=[db.prepare(
     'INSERT INTO health_import_consent(user_id,purpose,granted_at,withdrawn_at) VALUES(?1,?2,?3,NULL) '+
     'ON CONFLICT(user_id) DO UPDATE SET purpose=excluded.purpose,granted_at=excluded.granted_at,withdrawn_at=NULL'
-  ).bind(id,'health_connect_file',granted).run();
-  if(!consentWrite?.success)throw Error('Import unavailable');
-  let stored=0;
+  ).bind(id,'health_connect_file',granted)];
   for(const row of parsed.records){
-    const saved=await db.prepare(
+    statements.push(db.prepare(
       'INSERT INTO health_connect_records(id,user_id,metric,record_key,origin_package,observed_at,ended_at,local_date,unit,payload_json) '+
       'VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) '+
       'ON CONFLICT(user_id,metric,record_key) DO UPDATE SET origin_package=excluded.origin_package,'+
       'observed_at=excluded.observed_at,ended_at=excluded.ended_at,local_date=excluded.local_date,'+
       'unit=excluded.unit,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP'
     ).bind(recordId(),id,row.metric,row.record_key,row.origin_package,row.observed_at,row.ended_at,
-      row.local_date,row.unit,JSON.stringify(row.payload)).run();
-    if(!saved?.success||saved.meta?.changes!==1)throw Error('Import unavailable');
-    stored++;
+      row.local_date,row.unit,JSON.stringify(row.payload)));
   }
+  let results;
+  try{results=await db.batch(statements);}catch{throw Error('Import unavailable');}
+  if(!Array.isArray(results)||results.length!==statements.length||
+     results.some((r,i)=>!r?.success||(i>0&&r.meta?.changes!==1)))
+    throw Error('Import unavailable');
+  const stored=results.length-1;
   return {stored,source:'health_connect',transport:'web_file_import',consent:'granted'};
 }
 
 export async function withdrawHealthConnectImport(db,userId,consent){
   const id=await requireMember(db,userId);
   if(consent!==WITHDRAW_CONSENT)throw Error('Consent required');
-  const removed=await db.prepare('DELETE FROM health_connect_records WHERE user_id=?1').bind(id).run();
-  if(!removed?.success)throw Error('Import unavailable');
-  const marked=await db.prepare(
-    'UPDATE health_import_consent SET withdrawn_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND purpose=?2'
-  ).bind(id,'health_connect_file').run();
-  if(!marked?.success)throw Error('Import unavailable');
+  // Delete and withdrawal are atomic so records never outlive a withdrawal.
+  let removed,marked;
+  try{[removed,marked]=await db.batch([
+    db.prepare('DELETE FROM health_connect_records WHERE user_id=?1').bind(id),
+    db.prepare('UPDATE health_import_consent SET withdrawn_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND purpose=?2')
+      .bind(id,'health_connect_file')
+  ]);}catch{throw Error('Import unavailable');}
+  if(!removed?.success||!marked?.success)throw Error('Import unavailable');
   return {deleted:removed.meta?.changes??0,consent:'withdrawn',source:'health_connect'};
 }
 

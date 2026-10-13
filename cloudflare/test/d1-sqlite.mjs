@@ -32,10 +32,33 @@ export function d1Prepare(sqlite) {
       async all() {
         return { success: true, results: statement().all(...bound()) };
       },
+      _exec() {
+        const info = statement().run(...bound());
+        return { success: true, meta: { changes: info.changes } };
+      },
       async run() {
         const info = statement().run(...bound());
         return { success: true, meta: { changes: info.changes } };
       },
     };
+  };
+}
+
+// D1 batch(): statements run in one implicit transaction; any failure rolls back.
+export function d1Database(sqlite) {
+  const prepare = d1Prepare(sqlite);
+  return {
+    prepare,
+    async batch(statements) {
+      sqlite.exec("BEGIN");
+      try {
+        const results = statements.map((s) => s._exec());
+        sqlite.exec("COMMIT");
+        return results;
+      } catch (error) {
+        sqlite.exec("ROLLBACK");
+        throw error;
+      }
+    },
   };
 }

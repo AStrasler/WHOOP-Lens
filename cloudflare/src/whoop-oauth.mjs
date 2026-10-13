@@ -106,8 +106,11 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
 export async function revokeWhoopConnection(db,userId){
   const id=validateUser(userId);
   if(!await activeMembership(db,id))throw Error("Membership required");
-  const states=await db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1").bind(id).run();
-  const removed=await db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id).run();
+  // Atomic: a pending state must not survive a disconnect and later reconnect.
+  const [states,removed]=await db.batch([
+    db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1").bind(id),
+    db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id)
+  ]);
   if(!states?.success||!removed?.success)throw Error("WHOOP disconnect failed");
   return {disconnected:true,removed:removed.meta?.changes===1};
 }

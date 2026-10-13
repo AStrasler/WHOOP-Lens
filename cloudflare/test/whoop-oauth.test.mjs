@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { createWhoopAuthorization,acceptWhoopCallback,revokeWhoopConnection } from "../src/whoop-oauth.mjs";
 import { openWhoopToken } from "../src/token-crypto.mjs";
 import { createStagingRouter } from "../src/router.mjs";
-import { d1Prepare } from "./d1-sqlite.mjs";
+import { d1Prepare, d1Database } from "./d1-sqlite.mjs";
 
 const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -31,7 +31,7 @@ function fixture(){
   }
   return {
     sqlite,close(){sqlite.close();},
-    prepare: d1Prepare(sqlite)
+    ...d1Database(sqlite)
   };
 }
 function callbackUrl(start){
@@ -183,4 +183,22 @@ test("disconnect deletes only the caller WHOOP credentials and pending state",as
     await assert.rejects(revokeWhoopConnection(d,B),/Membership required/);
     assert.equal(d.sqlite.prepare("SELECT COUNT(*) c FROM whoop_connections WHERE user_id=?").get(B).c,1);
   }finally{d.close();}
+});
+test("disconnect is atomic: a failed connection delete keeps pending states", async () => {
+  const { revokeWhoopConnection } = await import("../src/whoop-oauth.mjs");
+  const db = fixture();
+  try {
+    const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    db.sqlite.prepare("INSERT INTO whoop_oauth_states(state_hash,user_id,expires_at) VALUES(?,?,?)")
+      .run("a".repeat(64), A, "2999-01-01T00:00:00.000Z");
+    db.sqlite.exec(`CREATE TRIGGER block_delete BEFORE DELETE ON whoop_connections
+      BEGIN SELECT RAISE(ABORT,'synthetic'); END;`);
+    db.sqlite.prepare("INSERT INTO whoop_connections(user_id,expires_at,scope,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,?,?,?,?,'v1','public')")
+      .run(A, "2999-01-01T00:00:00.000Z", "", "x", "y");
+    await assert.rejects(revokeWhoopConnection(db, A));
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM whoop_oauth_states").get().n, 1);
+    db.sqlite.exec("DROP TRIGGER block_delete");
+    assert.deepEqual(await revokeWhoopConnection(db, A), { disconnected: true, removed: true });
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM whoop_oauth_states").get().n, 0);
+  } finally { db.close(); }
 });
