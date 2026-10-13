@@ -60,7 +60,7 @@ const aiUsageTool=Object.freeze({
 });
 const weeklyDigestTool=Object.freeze({
   name:"get_weekly_digest",
-  description:"Pull this account's weekly measurement digest. Call it with no arguments. Optional week_ending (YYYY-MM-DD) selects the last day of the window; the default is the most recent complete Monday-Sunday week. The result has text, chart_data, and insights. A repeat for the same week returns the cached digest and does not spend more quota. The digest is not sent.",
+  description:"Pull this account's weekly measurement digest. Call it with no arguments. Optional week_ending (YYYY-MM-DD) selects the last day of the window; the default is the most recent complete Monday-Sunday week. The result has text, chart_data, insights, and status (model or template). A repeat for the same week returns the cached digest and does not spend more quota. When summaries are on, a template fallback is not cached. The digest is not sent.",
   inputSchema:{type:"object",properties:{
     week_ending:{type:"string",description:"Last day of the seven-day window, YYYY-MM-DD. Defaults to the most recent complete Monday-Sunday week."}
   },additionalProperties:false},
@@ -241,7 +241,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       if(!digest.ok)throw Error("digest");
       data={kind:digest.kind,week_ending:digest.week_ending,period:digest.period,
         text:digest.text,chart_data:digest.chart_data,insights:digest.insights,
-        cached:digest.cached===true};
+        status:digest.status,cached:digest.cached===true};
     }else if(extraTools.some(t=>t.name===name)){
       data=await readExtraTool(db,userId,name,queryArgs(args));
     }else if(!historyTools.has(name)||!args.auto_page){

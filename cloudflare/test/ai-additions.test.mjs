@@ -214,6 +214,7 @@ test("weekly digest defaults to the last complete week and does not send",async(
     assert.equal(body.week_ending,"2026-10-02");
     assert.deepEqual(body.period,{start:"2026-09-26",end:"2026-10-02"});
     assert.equal(body.cached,false);
+    assert.equal(body.status,"template");
     assert.equal(typeof body.text,"string");
     assert.equal(body.chart_data.sleep_recovery.available,true);
     assert.ok(body.insights.length>0);
@@ -233,6 +234,7 @@ test("weekly digest defaults to the last complete week and does not send",async(
     },modern);
     const cached=JSON.parse(again.result.content[0].text);
     assert.equal(cached.cached,true);
+    assert.equal(cached.status,"template");
     assert.equal(cached.text,body.text);
     assert.deepEqual(cached.chart_data,body.chart_data);
     assert.deepEqual(cached.insights,body.insights);
@@ -294,6 +296,7 @@ test("a repeated weekly digest is cached per user and does not spend quota again
     },modern);
     const firstBody=JSON.parse(first.result.content[0].text);
     assert.equal(firstBody.cached,false);
+    assert.equal(firstBody.status,"model");
     assert.equal(firstBody.text,modelText);
     assert.equal(firstBody.chart_data.sleep_recovery.pairs[0].recovery.value,64);
     assert.equal(calls,1);
@@ -307,6 +310,7 @@ test("a repeated weekly digest is cached per user and does not spend quota again
     },modern);
     const secondBody=JSON.parse(second.result.content[0].text);
     assert.equal(secondBody.cached,true);
+    assert.equal(secondBody.status,"model");
     assert.equal(secondBody.text,firstBody.text);
     assert.deepEqual(secondBody.chart_data,firstBody.chart_data);
     assert.deepEqual(secondBody.insights,firstBody.insights);
@@ -452,6 +456,51 @@ test("weekly digest pages the whole week and does not cache an empty or incomple
     },modern);
     assert.equal(JSON.parse(retry.result.content[0].text).cached,false);
     assert.ok(spins>frozen);
+  }finally{db.close();}
+});
+
+test("an analytics failure is not cached, and a later healthy call caches the model digest",async()=>{
+  const db=openDb();
+  let calls=0;
+  const whoopRequest=async()=>({records:[recovery(64,"2026-10-02")],next_token:null});
+  const modelText="Recovery score has minimum 64, maximum 64, mean 64, and median 64.";
+  const run=async()=>({response:modelText,usage:{prompt_tokens:20,completion_tokens:12}});
+  try{
+    const failing=withAnalytics({
+      WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"true",
+      AI_ANALYTICS_QUERY:async()=>{throw Error("analytics down");},
+      AI:{async run(){calls++;return run();}}
+    });
+    const first=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
+      db,userId:A,env:failing,whoopRequest
+    },modern);
+    const firstBody=JSON.parse(first.result.content[0].text);
+    assert.equal(firstBody.cached,false);
+    assert.equal(firstBody.status,"template");
+    assert.match(firstBody.text,/records were returned/);
+    assert.equal(calls,0);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM ai_weekly_digest").get().n,0);
+    const healthy=withAnalytics({
+      WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"true",
+      AI:{async run(){calls++;return run();}}
+    });
+    const second=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
+      db,userId:A,env:healthy,whoopRequest
+    },modern);
+    const secondBody=JSON.parse(second.result.content[0].text);
+    assert.equal(secondBody.cached,false);
+    assert.equal(secondBody.status,"model");
+    assert.equal(secondBody.text,modelText);
+    assert.equal(calls,1);
+    assert.equal(db.sqlite.prepare("SELECT state FROM ai_weekly_digest WHERE scope=? AND week_ending=?").get(userScope(A),"2026-10-04").state,"ready");
+    const third=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
+      db,userId:A,env:healthy,whoopRequest
+    },modern);
+    const thirdBody=JSON.parse(third.result.content[0].text);
+    assert.equal(thirdBody.cached,true);
+    assert.equal(thirdBody.status,"model");
+    assert.equal(thirdBody.text,modelText);
+    assert.equal(calls,1);
   }finally{db.close();}
 });
 

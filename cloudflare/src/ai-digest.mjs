@@ -55,13 +55,15 @@ function digestView(summary,period,weekEnding){
   if(!summary||typeof summary.text!=="string"||summary.text.length===0)return null;
   if(!summary.chart_data||typeof summary.chart_data!=="object"||Array.isArray(summary.chart_data))return null;
   if(!Array.isArray(summary.insights)||summary.insights.some(line=>typeof line!=="string"))return null;
+  if(summary.status!=="model"&&summary.status!=="template")return null;
   return {
     kind:"weekly_digest",
     week_ending:weekEnding,
     period,
     text:summary.text,
     chart_data:summary.chart_data,
-    insights:summary.insights
+    insights:summary.insights,
+    status:summary.status
   };
 }
 function readyDigest(row,weekEnding){
@@ -99,12 +101,17 @@ async function generateDigest({db,userId,env,whoopRequest,now,period,weekEnding}
   const sleep=typeof whoopRequest==="function"
     ?await collectHistoryPages(whoopRequest,ctx,"sleep",{start:sleepStart,end:period.end})
     :{records:[],complete:false};
-  const cacheable=recovery.complete&&sleep.complete&&recovery.records.length+sleep.records.length>0;
+  const covered=recovery.complete&&sleep.complete&&recovery.records.length+sleep.records.length>0;
   const data={records:[...sleep.records,...recovery.records],next_token:null};
-  const modelEnv=aiSummaryEnabled(env)?env:{...env,AI:undefined};
+  const summariesOn=aiSummaryEnabled(env);
+  const modelEnv=summariesOn?env:{...env,AI:undefined};
   const summarized=await attachSummary(data,{db,userId,env:modelEnv,tool:"get_recovery",now,whoopRequest});
   const view=digestView(summarized?.summary,period,weekEnding);
-  return view?{view,cacheable}:null;
+  if(!view)return null;
+  // A template while summaries are on is a fallback (quota, analytics, or the
+  // model). Caching it would keep that fallback for the whole week.
+  const cacheable=covered&&(summariesOn?view.status==="model":view.status==="template");
+  return {view,cacheable};
 }
 export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEnding}){
   const day=weekEnding==null?mostRecentCompleteWeekEnding(weekClock(now,env)):parseWeekEnding(weekEnding);
