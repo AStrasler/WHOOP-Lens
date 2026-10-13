@@ -702,41 +702,59 @@ function contextWords(stats){
   if(stats?.change_first_to_last?.metric)add(stats.change_first_to_last.metric);
   return words;
 }
-function describesMeasurements(text,stats,skip){
+// Names which rule rejected an output, or null when accepted. The result holds
+// only a rule name, a category and counts, never the text, so it is safe to log.
+const ADVICE_GROUPS=[
+  ["diagnostic",/\b(?:diagnos\w*|see (?:a|your) (?:doctor|physician)|consult (?:a|your) (?:doctor|physician)|medical advice|seek medical|call 911)\b/i],
+  ["second_person",/\b(?:you|your|yours|yourself|yourselves|please)\b/i],
+  ["modal",/\b(?:ought|should|must|might|could|would|may|need to|have to|try to|consider|make sure)\b/i],
+  ["recommendation",/\b(?:recommend\w*|advis\w*|help(?:s|ed|ing)? to)\b/i]
+];
+export function outputRejection(text,stats){
+  if(typeof text!=="string")return {rule:"not_text"};
+  const cleaned=text.trim();
+  if(cleaned.length<20)return {rule:"length",category:"short",length:cleaned.length};
+  if(cleaned.length>450)return {rule:"length",category:"long",length:cleaned.length};
+  if(ADVICE.test(cleaned))
+    return {rule:"advice",category:(ADVICE_GROUPS.find(([,re])=>re.test(cleaned))||["other"])[0]};
+  if(/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(cleaned))return {rule:"identifier"};
+  const numbers=[];
+  const dates=new Set();
+  collectAllowed(stats,numbers,dates);
+  const measured=cleaned.replace(/spo2/ig,"spo");
+  const tokens=numberTokens(measured);
+  const badDates=tokens.filter(t=>t.kind==="date"&&!dates.has(t.raw)).length;
+  const badNumbers=tokens.filter(t=>t.kind==="number"&&!numbers.some(stat=>roundedEqual(stat,t)));
+  if(badDates||badNumbers.length)
+    return {rule:"number",category:badDates?"date":"value",unmatched:badDates+badNumbers.length,
+            decimals:badNumbers.some(t=>t.raw.includes("."))};
+  const spelled=spelledNumbers(cleaned);
+  if(!spelled)return {rule:"spelled_number",category:"unparsed"};
+  if(!spelled.every(span=>numbers.some(stat=>stat===span.value||Math.round(stat)===span.value)))
+    return {rule:"spelled_number",category:"value"};
+  return vocabularyRejection(cleaned,stats,spelled);
+}
+function vocabularyRejection(text,stats,skip){
   const allowed=contextWords(stats);
   for(const word of METRIC_WORDS)allowed.add(word);
   const sentences=text.split(/(?<=[.!?])\s+(?=[A-Z])/).filter(part=>part.trim());
-  if(sentences.length<1||sentences.length>3)return false;
-  const words=[];
+  if(sentences.length<1||sentences.length>3)return {rule:"sentences",count:sentences.length};
+  let unknown=0;
   const re=/[A-Za-z]+/g;
   let match;
   while((match=re.exec(text))){
     const start=match.index,end=start+match[0].length;
     if(skip.some(span=>start>=span.start&&end<=span.end))continue;
-    words.push(match[0].toLowerCase());
+    const word=match[0].toLowerCase();
+    if(!DESCRIPTIVE.has(word)&&!allowed.has(word))unknown++;
   }
-  if(!words.every(word=>DESCRIPTIVE.has(word)||allowed.has(word)))return false;
-  return sentences.every(sentence=>{
-    const parts=sentence.toLowerCase().match(/[a-z]+/g)||[];
-    return parts.some(word=>VERBS.has(word));
-  });
+  if(unknown)return {rule:"vocabulary",unknown_words:unknown};
+  const noVerb=sentences.filter(sentence=>!(sentence.toLowerCase().match(/[a-z]+/g)||[]).some(w=>VERBS.has(w))).length;
+  if(noVerb)return {rule:"no_verb",sentences:noVerb};
+  return null;
 }
 export function outputAcceptable(text,stats){
-  if(typeof text!=="string")return false;
-  const cleaned=text.trim();
-  if(cleaned.length<20||cleaned.length>450)return false;
-  if(ADVICE.test(cleaned))return false;
-  if(/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(cleaned))return false;
-  const numbers=[];
-  const dates=new Set();
-  collectAllowed(stats,numbers,dates);
-  const measured=cleaned.replace(/spo2/ig,"spo");
-  if(!numberTokens(measured).every(token=>token.kind==="date"
-    ?dates.has(token.raw)
-    :numbers.some(stat=>roundedEqual(stat,token))))return false;
-  const spelled=spelledNumbers(cleaned);
-  if(!spelled||!spelled.every(span=>numbers.some(stat=>stat===span.value||Math.round(stat)===span.value)))return false;
-  return describesMeasurements(cleaned,stats,spelled);
+  return outputRejection(text,stats)===null;
 }
 function joinAnd(parts){
   if(parts.length<=1)return parts[0]||"";
@@ -915,6 +933,9 @@ export async function attachSummary(data,ctx){
         text:text.trim(),stats:facts.stats,model,generated_at:generatedAt,coverage:facts.coverage,status:"model",
         chart_data:chartBundle(facts,ctx.env),insights:buildInsights(facts.stats,facts.sleep_recovery?.pairs||[])
       })};
+    }
+    if(text&&!failed){
+      try{console.log(JSON.stringify({event:"summary_filter",model,...outputRejection(text,facts.stats)}));}catch{/* diagnostics only */}
     }
     return give(failed||(text?"filter":"model_error"));
   }catch{return data;}
