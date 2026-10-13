@@ -69,7 +69,7 @@ export async function verifyUpstreamCode({code,verifier,env,fetcher=fetch}){
     if(env.SUPABASE_UPSTREAM_CLIENT_SECRET)form.set('client_secret',env.SUPABASE_UPSTREAM_CLIENT_SECRET);
     const result=await fetcher(AUTH_ORIGIN+'/auth/v1/oauth/token',{
       method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},
-      body:form,redirect:'error',credentials:'omit',cache:'no-store',
+      body:form,redirect:'manual',credentials:'omit',cache:'no-store',
       referrerPolicy:'no-referrer',signal:timeout()
     });
     if(!result.ok)throw new UpstreamSignInDenied();
@@ -81,7 +81,7 @@ export async function verifyUpstreamCode({code,verifier,env,fetcher=fetch}){
     const who=await fetcher(AUTH_ORIGIN+'/auth/v1/user',{
       method:'GET',headers:{apikey:env.SUPABASE_PUBLIC_KEY,
         authorization:'Bearer '+temporaryToken},
-      redirect:'error',cache:'no-store',credentials:'omit',
+      redirect:'manual',cache:'no-store',credentials:'omit',
       referrerPolicy:'no-referrer',signal:timeout()
     });
     if(!who.ok)throw new UpstreamSignInDenied();
@@ -97,7 +97,7 @@ export async function verifyUpstreamCode({code,verifier,env,fetcher=fetch}){
         const response=await fetcher(AUTH_ORIGIN+'/auth/v1/logout?scope=local',{
           method:'POST',headers:{apikey:env.SUPABASE_PUBLIC_KEY,
             authorization:'Bearer '+temporaryToken},
-          redirect:'error',cache:'no-store',credentials:'omit',
+          redirect:'manual',cache:'no-store',credentials:'omit',
           referrerPolicy:'no-referrer',signal:timeout()
         });
         revoked=response.ok;

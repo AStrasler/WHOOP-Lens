@@ -41,7 +41,7 @@ export function createAuthClient(fetcher = globalThis.fetch, now = () => Date.no
     if (authenticated) headers.Authorization = "Bearer " + session.accessToken;
     const response = await fetcher(SUPABASE_URL + path, {
       method, headers, body: body === undefined ? undefined : JSON.stringify(body),
-      cache: "no-store", credentials: "omit", redirect: "error", referrerPolicy: "no-referrer",
+      cache: "no-store", credentials: "omit", redirect: "manual", referrerPolicy: "no-referrer",
       signal: AbortSignal.timeout(20000)
     });
     const data = await response.json().catch(() => ({}));

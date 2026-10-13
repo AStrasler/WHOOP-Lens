@@ -40,7 +40,7 @@ assert(!calls[0].options.headers.Authorization, "Does not send a prior session w
 await auth.details(id);
 assert(calls[1].url === SUPABASE_URL + "/auth/v1/oauth/authorizations/" + id, "Uses the fixed Supabase consent endpoint");
 assert(calls[1].options.headers.Authorization === "Bearer private-test-token", "Sends the session only to the trusted API");
-assert(calls[1].options.redirect === "error" && calls[1].options.credentials === "omit", "Rejects fetch redirects and ambient cookies");
+assert(calls[1].options.redirect === "manual" && calls[1].options.credentials === "omit", "Does not follow fetch redirects and omits ambient cookies");
 await reject(() => auth.decide(id, "autoapprove"), "Rejects invalid decisions");
 await auth.decide(id, "deny");
 assert(JSON.parse(calls.at(-1).options.body).action === "deny", "Submits denial explicitly");
