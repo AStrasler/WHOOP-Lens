@@ -41,7 +41,7 @@ const ADVICE=new RegExp("\\b(?:"+[
   "make sure","it(?:'s| is) important","you might want(?: to)?","might want(?: to)?",
   "recommend\\w*","advis\\w*","i recommend","we recommend","help(?:s|ed|ing)? to",
   "prioriti[sz]\\w*","hydrat\\w*","go to bed","bed earlier","rest more","sleep(?:ing)? more",
-  "take it easy","reduce|increase|avoid|get|take|drink|eat|eating",
+  "take it easy","reduce|avoid|get|take|drink|eat|eating",
   "prescri\\w*","medications?","dosages?","treatments?",
   "suggest\\w*","indicat\\w*","overtrain\\w*","burnout","illness(?:es)?","disorder\\w*",
   "deficien\\w*","diseas\\w*","symptoms?","injur\\w*"
@@ -51,9 +51,15 @@ const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
   "record records returned available numeric measurement measurements summarize summarized "+
   "value values minimum maximum mean median average latest first last change missing date dates "+
   "count day days observed incomplete complete data range between through coverage "+
-  "source sources label per across during no not only also than point points").split(" "));
-const MEASUREMENT=new Set(["record","records","value","values","minimum","maximum","mean","median",
-  "latest","change","missing","count","measurement","measurements","incomplete","score","returned"]);
+  "source sources label per across during no not only also than point points "+
+  "ranged averaged rose fell increased decreased reduced stayed peaked lowest highest "+
+  "steady steadily compared climbed over start end up down higher lower dipped near "+
+  "while then same remained measured about around").split(" "));
+const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps respiratory "+
+  "spo spo2 skin temperature performance score bpm").split(" "));
+const VERBS=new Set(("is are was were be been has have had returned summarize summarized "+
+  "ranged averaged rose fell increased decreased reduced stayed peaked climbed compared "+
+  "remained measured dipped").split(" "));
 const SMALL_WORDS={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
   eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
 const TENS_WORDS={twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
@@ -355,6 +361,7 @@ function contextWords(stats){
 }
 function describesMeasurements(text,stats,skip){
   const allowed=contextWords(stats);
+  for(const word of METRIC_WORDS)allowed.add(word);
   const sentences=text.split(/(?<=[.!?])\s+(?=[A-Z])/).filter(part=>part.trim());
   if(sentences.length<1||sentences.length>3)return false;
   const words=[];
@@ -363,13 +370,12 @@ function describesMeasurements(text,stats,skip){
   while((match=re.exec(text))){
     const start=match.index,end=start+match[0].length;
     if(skip.some(span=>start>=span.start&&end<=span.end))continue;
-    words.push({word:match[0].toLowerCase(),start,end});
+    words.push(match[0].toLowerCase());
   }
-  if(!words.every(item=>DESCRIPTIVE.has(item.word)||allowed.has(item.word)))return false;
+  if(!words.every(word=>DESCRIPTIVE.has(word)||allowed.has(word)))return false;
   return sentences.every(sentence=>{
-    if(/\d/.test(sentence))return true;
     const parts=sentence.toLowerCase().match(/[a-z]+/g)||[];
-    return parts.some(word=>MEASUREMENT.has(word)||allowed.has(word));
+    return parts.some(word=>VERBS.has(word));
   });
 }
 export function outputAcceptable(text,stats){
@@ -381,7 +387,8 @@ export function outputAcceptable(text,stats){
   const numbers=[];
   const dates=new Set();
   collectAllowed(stats,numbers,dates);
-  if(!numberTokens(cleaned).every(token=>token.kind==="date"
+  const measured=cleaned.replace(/spo2/ig,"spo");
+  if(!numberTokens(measured).every(token=>token.kind==="date"
     ?dates.has(token.raw)
     :numbers.some(stat=>roundedEqual(stat,token))))return false;
   const spelled=spelledNumbers(cleaned);
