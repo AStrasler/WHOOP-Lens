@@ -884,8 +884,24 @@ function stressClaimRejection(text,stats){
   if(!est)return null;
   if(UNSUPPORTED_STRESS.test(text))return {rule:"stress_claim",category:"unsupported"};
   const needDate=est.is_latest_requested_date!==true;
+  // The estimate's own numbers ground only stress claims: every other sentence
+  // must be grounded by the summary stats without stress_estimate.
+  const {stress_estimate:_omit,...others}=stats;
+  const baseNumbers=[],baseDates=new Set();
+  collectAllowed(others,baseNumbers,baseDates);
   for(const sentence of text.split(/(?<=[.!?])\s+/)){
-    if(!STRESS_CLAIM.test(sentence))continue;
+    if(!STRESS_CLAIM.test(sentence)){
+      const tokens=numberTokens(sentence.replace(/spo2/ig,"spo"));
+      if(tokens.some(t=>t.kind==="number"&&!baseNumbers.some(stat=>roundedEqual(stat,t))))
+        return {rule:"stress_claim",category:"estimate_value_reused"};
+      const spelled=spelledNumbers(sentence)||[];
+      if(spelled.some(span=>!baseNumbers.some(stat=>stat===span.value||Math.round(stat)===span.value)))
+        return {rule:"stress_claim",category:"estimate_value_reused"};
+      continue;
+    }
+    // A stress claim never also attributes a value to another metric.
+    if((sentence.toLowerCase().match(/[a-z0-9]+/g)||[]).some(w=>METRIC_WORDS.has(w)))
+      return {rule:"stress_claim",category:"other_metric"};
     if(!UNAVAILABLE.test(sentence)){
       const r=measurementRejection(sentence,est,needDate);
       if(r)return r;

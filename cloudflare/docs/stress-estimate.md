@@ -116,6 +116,9 @@ estimate, newest first, at most 7), value, band, confidence, baseline_days}. Onl
   exactly the value, the clause with the unavailable date carries the unavailable wording, and no other clause carries a number or date.
   Any value attached to an unavailable date is rejected. Example accepted: "The stress estimate was 72 on 2026-10-13. 2026-10-15 has no estimate."
   ("unavailable" and "insufficient" are added to the gated stress vocabulary.)
+- the estimate's value grounds **only** stress claims: every other sentence must be grounded by the summary stats without
+  `stress_estimate` (so "Recovery score was 72" cannot borrow the estimate's 72), and a stress claim may not also name another metric
+  ("The stress estimate and recovery score were 72" is rejected);
 - the same rule rejects unsupported claims (Stress Monitor, stress zones, non-activity, clinical, burnout, anxiety, cortisol, "stressed").
   It runs in addition to every existing check and can only reject more.
 Flag off, or on with no valid estimate: the prompt is byte-identical to main (`test/fixtures/system-prompt-main.txt`, from main d98346f) and

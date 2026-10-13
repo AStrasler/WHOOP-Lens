@@ -678,3 +678,15 @@ test("R3 the model stats list only requested dates without a valid estimate",asy
   assert.equal(st.estimate_date,day(43));
   assert.equal(outputRejection(`The stress estimate was ${st.value} on ${day(43)}. ${day(44)} has no estimate.`,out.summary.stats),null);
 });
+
+// ---------- Codex review of 52eb61f (P1): the estimate value grounds only stress claims ----------
+test("Codex P1 the estimate value cannot ground another metric",()=>{
+  assert.equal(outputRejection("The stress estimate was 72. Recovery score was 72.",r2stats)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate and recovery score were 72.",r2stats)?.rule,"stress_claim");
+  assert.equal(outputRejection("Recovery score median was seventy-two.",r2stats)?.rule,"stress_claim");
+  // Real recovery numbers in their own sentence still pass.
+  assert.equal(outputRejection("The stress estimate was 72. Recovery score median was 40.",r2stats),null);
+  // If a recovery value genuinely equals 72, it is grounded by recovery itself.
+  const same={...r2stats,metrics:{...r2stats.metrics,"score.recovery_score":{min:35,max:72,mean:50,median:50}}};
+  assert.equal(outputRejection("The stress estimate was 72. Recovery score maximum was 72.",same),null);
+});
