@@ -73,7 +73,7 @@ test('consent escapes hostile client metadata without collecting passwords',()=>
   const digest=createHash('sha256').update(style).digest('base64');
   const htmlCsp=noStoreHeaders('text/html; charset=utf-8')['content-security-policy'];
   assert.ok(htmlCsp.includes("style-src 'sha256-"+digest+"'"));
-  assert.match(htmlCsp,/form-action 'self' https:\/\/auth\.whooplens\.tech https:\/\/whoop-lens\.cloudflareaccess\.com/);
+  assert.match(htmlCsp,/form-action 'self' https:\/\/auth\.whooplens\.tech https:\/\/whoop-lens\.cloudflareaccess\.com https:\/\/chatgpt\.com/);
   assert.doesNotMatch(noStoreHeaders()['content-security-policy'],/style-src|fonts\.googleapis/);
   assert.doesNotMatch(consent,/password\s*[:=]/);
   assert.doesNotMatch(upstream,/grant_type=password/);
@@ -114,7 +114,7 @@ test('consent HTML uses same-origin referrer policy without weakening POST CSRF'
   assert.equal(get.status,200);
   assert.equal(get.headers.get('referrer-policy'),'same-origin');
   assert.match(get.headers.get('content-security-policy'),
-    /form-action 'self' https:\/\/auth\.whooplens\.tech https:\/\/whoop-lens\.cloudflareaccess\.com/);
+    /form-action 'self' https:\/\/auth\.whooplens\.tech https:\/\/whoop-lens\.cloudflareaccess\.com https:\/\/chatgpt\.com/);
   assert.match(get.headers.get('set-cookie'),/__Host-oauth-consent/);
   const badPost=await flow.authorize(new Request('https://auth.whooplens.tech/authorize',{
     method:'POST',headers:{'content-type':'application/x-www-form-urlencoded',

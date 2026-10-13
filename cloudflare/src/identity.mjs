@@ -18,7 +18,7 @@ export async function verifySupabaseSession(request, env, fetcher = fetch) {
     response = await fetcher(AUTH_ORIGIN + "/auth/v1/user", {
       method: "GET",
       headers: { Authorization: "Bearer " + match[1], apikey: env.SUPABASE_PUBLIC_KEY },
-      cache: "no-store", credentials: "omit", redirect: "error",
+      cache: "no-store", credentials: "omit", redirect: "manual",
       referrerPolicy: "no-referrer", signal: AbortSignal.timeout(TIMEOUT_MS)
     });
   } catch {

@@ -87,7 +87,7 @@ test("Auth bridge verifies through the official Supabase Auth endpoint, not untr
     assert.equal(url,"https://evoiwauqplbcecumiwqn.supabase.co/auth/v1/user");
     assert.match(options.headers.Authorization,/^Bearer /);
     assert.equal(options.headers.apikey,"safe-publishable-test");
-    assert.equal(options.redirect,"error");
+    assert.equal(options.redirect,"manual");
     return new Response(JSON.stringify({id:A,email:"do-not-return@example.com"}),{status:200});
   });
   assert.equal(user,A);assert.equal(calls,1);
