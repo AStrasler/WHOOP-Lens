@@ -158,7 +158,10 @@ const METRIC_META={
   "payload.max":{name:"Maximum heart rate",unit:"bpm"}
 };
 export function aiSummaryEnabled(env){return env?.AI_SUMMARY_ENABLED==="true";}
-export function stressEstimateEnabled(env){return env?.STRESS_ESTIMATE_ENABLED==="true";}
+// The estimate is only ever returned inside an AI summary, so it is on only when
+// both flags are exactly "true" (the same rule drives capabilities and host
+// instructions).
+export function stressEstimateEnabled(env){return env?.STRESS_ESTIMATE_ENABLED==="true"&&aiSummaryEnabled(env);}
 export function selectModel(env){
   const requested=env?.AI_SUMMARY_MODEL;
   if(requested==null||requested==="")return DEFAULT_MODEL;
@@ -621,7 +624,7 @@ async function loadStressEstimate(ctx,records){
   const latest=targetDates.at(-1),earliest=targetDates[0];
   const pageSleeps=(records||[]).filter(r=>r&&typeof r==="object"&&Object.hasOwn(r,"start")&&Object.hasOwn(r,"id"));
   const pageRecoveries=(records||[]).filter(isRecoveryRecord);
-  let recoveryHistory=[],sleepRecords=[...pageSleeps],complete=false,sleepAvailable=false;
+  let recoveryHistory=[],sleepRecords=[...pageSleeps],complete=false,sleepAvailable=false,sleepHistory="partial";
   if(typeof ctx.whoopRequest==="function"){
     // Same user, same authorization, same WHOOP resources as the tool call.
     try{
@@ -631,18 +634,21 @@ async function loadStressEstimate(ctx,records){
       if(isRateLimit(error))return stressUnavailable("rate_limited",STRESS_RATE_LIMIT_NOTE);
       complete=false;
     }
-    // Sleep only refines the estimate; if it cannot be read, it runs without it.
+    // Sleep is optional, but a failed or partial sleep retrieval is reported as
+    // "partial" (lower confidence), never confused with "none recorded".
     try{
       const sl=await fetchStressWindow(ctx,"sleep",shiftUtcDay(earliest,-BASELINE_FETCH_DAYS-1),latest);
       sleepRecords.push(...sl.records);
+      sleepHistory=!sl.complete?"partial":sleepRecords.length?"complete":"none_recorded";
     }catch(error){
       if(isRateLimit(error))return stressUnavailable("rate_limited",STRESS_RATE_LIMIT_NOTE);
+      sleepHistory="partial";
     }
-  }
+  }else sleepHistory="partial";
   sleepAvailable=sleepRecords.length>0;
   return computeStressEstimate({
     recoveryRecords:[...pageRecoveries,...recoveryHistory],
-    sleepRecords,targetDates,sleepAvailable,historyComplete:complete,historyNote:STRESS_HISTORY_NOTE
+    sleepRecords,targetDates,sleepAvailable,historyComplete:complete,historyNote:STRESS_HISTORY_NOTE,sleepHistory
   });
 }
 const BASELINE_FETCH_DAYS=31;
@@ -830,15 +836,34 @@ export function outputRejection(text,stats){
 // vocabulary check exactly as on main). Rejects claims the estimate cannot back,
 // and a stress sentence that attaches the value to a date with no estimate.
 const UNSUPPORTED_STRESS=/\b(?:stress\s+monitor|stress[-\s]+zones?|non-activity|clinical\w*|burnout|anxi\w*|cortisol|stressed)\b/i;
+const STRESS_CLAIM=/\b(?:stress|estimate|index)\b/i;
+const LEVEL_WORDS=new Set(["low","typical","elevated","high","moderate"]);
+// Every sentence that makes a stress claim is bound to the estimate itself:
+// - it must state exactly stats.stress_estimate.value, and every number in it
+//   (digits or spelled) must be that value, so recovery, HRV or other summary
+//   numbers can never satisfy a stress claim;
+// - level words (low, typical, elevated, high, moderate) must be its band or confidence;
+// - every date in it must be estimate_date, and when the estimate is not for the
+//   newest requested date the sentence must state estimate_date.
+// Applied in addition to every existing check (numbers, dates, advice, medical,
+// vocabulary); it can only reject more.
 function stressClaimRejection(text,stats){
   const est=stats?.stress_estimate;
   if(!est)return null;
   if(UNSUPPORTED_STRESS.test(text))return {rule:"stress_claim",category:"unsupported"};
-  if(est.is_latest_requested_date===false&&typeof est.requested_latest_date==="string"){
-    for(const sentence of text.split(/(?<=[.!?])\s+/)){
-      if(/\bstress\b/i.test(sentence)&&sentence.includes(est.requested_latest_date)&&!sentence.includes(est.estimate_date))
-        return {rule:"stress_claim",category:"date"};
-    }
+  for(const sentence of text.split(/(?<=[.!?])\s+/)){
+    if(!STRESS_CLAIM.test(sentence))continue;
+    const dates=sentence.match(/\b\d{4}-\d{2}-\d{2}\b/g)||[];
+    if(dates.some(d=>d!==est.estimate_date))return {rule:"stress_claim",category:"date"};
+    if(est.is_latest_requested_date!==true&&!dates.includes(est.estimate_date))return {rule:"stress_claim",category:"date_missing"};
+    const bare=sentence.replace(/\b\d{4}-\d{2}-\d{2}\b/g," ");
+    const numbers=(bare.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
+    const spelled=spelledNumbers(bare)||[];
+    const values=[...numbers,...spelled.map(span=>span.value)];
+    if(!values.length||values.some(v=>v!==est.value))return {rule:"stress_claim",category:"value"};
+    const allowedLevels=new Set([est.band,est.confidence].filter(Boolean).map(String));
+    for(const w of (sentence.toLowerCase().match(/[a-z]+/g)||[]))
+      if(LEVEL_WORDS.has(w)&&!allowedLevels.has(w))return {rule:"stress_claim",category:"level"};
   }
   return null;
 }

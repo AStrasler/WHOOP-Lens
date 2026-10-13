@@ -17,7 +17,9 @@
     "end": "2026-10-15"
   },
   "history": {
-    "complete": true
+    "complete": true,
+    "recovery_complete": true,
+    "sleep": "complete"
   },
   "method": {
     "baseline_days": 30,
@@ -125,7 +127,7 @@
       }
     ],
     "sleep_join": "recovery.sleep_id = sleep.id",
-    "sleep_data": "included"
+    "sleep_data": "complete"
   },
   "excluded_days": 0,
   "points": [
@@ -133,6 +135,7 @@
       "date": "2026-10-06",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 45,
       "band": "typical",
       "status": "ok",
@@ -144,6 +147,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,
@@ -212,6 +216,7 @@
       "date": "2026-10-07",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 53,
       "band": "typical",
       "status": "ok",
@@ -223,6 +228,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,
@@ -291,6 +297,7 @@
       "date": "2026-10-08",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 51,
       "band": "typical",
       "status": "ok",
@@ -302,6 +309,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,
@@ -370,6 +378,7 @@
       "date": "2026-10-09",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 47,
       "band": "typical",
       "status": "ok",
@@ -381,6 +390,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,
@@ -449,6 +459,7 @@
       "date": "2026-10-10",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 50,
       "band": "typical",
       "status": "ok",
@@ -460,6 +471,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,
@@ -528,6 +540,7 @@
       "date": "2026-10-11",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 100,
       "band": "high",
       "status": "ok",
@@ -539,6 +552,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,
@@ -669,6 +683,7 @@
       "date": "2026-10-12",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 100,
       "band": "high",
       "status": "ok",
@@ -680,6 +695,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,
@@ -810,6 +826,7 @@
       "date": "2026-10-13",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 100,
       "band": "high",
       "status": "ok",
@@ -821,6 +838,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,
@@ -951,6 +969,7 @@
       "date": "2026-10-14",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 100,
       "band": "high",
       "status": "ok",
@@ -962,6 +981,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,
@@ -1092,6 +1112,7 @@
       "date": "2026-10-15",
       "baseline_days": 30,
       "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
       "value": 100,
       "band": "high",
       "status": "ok",
@@ -1103,6 +1124,7 @@
           "input_coverage": 1,
           "baseline_completeness": 1,
           "conflicts": 0,
+          "sleep_history_partial": false,
           "per_input": {
             "hrv_rmssd": {
               "baseline_values": 30,

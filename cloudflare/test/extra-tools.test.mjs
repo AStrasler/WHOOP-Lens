@@ -98,7 +98,7 @@ test('experimental stress estimate is listed only with STRESS_ESTIMATE_ENABLED; 
       assert.ok(!off.global_limitations.some(l=>/experimental WHOOP Lens physiological stress/.test(l)));
       assert.equal(off.capabilities.find(c=>c.id==='stress-monitor').status,'unsupported');
     }
-    const on=await readExtraTool(db,A,'get_capabilities',{},{STRESS_ESTIMATE_ENABLED:'true'});
+    const on=await readExtraTool(db,A,'get_capabilities',{},{STRESS_ESTIMATE_ENABLED:'true',AI_SUMMARY_ENABLED:'true'});
     const est=on.capabilities.find(c=>c.id===STRESS_CAPABILITY.id);
     assert.ok(est);
     assert.match(est.description,/Not WHOOP's Stress Monitor\. Not clinically validated\./);
@@ -123,7 +123,7 @@ test('host instructions: Stress Monitor stays unsupported; the experimental inde
     assert.doesNotMatch(hostInstructionsFor(env),/experimental (?:daily )?physiological stress/);
   }
   assert.equal(hostInstructions,mainText);
-  const on=hostInstructionsFor({STRESS_ESTIMATE_ENABLED:'true'});
+  const on=hostInstructionsFor({STRESS_ESTIMATE_ENABLED:'true',AI_SUMMARY_ENABLED:'true'});
   assert.match(on,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
   assert.match(on,/Do not estimate those durations/);
   assert.match(on,/experimental daily physiological stress index that is enabled on this server/);

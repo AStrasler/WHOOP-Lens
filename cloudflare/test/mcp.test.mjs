@@ -119,7 +119,7 @@ test("Legacy initialization and tools/list continue without exposing arbitrary m
   assert.match(initBody.result.instructions,/label it user-provided/);
   assert.doesNotMatch(initBody.result.instructions,/experimental daily physiological stress/);
   const initOn=await route(req(payload("initialize",1,{protocolVersion:legacy,capabilities:{},
-    clientInfo:{name:"test",version:"1"}}),{version:legacy}),{...enabled(db()),STRESS_ESTIMATE_ENABLED:"true"});
+    clientInfo:{name:"test",version:"1"}}),{version:legacy}),{...enabled(db()),STRESS_ESTIMATE_ENABLED:"true",AI_SUMMARY_ENABLED:"true"});
   const onText=(await initOn.json()).result.instructions;
   assert.match(onText,/experimental daily physiological stress index/);
   assert.match(onText,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);

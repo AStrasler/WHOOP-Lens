@@ -230,7 +230,7 @@ async function run(userId,users,env,calls,logs,page=null,opts={}){
     return await attachSummary(page,{db:null,userId,tool:"get_recovery",env,whoopRequest:opts.whoopRequest||whoopFor(users,calls,opts),now:Date.parse("2026-10-20T00:00:00Z")});
   }finally{console.log=orig;}
 }
-const ON={STRESS_ESTIMATE_ENABLED:"true"};
+const ON={STRESS_ESTIMATE_ENABLED:"true",AI_SUMMARY_ENABLED:"true"};
 
 test("missing required inputs, unscored and calibrating days are not estimated",()=>{
   const records=[...baseline(),rec(20,{hrv:55,rhr:null}),rec(21,{hrv:55,rhr:52,state:"PENDING_SCORE"}),rec(22,{hrv:55,rhr:52,calibrating:true})];
@@ -405,17 +405,28 @@ test("F2 weekly digest: boundary dates, no fabricated target dates, cached outpu
   try{
     const u=syntheticUser({prefix:"w"}); // day(34)=2026-10-05 Mon .. day(40)=2026-10-11 Sun
     const calls=[];
-    const env={WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"false",STRESS_ESTIMATE_ENABLED:"true",WEEKLY_DIGEST_NOW:Date.parse("2026-10-12T08:00:00Z")};
+    // The estimate only exists with summaries on, so the digest runs the model path.
+    // The synthetic model states the recovery median from its own input JSON.
+    let modelCalls=0;
+    const AI={async run(_m,input){
+      modelCalls++;
+      const stats=JSON.parse(input.messages[1].content).stats;
+      return {response:`Recovery score median was ${stats.metrics["score.recovery_score"].median}.`};
+    }};
+    const env={WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true",AI,
+      AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",AI_ACCOUNT_ANALYTICS_TOKEN:"synthetic-analytics-token",AI_ANALYTICS_QUERY:async()=>({neurons:0}),
+      WEEKLY_DIGEST_NOW:Date.parse("2026-10-12T08:00:00Z")};
     const call=()=>handleMcpRpc({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"get_weekly_digest",arguments:{week_ending:"2026-10-11"}}},
       {db,userId:A,env,whoopRequest:whoopFor({[A]:u},calls)},{modern:true});
     const first=JSON.parse((await call()).result.content[0].text);
+    assert.equal(first.status,"model");
     const s=first.chart_data.stress_estimate;
     const expected=Array.from({length:7},(_,k)=>day(34+k));
     assert.deepEqual(s.points.map(p=>p.date),expected);
     assert.equal(expected[0],"2026-10-05");assert.equal(expected.at(-1),"2026-10-11");
     assert.equal(s.requested_latest_date,"2026-10-11");
     const again=JSON.parse((await call()).result.content[0].text);
-    assert.equal(again.cached,true);
+    assert.equal(again.cached,true);assert.equal(modelCalls,1);
     assert.deepEqual(again.chart_data.stress_estimate.points.map(p=>p.date),expected);
   }finally{sqlite.close();}
 });
@@ -453,7 +464,11 @@ test("F1 enabled with a valid estimate: factual sentence accepted, prompt gains 
   assert.match(on,/estimate_date/);assert.match(on,/never call it|Never call it/);
   assert.equal(on.replace(/If stats\.stress_estimate is present[^]*?or a diagnosis\. /,""),mainPrompt);
   assert.equal(outputRejection("The WHOOP Lens experimental physiological stress estimate was 72 on 2026-10-15, in the elevated band with moderate confidence.",valid),null);
-  for(const w of STRESS_WORDS)assert.equal(outputRejection(`Recovery score was ${w}, ranging from 35 to 44.`,valid),null,w);
+  // Neutral level words outside a stress claim stay usable; claim words must bind to the estimate.
+  for(const w of ["high","low","elevated","moderate","confidence","band","experimental","physiological","lens"])
+    assert.equal(outputRejection(`Recovery score was ${w}, ranging from 35 to 44.`,valid),null,w);
+  for(const w of ["stress","estimate","index"])
+    assert.equal(outputRejection(`Recovery score was ${w}, ranging from 35 to 44.`,valid)?.rule,"stress_claim",w);
 });
 
 test("F1 unsupported stress claims and medical wording are rejected even with a valid estimate",()=>{
@@ -474,7 +489,7 @@ test("F1 invented numbers and dates are rejected",()=>{
 test("F6 AI summary uses the real dates: a past estimate cannot be attached to the requested day",async()=>{
   const past={...valid,stress_estimate:{...valid.stress_estimate,estimate_date:"2026-10-13",requested_latest_date:"2026-10-15",is_latest_requested_date:false}};
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-15.",past)?.rule,"stress_claim");
-  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13, and 2026-10-15 had no estimate.",past),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13.",past),null);
   // End to end: newest page day lacks RHR, so the model stats carry both real dates.
   const u=syntheticUser({prefix:"d"});
   const page={records:[...u.recoveries.slice(-3,-1),{...u.recoveries.at(-1),score:{...u.recoveries.at(-1).score,resting_heart_rate:null}}],next_token:null};
@@ -483,4 +498,132 @@ test("F6 AI summary uses the real dates: a past estimate cannot be attached to t
   assert.equal(st.requested_latest_date,day(44));
   assert.equal(st.estimate_date,day(43));
   assert.equal(st.is_latest_requested_date,false);
+});
+
+// ---------- round 2, finding 1: stress claims bound to the estimate ----------
+const r2stats={...plain,latest_value:{metric:"score.recovery_score",date:"2026-10-14",value:44},
+  metrics:{"score.recovery_score":{min:35,max:44,mean:40,median:40},"score.hrv_rmssd_milli":{min:48,max:61,mean:55,median:55}},
+  stress_estimate:{...valid.stress_estimate}};
+const r2past={...r2stats,stress_estimate:{...r2stats.stress_estimate,estimate_date:"2026-10-14",requested_latest_date:"2026-10-15",is_latest_requested_date:false}};
+test("R2-1 wrong stress value is rejected",()=>{
+  assert.equal(outputRejection("The stress estimate was 73 on 2026-10-15.",r2stats)?.rule,"number");
+  assert.equal(outputRejection("The stress estimate was 72 or 40.",r2stats)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was elevated.",r2stats)?.rule,"stress_claim"); // no value stated
+});
+test("R2-1 a recovery or HRV value labeled as stress is rejected",()=>{
+  assert.equal(outputRejection("The stress estimate was 40 on 2026-10-15.",r2stats)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress index was 55.",r2stats)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 44 on 2026-10-14.",r2stats)?.rule,"stress_claim");
+  // The same numbers are fine in non-stress sentences.
+  assert.equal(outputRejection("Recovery score median was 40.",r2stats),null);
+});
+test("R2-1 wrong date and wrong level words are rejected",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-14.",r2stats)?.rule,"stress_claim"); // 10-14 exists in stats, not the estimate date
+  assert.equal(outputRejection("The stress estimate was 72, in the high band.",r2stats)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 with low confidence.",r2stats)?.rule,"stress_claim");
+});
+test("R2-1 a past estimate without its date is rejected; with its date it is accepted",()=>{
+  assert.equal(outputRejection("The stress estimate was 72, in the elevated band.",r2past)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-15.",r2past)?.rule,"stress_claim");
+  assert.equal(outputRejection("The WHOOP Lens experimental physiological stress estimate was 72 on 2026-10-14, in the elevated band with moderate confidence.",r2past),null);
+});
+test("R2-1 a correctly attributed current estimate is accepted, with or without its date",()=>{
+  assert.equal(outputRejection("The stress estimate was 72, in the elevated band with moderate confidence.",r2stats),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-15. Recovery score median was 40.",r2stats),null);
+  // Existing safeguards still apply.
+  assert.equal(outputRejection("The stress estimate was 72, so you should rest.",r2stats).rule,"advice");
+  assert.equal(outputRejection("The WHOOP Stress Monitor estimate was 72.",r2stats).rule,"stress_claim");
+});
+
+// ---------- round 2, finding 2: sleep completeness ----------
+async function runSleep(sleepBehavior,{noSleep=false}={}){
+  const u=syntheticUser({prefix:"z"});
+  if(noSleep)u.sleeps=[];
+  const base=whoopFor({[A]:u},[]);
+  const whoopRequest=async(db,userId,resource,env,opts)=>{
+    if(resource==="sleep"&&opts?.start&&sleepBehavior)return sleepBehavior(opts,()=>base(db,userId,resource,env,opts));
+    return base(db,userId,resource,env,opts);
+  };
+  const out=await run(A,{[A]:u},ON,[],[],null,{whoopRequest});
+  return out.summary.chart_data.stress_estimate;
+}
+const partialChecks=s=>{
+  assert.equal(s.history.complete,false);
+  assert.equal(s.history.recovery_complete,true);
+  assert.equal(s.history.sleep,"partial");
+  assert.equal(s.method.sleep_data,"partial");
+  assert.ok(s.limitations.some(l=>/partially retrieved/.test(l)));
+  const p=s.points.find(x=>x.value!=null);
+  assert.ok(p,"estimate still produced from recovery");
+  assert.equal(p.sleep_data,"partial");
+  assert.equal(p.confidence.components.sleep_history_partial,true);
+  assert.ok(p.confidence.components.conflicts>=1);
+};
+test("R2-2 incomplete sleep pagination (page budget exhausted) is partial",async()=>{
+  let n=0;
+  partialChecks(await runSleep(async(opts,real)=>{const page=await real();return {...page,next_token:"more"+(++n)};}));
+});
+test("R2-2 an invalid sleep cursor is partial",async()=>{
+  partialChecks(await runSleep(async(opts,real)=>{const page=await real();return {...page,next_token:"../bad"};}));
+  partialChecks(await runSleep(async(opts,real)=>{const page=await real();return {...page,next_token:opts.next_token??"same"};}));
+});
+test("R2-2 a failed sleep fetch is partial, not swallowed",async()=>{
+  partialChecks(await runSleep(async()=>{throw Error("WHOOP API request failed");}));
+});
+test("R2-2 recovery complete with sleep incomplete lowers confidence vs a complete sleep history",async()=>{
+  const full=await runSleep(null);
+  assert.equal(full.history.complete,true);assert.equal(full.history.sleep,"complete");
+  const part=await runSleep(async()=>{throw Error("boom");});
+  const d=full.latest_valid.date;
+  const pf=full.points.find(p=>p.date===d),pp=part.points.find(p=>p.date===d);
+  assert.ok(pp.confidence.score<pf.confidence.score);
+  assert.equal(pp.confidence.components.sleep_history_partial,true);
+});
+test("R2-2 no sleep recorded (complete retrieval, zero records) is none_recorded, without a retrieval penalty",async()=>{
+  const s=await runSleep(null,{noSleep:true});
+  assert.equal(s.history.complete,true);
+  assert.equal(s.history.sleep,"none_recorded");
+  assert.ok(s.limitations.some(l=>/No sleep was recorded/.test(l)));
+  const p=s.points.find(x=>x.value!=null);
+  assert.equal(p.sleep_data,"none_recorded");
+  assert.equal(p.confidence.components.sleep_history_partial,false);
+  assert.equal(p.confidence.components.conflicts,0);
+});
+
+// ---------- round 2, finding 3: both flags, consistent everywhere ----------
+test("R2-3 all four flag combinations agree across capabilities, host instructions and tool output",async()=>{
+  const sqlite=new DatabaseSync(":memory:");
+  for(const f of ["0001_initial.sql","0004_medical_context_review.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+    sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
+  sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(A,A);
+  sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(A);
+  const db={sqlite,...d1Database(sqlite)};
+  const u=syntheticUser({prefix:"f"});
+  const rpcCall=(env,method,params,modern=true)=>handleMcpRpc({jsonrpc:"2.0",id:1,method,params},{db,userId:A,env,whoopRequest:async(d,userId,resource,e,opts)=>{
+    if(opts?.limit===10&&!opts?.start&&!opts?.next_token&&resource==="recovery")return {records:u.recoveries.slice(-3),next_token:null};
+    return whoopFor({[A]:u},[])(d,userId,resource,e,opts);
+  }},{modern});
+  try{
+    for(const stress of ["true","false"])for(const summary of ["true","false"]){
+      const env={STRESS_ESTIMATE_ENABLED:stress,AI_SUMMARY_ENABLED:summary,
+        AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",AI_ACCOUNT_ANALYTICS_TOKEN:"synthetic-analytics-token",AI_ANALYTICS_QUERY:async()=>({neurons:0})};
+      const expect=stress==="true"&&summary==="true";
+      const init=await rpcCall(env,"initialize",{protocolVersion:"2025-11-25",capabilities:{},clientInfo:{name:"t",version:"1"}},false);
+      const discover=await rpcCall(env,"server/discover",{});
+      const instructions=init.result.instructions;
+      assert.equal(discover.result.instructions,instructions);
+      const caps=JSON.parse((await rpcCall(env,"tools/call",{name:"get_capabilities",arguments:{}})).result.content[0].text);
+      const args=summary==="true"?{summary:true}:{};
+      const tool=await rpcCall(env,"tools/call",{name:"get_recovery",arguments:args});
+      const data=JSON.parse(tool.result.content[0].text);
+      const returned=!!data.summary?.chart_data?.stress_estimate;
+      const label=`stress=${stress} summary=${summary}`;
+      assert.equal(/experimental daily physiological stress index/.test(instructions),expect,label+" instructions");
+      assert.equal(caps.capabilities.some(c=>c.id==="experimental-stress-estimate"),expect,label+" capabilities");
+      assert.equal(returned,expect,label+" tool output");
+      assert.match(instructions,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
+      assert.equal(caps.capabilities.find(c=>c.id==="stress-monitor").status,"unsupported");
+      if(expect)assert.equal(data.summary.chart_data.stress_estimate.experimental,true);
+    }
+  }finally{sqlite.close();}
 });

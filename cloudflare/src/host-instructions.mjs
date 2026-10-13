@@ -10,10 +10,11 @@ const discoveryGuidance = [
   "WHOOP Stress Monitor history is not in the official WHOOP developer API. There is no measurement of low, medium, or high stress-zone duration, non-activity high stress, or a Stress Monitor timeline. Do not estimate those durations from cycle strain, average heart rate, HRV, resting heart rate, or workouts. Say that the official API does not provide this data. If the user pastes their own Stress Trends summary, label it user-provided, keep it separate from synced WHOOP measurements, and do not store it.",
 ].join(" ");
 // hostInstructions (flag off) is identical to main. The experimental estimate is
-// described only when STRESS_ESTIMATE_ENABLED is exactly "true".
+// described only when STRESS_ESTIMATE_ENABLED and AI_SUMMARY_ENABLED are both "true"
+// (the estimate is only returned inside an AI summary).
 export const hostInstructions = instructions + " " + discoveryGuidance;
-const stressEstimateGuidance = "Separately, WHOOP Lens has an experimental daily physiological stress index that is enabled on this server (STRESS_ESTIMATE_ENABLED). It appears as chart_data.stress_estimate on get_recovery summaries. When present, call it the WHOOP Lens experimental physiological stress estimate, say it is not WHOOP's Stress Monitor and not clinically validated, give its value, band, confidence and limitations, and never present it as stress-zone durations, a Stress Monitor timeline, or a diagnosis. When it is absent, do not compute or imitate it.";
+const stressEstimateGuidance = "Separately, WHOOP Lens has an experimental daily physiological stress index that is enabled on this server. It appears as chart_data.stress_estimate only in get_recovery results requested with summary=true (and in the weekly digest). When present, call it the WHOOP Lens experimental physiological stress estimate, say it is not WHOOP's Stress Monitor and not clinically validated, give its value, band, confidence and limitations, and never present it as stress-zone durations, a Stress Monitor timeline, or a diagnosis. When it is absent, do not compute or imitate it.";
 export function hostInstructionsFor(env) {
-  return env?.STRESS_ESTIMATE_ENABLED === "true" ? hostInstructions + " " + stressEstimateGuidance : hostInstructions;
+  return env?.STRESS_ESTIMATE_ENABLED === "true" && env?.AI_SUMMARY_ENABLED === "true" ? hostInstructions + " " + stressEstimateGuidance : hostInstructions;
 }
 export const serverInfo = Object.freeze({ name: "whoop-lens", version: "1.0.0" });

@@ -91,7 +91,7 @@ export async function readExtraTool(db,userId,name,args,env=null){
   return {records,next_offset,source:name==='get_samsung_health'?'samsung_health':'health_connect',
     transport:name==='get_samsung_health'?'samsung_health_data_sdk':'stored_health_connect'};
 }
-// Listed only when STRESS_ESTIMATE_ENABLED is exactly "true". The Stress Monitor
+// Listed only when STRESS_ESTIMATE_ENABLED and AI_SUMMARY_ENABLED are both exactly "true". The Stress Monitor
 // entries from the manifest stay unsupported either way.
 export const STRESS_CAPABILITY=Object.freeze({
   id:'experimental-stress-estimate',name:'WHOOP Lens experimental physiological stress estimate',category:'explore',
@@ -113,7 +113,8 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
     'medical-context':'SELECT id FROM medical_context WHERE user_id=?1 AND reviewed_at IS NOT NULL LIMIT 1'
   }))available[id]=!!await db.prepare(sql).bind(userId).first();
   const localTools={'samsung':'get_samsung_health','health-connect':'get_health_connect','medical-context':'get_medical_context'};
-  const stressOn=env?.STRESS_ESTIMATE_ENABLED==='true';
+  // Same rule as the summary path, the only path that can return the estimate.
+  const stressOn=env?.STRESS_ESTIMATE_ENABLED==='true'&&env?.AI_SUMMARY_ENABLED==='true';
   const capabilities=[...manifest.capabilities,...(stressOn?[STRESS_CAPABILITY]:[])].map(item=>{
     let value={...item};
     if(localTools[item.id]){

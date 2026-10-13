@@ -214,7 +214,11 @@ function requiredBaselineDays(days,day){
   for(let i=1;i<=BASELINE_DAYS;i++)if(required(days.get(shift(day,-i))))n++;
   return n;
 }
-export function estimateDay(days,day,{historyComplete=true}={}){
+export const SLEEP_NOTES=Object.freeze({
+  none_recorded:"No sleep was recorded for this period, so the optional sleep inputs were not used. This is not a retrieval problem.",
+  partial:"Sleep history was only partially retrieved, so some sleep inputs or baselines may be missing; confidence is reduced."
+});
+export function estimateDay(days,day,{historyComplete=true,sleepHistory="complete"}={}){
   const row=days.get(day);
   const baselineDays=requiredBaselineDays(days,day);
   const base={date:day,baseline_days:baselineDays,label:STRESS_LABEL};
@@ -261,11 +265,13 @@ export function estimateDay(days,day,{historyComplete=true}={}){
   const value=Math.round(Math.max(0,Math.min(100,50+sum)));
   const missing=Object.keys(INPUTS).filter(k=>!used.includes(k));
   const evidence=parts.reduce((s,p)=>s+p.weight*Math.min(1,p.n/BASELINE_DAYS),0);
-  const conflicts=anomalies.filter(a=>a.lowers_confidence).length;
+  const sleepPartial=sleepHistory==="partial";
+  const conflicts=anomalies.filter(a=>a.lowers_confidence).length+(sleepPartial?1:0);
   const confidence={...confidenceFor(evidence,conflicts),components:{
     input_coverage:round(total,2),
     baseline_completeness:total?round(evidence/total,2):0,
     conflicts,
+    sleep_history_partial:sleepPartial,
     per_input:Object.fromEntries(parts.map(p=>[p.key,{baseline_values:p.n,completeness:round(Math.min(1,p.n/BASELINE_DAYS),2)}]))
   }};
   const strongest=parts.reduce((m,p)=>Math.abs(p.z)>Math.abs(m?.z??0)?p:m,null);
@@ -273,7 +279,8 @@ export function estimateDay(days,day,{historyComplete=true}={}){
   if(missing.length)notes.push("Not every input was available, so the estimate uses fewer measurements.");
   if(parts.some(p=>p.n<BASELINE_DAYS))notes.push("At least one input has a partial 30-day baseline, which lowers confidence.");
   for(const a of anomalies)notes.push(a.note);
-  return {...base,value,band:bandFor(value),status:"ok",coverage:round(total,2),
+  if(SLEEP_NOTES[sleepHistory])notes.push(SLEEP_NOTES[sleepHistory]);
+  return {...base,sleep_data:sleepHistory,value,band:bandFor(value),status:"ok",coverage:round(total,2),
     confidence,
     deviation:{points_from_typical:value-50,direction:value>50?"toward_more_load":value<50?"toward_less_load":"none",
       largest_input:strongest?{input:strongest.key,z:round(strongest.z,2)}:null},
@@ -285,10 +292,14 @@ const summaryOf=p=>p?{date:p.date,status:p.status,value:p.value,band:p.band,
 // targetDates: the dates returned to the user. History rows only form baselines.
 // historyComplete=false means the needed history could not be fully retrieved;
 // it is reported, and days short of baseline say incomplete_history.
-export function computeStressEstimate({recoveryRecords=[],sleepRecords=[],targetDates=null,sleepAvailable=false,historyComplete=true,historyNote=null}={}){
+// sleepHistory: "complete" (sleep retrieved), "none_recorded" (retrieval complete,
+// no sleep exists) or "partial" (pagination incomplete, invalid cursor or a
+// failed sleep fetch). Overall history.complete requires recovery and sleep.
+export function computeStressEstimate({recoveryRecords=[],sleepRecords=[],targetDates=null,sleepAvailable=false,historyComplete=true,historyNote=null,sleepHistory=null}={}){
+  sleepHistory=sleepHistory||(sleepAvailable?"complete":"none_recorded");
   const {days,excluded}=dailyInputs(recoveryRecords,sleepRecords);
   const dates=(targetDates?[...new Set(targetDates)]:[...days.keys()]).filter(Boolean).sort();
-  const points=dates.map(day=>estimateDay(days,day,{historyComplete}));
+  const points=dates.map(day=>estimateDay(days,day,{historyComplete,sleepHistory}));
   const valued=points.filter(p=>p.value!=null);
   const requestedLatest=points.at(-1)||null;
   const latestValid=valued.at(-1)||null;
@@ -299,7 +310,8 @@ export function computeStressEstimate({recoveryRecords=[],sleepRecords=[],target
     else reason="insufficient_data";
   }
   const limitations=[...LIMITATIONS];
-  if(!historyComplete)limitations.unshift(historyNote||"Not all of the needed WHOOP history could be retrieved, so some baselines may be incomplete.");
+  if(SLEEP_NOTES[sleepHistory])limitations.unshift(SLEEP_NOTES[sleepHistory]);
+  if(!historyComplete)limitations.unshift(historyNote||"Not all of the needed WHOOP recovery history could be retrieved, so some baselines may be incomplete.");
   if(latestValid&&requestedLatest&&latestValid.date!==requestedLatest.date)
     limitations.unshift(`The latest requested date (${requestedLatest.date}) has no estimate; the most recent estimate is from ${latestValid.date}.`);
   return {
@@ -308,13 +320,13 @@ export function computeStressEstimate({recoveryRecords=[],sleepRecords=[],target
     available:valued.length>0,
     reason,
     date_range:dates.length?{start:dates[0],end:dates.at(-1)}:null,
-    history:{complete:historyComplete},
+    history:{complete:historyComplete&&sleepHistory!=="partial",recovery_complete:historyComplete,sleep:sleepHistory},
     method:{baseline_days:BASELINE_DAYS,min_baseline_days:MIN_BASELINE_DAYS,center:"median",spread:"MAD x 1.4826",
       z_clip:Z_CLIP,artifact_z:ARTIFACT_Z,plausible_ranges:PLAUSIBLE,
       confidence:"sum of scored effective weights x each input's baseline completeness (n/30), x (1 - 0.15 per conflict); conflicts are disagreeing or unsupported capped inputs, suspected artifacts and implausible values",
       clusters:CLUSTERS,inputs:Object.fromEntries(Object.entries(INPUTS).map(([k,v])=>[k,{label:v.label,unit:v.unit,
         direction:v.direction>0?"higher_is_more_load":"lower_is_more_load",cluster:v.cluster,weight_in_cluster:v.weight}])),
-      excluded:EXCLUDED,bands:BANDS,sleep_join:"recovery.sleep_id = sleep.id",sleep_data:sleepAvailable?"included":"not_available"},
+      excluded:EXCLUDED,bands:BANDS,sleep_join:"recovery.sleep_id = sleep.id",sleep_data:sleepHistory},
     excluded_days:excluded,
     points,
     requested_latest_date:requestedLatest?.date??null,

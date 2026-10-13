@@ -1,6 +1,7 @@
 # WHOOP Lens experimental physiological stress estimate (wl-stress-v1)
 
-**Status:** experimental and off by default (`STRESS_ESTIMATE_ENABLED`). Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.
+**Status:** experimental and off by default. It is on only when `STRESS_ESTIMATE_ENABLED` and `AI_SUMMARY_ENABLED` are both exactly `"true"`,
+because the estimate is only returned inside an AI summary (`get_recovery` with `summary=true`, and the weekly digest). Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.
 It answers one question only: how far today's autonomic, sleep and respiratory measurements sit from the same person's own recent norm,
 in the direction usually linked with physiological load. Spec: issue #23, section 6.
 
@@ -16,6 +17,11 @@ This change replaces the placeholder. It stays off until Aaron enables it.
   (WHOOP's own `start`/`end` query parameters), paginated until `next_token` is null. Page budget: ceil(span/25)+2, at most 20.
   Old targets (for example 150+ records behind the newest) are reachable because the walk starts at the window, not at today.
 - Sleep: the same bounded walk of `/activity/sleep` (one extra day earlier, since a sleep can begin on the previous UTC date).
+  Sleep is optional but its retrieval state is never swallowed. `history.sleep` / `method.sleep_data` / each point's `sleep_data` is:
+  - `complete`: retrieved, records present;
+  - `none_recorded`: retrieval complete, no sleep exists. A limitation says so; no retrieval penalty (only lower coverage);
+  - `partial`: page budget exhausted, invalid cursor, or a failed sleep fetch. A limitation says so and confidence counts it as one conflict (x0.85).
+  `history.complete` = recovery complete AND sleep not `partial`; `history.recovery_complete` is reported separately.
 - The summary's own baseline fetch is unchanged from main; the estimate does its own bounded fetch only when the flag is on.
 - **Incomplete history** (page budget exhausted, invalid cursor, or a non-rate-limit error) sets `history.complete=false`, adds a limitation,
   and days short of baseline get status `incomplete_history` (reason `incomplete_history`), distinct from a genuine `insufficient_baseline`.
@@ -98,16 +104,22 @@ Only when the flag is on **and** a valid calculated estimate exists does the mod
 {name, experimental, estimate_date, requested_latest_date, is_latest_requested_date, value, band, confidence, baseline_days}. Only then:
 - the system prompt gains one line (name it as the experimental estimate, state the estimate_date, say when the requested latest date has
   no estimate, never call it WHOOP's Stress Monitor, stress-zone time or a diagnosis);
+- every sentence that makes a stress claim (mentions stress, estimate or index) is bound to the estimate (`stress_claim` rule):
+  it must state exactly `value`, and every number in it (digits or spelled) must be that value, so recovery, HRV or other summary numbers
+  cannot satisfy it; level words (low, typical, elevated, high, moderate) must be its band or confidence; every date in it must be
+  `estimate_date`; and when the estimate is not for the newest requested date the sentence must contain `estimate_date`;
 - the output filter accepts extra neutral words (experimental, physiological, stress, estimate, lens, band, elevated, low, high, confidence, moderate, index);
-- a `stress_claim` rule rejects unsupported claims (Stress Monitor, stress zones, non-activity, clinical, burnout, anxiety, cortisol, "stressed")
-  and a stress sentence that pins the value on `requested_latest_date` when the estimate is from an earlier day.
+- the same rule rejects unsupported claims (Stress Monitor, stress zones, non-activity, clinical, burnout, anxiety, cortisol, "stressed").
+  It runs in addition to every existing check and can only reject more.
 Flag off, or on with no valid estimate: the prompt is byte-identical to main (`test/fixtures/system-prompt-main.txt`, from main d98346f) and
 the stress words fail the vocabulary check exactly as on main. Number/date grounding, advice and medical checks are unchanged in every case.
 
 ## Host instructions and get_capabilities
 - Stress Monitor zone data stays unsupported in both, always.
-- Flag off: MCP initialize instructions are identical to main (`test/fixtures/host-instructions-main.txt`) and `get_capabilities` does not mention the estimate.
-- Flag on: `hostInstructionsFor(env)` appends one paragraph describing the experimental index and its labels; `get_capabilities` adds an
+- Off (either flag not "true"): MCP initialize instructions are identical to main (`test/fixtures/host-instructions-main.txt`) and `get_capabilities` does not mention the estimate.
+- "On" means both `STRESS_ESTIMATE_ENABLED` and `AI_SUMMARY_ENABLED` are `"true"`, the same rule as the tool path, so discovery never
+  advertises an estimate the tools cannot return. All four combinations are tested for agreement (instructions, capabilities, tool output).
+- On: `hostInstructionsFor(env)` appends one paragraph describing the experimental index and its labels; `get_capabilities` adds an
   `experimental-stress-estimate` entry ("Not WHOOP's Stress Monitor. Not clinically validated.") and a global limitation. Without a WHOOP
   connection the entry reports `requires_connection_or_data`, never `available`.
 
@@ -125,4 +137,5 @@ travel and noise move the same inputs; no cause is identified; there's no valida
   genuinely insufficient), 429, mixed digest and the real weekly digest with cache, sleep_id join, per-user isolation, no values or tokens in logs, flag off unchanged.
 - `test/extra-tools.test.mjs` and `test/mcp.test.mjs` (F7): discovery off / on / on without account data; initialize instructions off / on.
 - `test/whoop-api.test.mjs`: start/end sent only when given, validated; 429 keeps its status.
+- Round 2 tests are named `R2-1 ...` (claim binding), `R2-2 ...` (sleep completeness) and `R2-3 ...` (four flag combinations).
 - `test/fixtures/stress-estimate-sample.json`: full output for 45 synthetic days. Regenerate with `node test/make-stress-fixture.mjs`.
