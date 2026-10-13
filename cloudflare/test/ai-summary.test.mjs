@@ -394,7 +394,35 @@ test("dates do not authorize stray digits and hedged advice is rejected",()=>{
     assert.ok(text.length>=20,text);
     assert.equal(outputAcceptable(text,stats),false,text);
   }
-  assert.equal(outputAcceptable("Resting heart rate is absent, and the recovery score is 52.",stats),true);
+  const listed=[
+    "You ought to go to bed earlier",
+    "It would help to hydrate and rest",
+    "Please prioritize recovery",
+    "a lighter training day is recommended",
+    "which suggests overtraining and burnout",
+    "You ought to go to bed earlier because the recovery score is 52.",
+    "It would help to hydrate and rest given a recovery score of 52.",
+    "Please prioritize recovery after this score of 52.",
+    "With a recovery score of 52, a lighter training day is recommended.",
+    "A recovery score of 52 suggests overtraining and burnout.",
+    "You need to sleep sooner after a recovery score of 52.",
+    "I would advise more rest when the score is 52.",
+    "This recovery score of 52 indicates a deficiency and illness.",
+    "A disorder may explain the recovery score of 52 today.",
+    "Try to get to bed earlier after a recovery score of 52."
+  ];
+  for(const text of listed){
+    assert.ok(text.length>=20,text);
+    assert.equal(outputAcceptable(text,stats),false,text);
+  }
+  const resting=buildSummaryFacts(pageA,"get_recovery");
+  assert.equal(outputAcceptable("The resting heart rate mean is 49 and the latest value is 48.",resting.stats),true);
+  assert.equal(outputAcceptable("The recovery score is fifty-two on 2026-09-01.",stats),true);
+  assert.equal(outputAcceptable("The recovery score is nine on 2026-09-01.",stats),false);
+  assert.equal(outputAcceptable("The recovery score dipped to nine points on 2026-09-01.",stats),false);
+  const nine=buildSummaryFacts({records:[recovery(9,"2026-10-04")]},"get_recovery");
+  assert.equal(outputAcceptable("The recovery score is nine on 2026-10-04.",nine.stats),true);
+  assert.equal(outputAcceptable("The recovery score dipped to nine points on 2026-10-04.",nine.stats),false);
   const negative=buildSummaryFacts({records:[
     recovery(40,"2026-10-01"),recovery(38,"2026-10-02")
   ]},"get_recovery");
@@ -490,5 +518,19 @@ test("the reserved input cap covers the call and over-cap usage is kept",async()
     assert.equal(other.ok,false);
     assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope='global'").get().used,7520);
     assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=?").get(userScope(B)).used,0);
+    db.sqlite.exec("DELETE FROM ai_usage");
+    db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES(?,?,10,2500)").run(userScope(A),day);
+    db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES('global',?,10,7500)").run(day);
+    const ceiling=await reconcileQuota(db,{userId:A,day,reserved:10,actual:100001});
+    assert.equal(ceiling.ok,true);
+    assert.equal(ceiling.action,"increased");
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=? AND day=?").get(userScope(A),day).used,100001);
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope='global' AND day=?").get(day).used,100001);
+    const afterCeiling=await reserveQuota(db,{userId:A,day,estimate:1});
+    assert.equal(afterCeiling.ok,false);
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=?").get(userScope(A)).used,100001);
+    const otherAfter=await reserveQuota(db,{userId:B,day,estimate:1});
+    assert.equal(otherAfter.ok,false);
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope='global'").get().used,100001);
   }finally{db.close();}
 });

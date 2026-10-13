@@ -95,8 +95,10 @@ export async function reconcileQuota(db,{userId,day,reserved,actual}){
     if(!db||typeof db.prepare!=="function")return {ok:false};
     if(!validUser(userId)||!validDay(day)||!validEstimate(reserved))return {ok:false};
     // A failed call, or usage we cannot trust, keeps the reservation.
+    // A safe integer above the old 100000 ceiling is still the full amount:
+    // it is added with no cap check, and the next reserve then fails.
     if(actual==null)return {ok:true,action:"kept"};
-    if(!Number.isSafeInteger(actual)||actual<=0||actual>100000)return {ok:true,action:"kept"};
+    if(!Number.isSafeInteger(actual)||actual<=0)return {ok:true,action:"kept"};
     if(actual===reserved)return {ok:true,action:"same"};
     if(actual>reserved){
       const extra=actual-reserved;

@@ -33,7 +33,31 @@ export function inputTokenEstimate(system,userJson){
   if(typeof system!=="string"||typeof userJson!=="string")return null;
   return byteLength(system)+byteLength(userJson)+FRAMING_TOKENS;
 }
-const ADVICE=/\b(?:diagnos\w*|see (?:a|your) doctor|see (?:a|your) physician|consult (?:a|your) (?:doctor|physician)|medical advice|seek medical|call 911|you should|you need to|you might want(?: to)?|might want(?: to)?|i recommend|we recommend|prescri\w*|medications?|dosages?|treatments?|should|consider|try to|make sure|it(?:'s| is) important|rest more|sleep(?:ing)? more|take it easy|reduce|increase|avoid|get|take|drink|eat|eating)\b/i;
+const ADVICE=new RegExp("\\b(?:"+[
+  "diagnos\\w*","see (?:a|your) doctor","see (?:a|your) physician",
+  "consult (?:a|your) (?:doctor|physician)","medical advice","seek medical","call 911",
+  "you|your|yours|yourself|yourselves","please",
+  "ought|should|must|might|could|would|may","need to","have to","try to","consider",
+  "make sure","it(?:'s| is) important","you might want(?: to)?","might want(?: to)?",
+  "recommend\\w*","advis\\w*","i recommend","we recommend","help(?:s|ed|ing)? to",
+  "prioriti[sz]\\w*","hydrat\\w*","go to bed","bed earlier","rest more","sleep(?:ing)? more",
+  "take it easy","reduce|increase|avoid|get|take|drink|eat|eating",
+  "prescri\\w*","medications?","dosages?","treatments?",
+  "suggest\\w*","indicat\\w*","overtrain\\w*","burnout","illness(?:es)?","disorder\\w*",
+  "deficien\\w*","diseas\\w*","symptoms?","injur\\w*"
+].join("|")+")\\b","i");
+const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
+  "is are was were be been has have had this these that those there it its "+
+  "record records returned available numeric measurement measurements summarize summarized "+
+  "value values minimum maximum mean median average latest first last change missing date dates "+
+  "count day days observed incomplete complete data range between through coverage "+
+  "source sources label per across during no not only also than point points").split(" "));
+const MEASUREMENT=new Set(["record","records","value","values","minimum","maximum","mean","median",
+  "latest","change","missing","count","measurement","measurements","incomplete","score","returned"]);
+const SMALL_WORDS={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
+  eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
+const TENS_WORDS={twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
+const NUMBER_WORD=/\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand)\b/gi;
 const ALLOWED_METRICS=new Set([
   "height_meter","weight_kilogram","max_heart_rate",
   "score.recovery_score","score.resting_heart_rate","score.hrv_rmssd_milli",
@@ -269,20 +293,100 @@ function roundedEqual(stat,token){
   const factor=10**decimals;
   return Math.round(stat*factor)/factor===token.value;
 }
+function wordGap(text,left,right){return right&&/^[\s-]+$/.test(text.slice(left,right));}
+function spelledNumbers(text){
+  const matches=[];
+  const re=new RegExp(NUMBER_WORD.source,"gi");
+  let match;
+  while((match=re.exec(text)))matches.push({word:match[0].toLowerCase(),start:match.index,end:match.index+match[0].length});
+  const spans=[];
+  for(let i=0;i<matches.length;){
+    const parsed=parseSpelled(text,matches,i);
+    if(parsed.span.value==null)return null;
+    spans.push(parsed.span);
+    i=parsed.next;
+  }
+  return spans;
+}
+function parseSpelled(text,matches,i){
+  const cur=matches[i];
+  let value=null,end=cur.end,next=i+1;
+  if(Object.hasOwn(SMALL_WORDS,cur.word))value=SMALL_WORDS[cur.word];
+  else if(Object.hasOwn(TENS_WORDS,cur.word)){
+    value=TENS_WORDS[cur.word];
+    const ones=matches[i+1];
+    if(ones&&wordGap(text,cur.end,ones.start)&&Object.hasOwn(SMALL_WORDS,ones.word)&&SMALL_WORDS[ones.word]<10){
+      value+=SMALL_WORDS[ones.word];
+      end=ones.end;
+      next=i+2;
+    }
+  }else if(cur.word==="hundred")value=100;
+  else if(cur.word==="thousand")value=1000;
+  const scale=matches[next];
+  if(value!=null&&scale&&wordGap(text,end,scale.start)&&(scale.word==="hundred"||scale.word==="thousand")){
+    const factor=scale.word==="hundred"?100:1000;
+    if(value<factor){
+      value*=factor;
+      end=scale.end;
+      next++;
+      const rem=matches[next];
+      if(rem&&wordGap(text,end,rem.start)&&(Object.hasOwn(SMALL_WORDS,rem.word)||Object.hasOwn(TENS_WORDS,rem.word))){
+        const tail=parseSpelled(text,matches,next);
+        if(tail.span.value!=null&&tail.span.value<factor){
+          value+=tail.span.value;
+          end=tail.span.end;
+          next=tail.next;
+        }
+      }
+    }
+  }
+  return {span:{value,start:cur.start,end},next};
+}
+function contextWords(stats){
+  const words=new Set();
+  const add=text=>{
+    for(const part of String(text).toLowerCase().match(/[a-z]+/g)||[])words.add(part);
+  };
+  for(const path of Object.keys(stats?.metrics||{}))add(path);
+  for(const source of stats?.sources||[])add(source?.source||"");
+  if(stats?.latest_value?.metric)add(stats.latest_value.metric);
+  if(stats?.change_first_to_last?.metric)add(stats.change_first_to_last.metric);
+  return words;
+}
+function describesMeasurements(text,stats,skip){
+  const allowed=contextWords(stats);
+  const sentences=text.split(/(?<=[.!?])\s+(?=[A-Z])/).filter(part=>part.trim());
+  if(sentences.length<1||sentences.length>3)return false;
+  const words=[];
+  const re=/[A-Za-z]+/g;
+  let match;
+  while((match=re.exec(text))){
+    const start=match.index,end=start+match[0].length;
+    if(skip.some(span=>start>=span.start&&end<=span.end))continue;
+    words.push({word:match[0].toLowerCase(),start,end});
+  }
+  if(!words.every(item=>DESCRIPTIVE.has(item.word)||allowed.has(item.word)))return false;
+  return sentences.every(sentence=>{
+    if(/\d/.test(sentence))return true;
+    const parts=sentence.toLowerCase().match(/[a-z]+/g)||[];
+    return parts.some(word=>MEASUREMENT.has(word)||allowed.has(word));
+  });
+}
 export function outputAcceptable(text,stats){
   if(typeof text!=="string")return false;
   const cleaned=text.trim();
   if(cleaned.length<20||cleaned.length>450)return false;
   if(ADVICE.test(cleaned))return false;
   if(/[0-9a-f]{8}-[0-9a-f]{4}-/i.test(cleaned))return false;
-  const sentences=cleaned.split(/(?<=[.!?])\s+(?=[A-Z])/).filter(part=>part.trim());
-  if(sentences.length<1||sentences.length>3)return false;
   const numbers=[];
   const dates=new Set();
   collectAllowed(stats,numbers,dates);
-  return numberTokens(cleaned).every(token=>token.kind==="date"
+  if(!numberTokens(cleaned).every(token=>token.kind==="date"
     ?dates.has(token.raw)
-    :numbers.some(stat=>roundedEqual(stat,token)));
+    :numbers.some(stat=>roundedEqual(stat,token))))return false;
+  const spelled=spelledNumbers(cleaned);
+  if(!spelled||!spelled.every(span=>numbers.some(stat=>stat===span.value||Math.round(stat)===span.value)))return false;
+  return describesMeasurements(cleaned,stats,spelled);
 }
 function joinAnd(parts){
   if(parts.length<=1)return parts[0]||"";
