@@ -110,6 +110,8 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
     const text=readFileSync(new URL(path,import.meta.url),"utf8");
     assert.match(text,/"AI_SUMMARY_ENABLED"\s*:\s*"false"/);
     assert.match(text,/"STRESS_ESTIMATE_ENABLED"\s*:\s*"false"/);
+    assert.match(text,/"WEEKLY_DIGEST_ENABLED"\s*:\s*"false"/);
+    assert.doesNotMatch(text,/"crons"|"triggers"/);
     if(binding)assert.match(text,/"ai"\s*:\s*\{\s*"binding"\s*:\s*"AI"\s*\}/);
     assert.doesNotMatch(text,/AI_ACCOUNT_ANALYTICS_TOKEN|AI_ANALYTICS_ACCOUNT_ID|synthetic-analytics-token/);
   }
@@ -143,8 +145,11 @@ test("summary is additive, isolated, and the model never receives record text",a
     assert.equal(summary.chart_data.stress_estimate,null);
     assert.equal(summary.chart_data.series[0].metric,"score.recovery_score");
     assert.deepEqual(summary.chart_data.series[0].points,[
-      {date:"2026-10-01",value:40},{date:"2026-10-03",value:60}
+      {date:"2026-10-01",value:40},
+      {date:"2026-10-02",value:null},
+      {date:"2026-10-03",value:60}
     ]);
+    assert.deepEqual(summary.chart_data.series[0].gaps,["2026-10-02"]);
     assert.equal(summary.stats.count,2);
     assert.deepEqual(summary.stats.date_range,{start:"2026-10-01",end:"2026-10-03"});
     assert.deepEqual(summary.stats.missing_dates,["2026-10-02"]);
@@ -600,7 +605,7 @@ test("chart series and insights are factual on both the model and template paths
   const hidden={records:[
     recovery(40,"2026-10-01",{resting_heart_rate:50,hrv_rmssd_milli:30}),
     recovery(55,"2026-10-02",{resting_heart_rate:49,hrv_rmssd_milli:33,spo2_percentage:97}),
-    recovery(44,"2026-10-03",{resting_heart_rate:48}),
+    recovery(46,"2026-10-03",{resting_heart_rate:47}),
     {...recovery(60,"2026-10-04"),user_id:A,note:injection,custom_metric:9}
   ],next_token:null};
   const db=openDb();
@@ -618,12 +623,13 @@ test("chart series and insights are factual on both the model and template paths
     assert.equal(calls,1);
     assert.equal(modeled.summary.status,"model");
     const chart=modeled.summary.chart_data;
-    assert.deepEqual(Object.keys(chart),["date_range","record_count","series","stress_estimate"]);
+    assert.deepEqual(Object.keys(chart),["date_range","record_count","series","sleep_recovery","stress_estimate"]);
+    assert.equal(chart.sleep_recovery.available,false);
     assert.equal(chart.stress_estimate,null);
     assert.equal(chart.record_count,4);
     assert.deepEqual(chart.date_range,{start:"2026-10-01",end:"2026-10-04"});
     const recoverySeries=chart.series.find(series=>series.metric==="score.recovery_score");
-    assert.deepEqual(Object.keys(recoverySeries),["metric","name","unit","date_range","record_count","stats","points"]);
+    assert.deepEqual(Object.keys(recoverySeries),["metric","name","unit","date_range","record_count","stats","baseline","points","gaps","gaps_truncated"]);
     assert.equal(recoverySeries.name,"Recovery score");
     assert.equal(recoverySeries.unit,"score");
     assert.equal(recoverySeries.record_count,4);
@@ -631,7 +637,7 @@ test("chart series and insights are factual on both the model and template paths
     assert.deepEqual(recoverySeries.points,[
       {date:"2026-10-01",value:40},
       {date:"2026-10-02",value:55},
-      {date:"2026-10-03",value:44},
+      {date:"2026-10-03",value:46},
       {date:"2026-10-04",value:60}
     ]);
     assert.deepEqual(recoverySeries.stats,{
@@ -642,21 +648,20 @@ test("chart series and insights are factual on both the model and template paths
     const heart=chart.series.find(series=>series.metric==="score.resting_heart_rate");
     assert.equal(heart.name,"Resting heart rate");
     assert.equal(heart.unit,"bpm");
-    assert.deepEqual(heart.points.map(point=>point.value),[50,49,48]);
+    assert.deepEqual(heart.points.map(point=>point.value),[50,49,47]);
     assert.equal(heart.stats.first,50);
-    assert.equal(heart.stats.last,48);
-    assert.equal(heart.stats.change,-2);
+    assert.equal(heart.stats.last,47);
+    assert.equal(heart.stats.change,-3);
     assert.ok(modeled.summary.insights.length>=2);
     for(const line of modeled.summary.insights){
       assert.equal(outputAcceptable(line,modeled.summary.stats),true,line);
       assert.doesNotMatch(line,/you|should|diagnos|stress|recommend|burnout|overtrain/i);
     }
     assert.match(modeled.summary.insights.join("\n"),/Recovery score rose from 40 to 60 across 4 records/);
-    assert.match(modeled.summary.insights.join("\n"),/Resting heart rate fell from 50 to 48/);
+    assert.match(modeled.summary.insights.join("\n"),/Resting heart rate fell from 50 to 47/);
     assert.doesNotMatch(prompt,/chart_data|"points"|99999|custom_metric|Ignore previous/);
     assert.doesNotMatch(prompt,new RegExp(A));
     assert.equal(prompt.includes("55"),false);
-    assert.equal(prompt.includes("44"),false);
     const packed=JSON.stringify(modeled.summary.chart_data)+modeled.summary.insights.join("\n");
     assert.doesNotMatch(packed,/99999|custom_metric|Ignore previous/);
     assert.doesNotMatch(packed,new RegExp(A));

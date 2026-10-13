@@ -15,6 +15,7 @@
     "HEALTH_CONNECT_WEBHOOK_ENABLED": "false",
     "AI_SUMMARY_ENABLED": "false",
     "STRESS_ESTIMATE_ENABLED": "false",
+    "WEEKLY_DIGEST_ENABLED": "false",
     "WHOOP_REDIRECT_URI": "https://whooplens.tech/api/whoop/callback"
   },
   "ai": { "binding": "AI" },

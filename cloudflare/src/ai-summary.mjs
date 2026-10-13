@@ -55,12 +55,12 @@ const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
   "source sources label per across during no not only also than point points "+
   "ranged averaged rose fell increased decreased reduced stayed peaked lowest highest "+
   "steady steadily compared climbed over start end up down higher lower dipped near "+
-  "while then same remained measured about around").split(" "));
+  "while then same remained measured about around above below baseline typical followed").split(" "));
 const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps respiratory "+
   "spo spo2 skin temperature performance score bpm").split(" "));
 const VERBS=new Set(("is are was were be been has have had returned summarize summarized "+
   "ranged averaged rose fell increased decreased reduced stayed peaked climbed compared "+
-  "remained measured dipped").split(" "));
+  "remained measured dipped followed").split(" "));
 const SMALL_WORDS={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
   eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
 const TENS_WORDS={twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
@@ -174,6 +174,7 @@ function utcDate(value){
   if(!Number.isFinite(parsed))return null;
   return new Date(parsed).toISOString().slice(0,10);
 }
+export function observationDate(record){return recordDate(record);}
 function recordDate(record){
   for(const key of DATE_FIELDS){
     if(!Object.hasOwn(record,key))continue;
@@ -282,9 +283,10 @@ export function buildSummaryFacts(data,tool){
   const series=[];
   for(const [path,points] of chosen){
     const stats=metricStats(points);
+    const baseline=baselineFor(points,stats.latestDate);
     metrics[path]={n:stats.n,min:stats.min,max:stats.max,mean:stats.mean,median:stats.median,
-      latest:stats.latest,first:stats.first,change:stats.change,latest_date:stats.latestDate};
-    series.push(chartSeries(path,points,stats));
+      latest:stats.latest,first:stats.first,change:stats.change,latest_date:stats.latestDate,baseline};
+    series.push(chartSeries(path,points,stats,baseline));
     for(const point of [stats.firstPoint,stats.lastPoint,stats.minPoint,stats.maxPoint]){
       const row={source,metric:path,value:point.value};
       if(point.date)row.date=point.date;
@@ -320,7 +322,7 @@ export function buildSummaryFacts(data,tool){
     sources:[source],
     incomplete:stats.incomplete
   };
-  return {stats,coverage,series};
+  return {stats,coverage,series,sleep_recovery:pairSleepRecovery(records)};
 }
 function metricMeta(path){
   if(Object.hasOwn(METRIC_META,path))return METRIC_META[path];
@@ -339,9 +341,54 @@ function metricMeta(path){
   else if(leaf==="strain"||leaf==="recovery_score")unit="score";
   return {name,unit};
 }
-function chartSeries(path,points,stats){
+function shiftUtcDay(iso,days){
+  return new Date(Date.parse(iso+"T00:00:00Z")+days*86400000).toISOString().slice(0,10);
+}
+function percentile(sorted,p){
+  if(sorted.length===1)return sorted[0];
+  const rank=(sorted.length-1)*p;
+  const low=Math.floor(rank),high=Math.ceil(rank);
+  if(low===high)return sorted[low];
+  return sorted[low]*(high-rank)+sorted[high]*(rank-low);
+}
+function baselineFor(points,lastDate){
+  if(!lastDate)return null;
+  const end=shiftUtcDay(lastDate,-1);
+  const start=shiftUtcDay(lastDate,-30);
+  const samples=points.filter(point=>point.date&&point.date>=start&&point.date<=end).map(point=>point.value);
+  if(!samples.length)return null;
+  const sorted=samples.slice().sort((a,b)=>a-b);
+  const baseline={
+    window:{start,end},days:30,sample_count:samples.length,median:quantize(median(sorted)),typical_range:null
+  };
+  if(samples.length>=4)baseline.typical_range={
+    low:quantize(percentile(sorted,0.25)),high:quantize(percentile(sorted,0.75))
+  };
+  return baseline;
+}
+function fillGaps(dated){
+  if(!dated.length)return {points:[],gaps:[],gaps_truncated:false};
+  const start=dated[0].date,end=dated[dated.length-1].date;
+  const span=Math.round((Date.parse(end+"T00:00:00Z")-Date.parse(start+"T00:00:00Z"))/86400000);
+  const measured=dated.map(point=>({date:point.date,value:quantize(point.value)}));
+  if(!Number.isFinite(span)||span>400)return {points:measured,gaps:[],gaps_truncated:true};
+  const byDate=new Map();
+  for(const point of dated){
+    if(!byDate.has(point.date))byDate.set(point.date,[]);
+    byDate.get(point.date).push(point);
+  }
+  const points=[],gaps=[];
+  for(let cursor=start;cursor<=end;cursor=addUtcDay(cursor)){
+    const rows=byDate.get(cursor);
+    if(!rows){points.push({date:cursor,value:null});gaps.push(cursor);continue;}
+    for(const row of rows)points.push({date:row.date,value:quantize(row.value)});
+  }
+  return {points,gaps,gaps_truncated:false};
+}
+function chartSeries(path,points,stats,baseline){
   const meta=metricMeta(path);
   const dated=points.filter(point=>point.date).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.index-b.index);
+  const filled=fillGaps(dated);
   return {
     metric:path,
     name:meta.name,
@@ -349,8 +396,46 @@ function chartSeries(path,points,stats){
     date_range:dated.length?{start:dated[0].date,end:dated[dated.length-1].date}:null,
     record_count:points.length,
     stats:{min:stats.min,max:stats.max,mean:stats.mean,first:stats.first,last:stats.latest,change:stats.change},
-    points:dated.map(point=>({date:point.date,value:quantize(point.value)}))
+    baseline:baseline??null,
+    points:filled.points,
+    gaps:filled.gaps,
+    gaps_truncated:filled.gaps_truncated
   };
+}
+const SLEEP_PAIR_METRICS=["score.sleep_performance_percentage","score.sleep_efficiency_percentage","score.sleep_consistency_percentage","score.respiratory_rate"];
+function pairSleepRecovery(records){
+  const sleepByDate=new Map(),recoveryByDate=new Map();
+  for(const record of records){
+    const date=recordDate(record);
+    if(!date)continue;
+    const found=[];
+    walkNumbers(record,"",found,0);
+    if(!sleepByDate.has(date)){
+      const sleep=SLEEP_PAIR_METRICS.filter(path=>found.some(item=>item.path===path)).map(path=>{
+        const item=found.find(entry=>entry.path===path);
+        const meta=metricMeta(path);
+        return {metric:path,name:meta.name,unit:meta.unit,value:quantize(item.value)};
+      });
+      if(sleep.length)sleepByDate.set(date,sleep);
+    }
+    if(!recoveryByDate.has(date)){
+      const score=found.find(item=>item.path==="score.recovery_score");
+      if(score){
+        const meta=metricMeta("score.recovery_score");
+        recoveryByDate.set(date,{metric:"score.recovery_score",name:meta.name,unit:meta.unit,value:quantize(score.value)});
+      }
+    }
+  }
+  const pairs=[];
+  for(const [date,sleep] of sleepByDate){
+    const morning=addUtcDay(date);
+    const recovery=recoveryByDate.get(morning);
+    if(!recovery)continue;
+    pairs.push({sleep_date:date,recovery_date:morning,sleep,recovery});
+  }
+  pairs.sort((a,b)=>a.sleep_date<b.sleep_date?-1:a.sleep_date>b.sleep_date?1:0);
+  const kept=pairs.slice(0,14);
+  return {available:kept.length>0,pairs:kept};
 }
 function stressEstimatePlaceholder(env){
   if(!stressEstimateEnabled(env))return null;
@@ -364,6 +449,7 @@ function chartBundle(facts,env){
     date_range:facts.stats.date_range,
     record_count:facts.stats.count,
     series:facts.series,
+    sleep_recovery:facts.sleep_recovery||{available:false,pairs:[]},
     stress_estimate:stressEstimatePlaceholder(env)
   };
 }
@@ -385,10 +471,37 @@ function insightLine(name,metric){
   if(last!=null)return `The ${name} was ${last}.`;
   return `${name} ranged from ${min} to ${max} with a mean of ${mean}.`;
 }
-export function buildInsights(stats){
+function baselineSentence(name,metric){
+  const base=metric.baseline;
+  if(!base||typeof base.median!=="number"||typeof metric.latest!=="number")return "";
+  const latest=insightNumber(metric.latest),medianText=insightNumber(base.median);
+  if(latest==null||medianText==null)return "";
+  const relation=metric.latest>base.median?"above":metric.latest<base.median?"below":"at";
+  let sentence=relation==="at"
+    ?`The latest ${name} was at the baseline median of ${medianText}.`
+    :`The latest ${name} was ${relation} the baseline median of ${medianText}.`;
+  const low=base.typical_range&&insightNumber(base.typical_range.low);
+  const high=base.typical_range&&insightNumber(base.typical_range.high);
+  if(low!=null&&high!=null)sentence+=` The typical range was ${low} to ${high}.`;
+  return sentence;
+}
+function pairSentence(pair){
+  const sleep=pair.sleep?.[0];
+  if(!sleep||typeof sleep.value!=="number"||typeof pair.recovery?.value!=="number")return null;
+  return `${sleep.name} of ${insightNumber(sleep.value)} on ${pair.sleep_date} was followed by a recovery score of ${insightNumber(pair.recovery.value)} on ${pair.recovery_date}.`;
+}
+export function buildInsights(stats,pairs=[]){
   const insights=[];
   for(const [path,metric] of Object.entries(stats?.metrics||{})){
     const line=insightLine(metricMeta(path).name,metric);
+    if(!line)continue;
+    const extra=baselineSentence(metricMeta(path).name,metric);
+    const combined=(extra?`${line} ${extra}`:line).replace(/\s+/g," ").trim();
+    if(outputAcceptable(combined,stats))insights.push(combined);
+    else if(outputAcceptable(line.replace(/\s+/g," ").trim(),stats))insights.push(line.replace(/\s+/g," ").trim());
+  }
+  for(const pair of pairs.slice(0,3)){
+    const line=pairSentence(pair);
     if(!line)continue;
     const text=line.replace(/\s+/g," ").trim();
     if(outputAcceptable(text,stats))insights.push(text);
@@ -551,7 +664,7 @@ function templateSummary(facts,generatedAt,env){
     :`${facts.stats.count} records were returned.`;
   return summaryObject({
     text,stats:facts.stats,model:null,generated_at:generatedAt,coverage:facts.coverage,status:"template",
-    chart_data:chartBundle(facts,env),insights:buildInsights(facts.stats)
+    chart_data:chartBundle(facts,env),insights:buildInsights(facts.stats,facts.sleep_recovery?.pairs||[])
   });
 }
 function withinInputCap(payload){
@@ -660,7 +773,7 @@ export async function attachSummary(data,ctx){
     if(text&&outputAcceptable(text,facts.stats)){
       return {...data,summary:summaryObject({
         text:text.trim(),stats:facts.stats,model,generated_at:generatedAt,coverage:facts.coverage,status:"model",
-        chart_data:chartBundle(facts,ctx.env),insights:buildInsights(facts.stats)
+        chart_data:chartBundle(facts,ctx.env),insights:buildInsights(facts.stats,facts.sleep_recovery?.pairs||[])
       })};
     }
     return fallback;

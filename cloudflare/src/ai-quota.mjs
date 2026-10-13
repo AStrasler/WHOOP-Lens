@@ -98,6 +98,28 @@ function accountPredicate(snapshotLocal,accountCap){
   if(!Number.isSafeInteger(accountCap))return false;
   return {snapshotLocal,accountCap};
 }
+const READ_SCOPE=`SELECT used, cap FROM ai_usage WHERE day = ?1 AND scope = ?2`;
+function usageNumbers(row,fallbackCap){
+  if(!row)return {used:0,cap:fallbackCap,remaining:fallbackCap};
+  if(!Number.isSafeInteger(row.used)||row.used<0)return null;
+  const cap=Number.isSafeInteger(row.cap)&&row.cap>=0?row.cap:fallbackCap;
+  return {used:row.used,cap,remaining:row.used>=cap?0:cap-row.used};
+}
+export async function readOwnUsage(db,{userId,day,includeGlobal}={}){
+  try{
+    if(!db||typeof db.prepare!=="function")return {ok:false};
+    if(!validUser(userId)||!validDay(day))return {ok:false};
+    const row=await db.prepare(READ_SCOPE).bind(day,userScope(userId)).first();
+    const own=usageNumbers(row,USER_CAP);
+    if(!own)return {ok:false};
+    const view={ok:true,day,used:own.used,cap:own.cap,remaining:own.remaining};
+    if(!includeGlobal)return view;
+    const globalRow=await db.prepare(READ_SCOPE).bind(day,GLOBAL_SCOPE).first();
+    const shared=usageNumbers(globalRow,GLOBAL_CAP);
+    if(!shared)return {ok:false};
+    return {...view,global:{used:shared.used,cap:shared.cap,remaining:shared.remaining}};
+  }catch{return {ok:false};}
+}
 export async function reserveQuota(db,{userId,day,estimate,snapshotLocal,accountCap}={}){
   const scope=userScope(userId);
   try{

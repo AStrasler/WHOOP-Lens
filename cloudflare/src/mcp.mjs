@@ -1,5 +1,7 @@
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
 import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
+import {buildWeeklyDigest,parseDigestEnd,weeklyDigestEnabled} from './ai-digest.mjs';
+import {readOwnUsage,utcDay} from './ai-quota.mjs';
 import {revokeWhoopConnection} from './whoop-oauth.mjs';
 import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
@@ -50,12 +52,40 @@ export const mcpTools=Object.freeze([...Object.keys(toolToResource).map(name=>({
 const toolsByName=new Map(mcpTools.map(x=>[x.name,x]));
 const own=(x,p)=>Object.prototype.hasOwnProperty.call(x,p);
 function isObject(x){return x!==null&&typeof x==="object"&&!Array.isArray(x);}
+const aiUsageTool=Object.freeze({
+  name:"get_ai_usage",
+  description:"Read this account's AI summary quota for the current UTC day.",
+  inputSchema:{type:"object",properties:{},additionalProperties:false},
+  annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}
+});
+const weeklyDigestTool=Object.freeze({
+  name:"get_weekly_digest",
+  description:"Build this account's descriptive weekly measurement digest. The result is returned to the caller and is not sent anywhere.",
+  inputSchema:{type:"object",properties:{
+    end:{type:"string",description:"UTC end date YYYY-MM-DD. Defaults to today."}
+  },additionalProperties:false},
+  annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
+});
 function listedTools(env){
-  if(!aiSummaryEnabled(env))return mcpTools;
-  return mcpTools.map(tool=>summaryTools.has(tool.name)?{...tool,inputSchema:{
+  const summaryOn=aiSummaryEnabled(env);
+  const digestOn=weeklyDigestEnabled(env);
+  if(!summaryOn&&!digestOn)return mcpTools;
+  let tools=summaryOn?mcpTools.map(tool=>summaryTools.has(tool.name)?{...tool,inputSchema:{
     ...tool.inputSchema,
     properties:{...tool.inputSchema.properties,summary:{type:"boolean",description:"Add a summary of these results. Ignored unless true."}}
-  }}:tool);
+  }}:tool):mcpTools.slice();
+  if(summaryOn)tools=[...tools,aiUsageTool];
+  if(digestOn)tools=[...tools,weeklyDigestTool];
+  return tools;
+}
+function optionalTool(name,env){
+  if(name==="get_ai_usage")return aiSummaryEnabled(env);
+  if(name==="get_weekly_digest")return weeklyDigestEnabled(env);
+  return false;
+}
+function usageAdmin(env,userId){
+  const owner=env?.WHOOP_LENS_DEVELOPER_USER_ID;
+  return typeof owner==="string"&&owner.length>0&&owner===userId;
 }
 function queryArgs(args){
   if(!isObject(args)||args.summary!==true)return args;
@@ -72,6 +102,16 @@ function toolError(id,message,modern) {
 }
 function checkArguments(name,args,env) {
   if(!isObject(args))return null;
+  if(name==="get_ai_usage"){
+    if(!aiSummaryEnabled(env))return null;
+    return Object.keys(args).length===0?{}:null;
+  }
+  if(name==="get_weekly_digest"){
+    if(!weeklyDigestEnabled(env))return null;
+    if(Object.keys(args).some(key=>key!=="end"))return null;
+    const end=parseDigestEnd(args.end);
+    return end?{end}:null;
+  }
   const summaryOn=aiSummaryEnabled(env)&&summaryTools.has(name);
   if(extraTools.some(t=>t.name===name)){
     if(!summaryOn||!own(args,"summary"))return extraArguments(name,args);
@@ -159,7 +199,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }
   if(message.method!=="tools/call")return fail(-32601,"Method not found",id);
   const name=params.name;
-  if(typeof name!=="string"||!toolsByName.has(name))
+  if(typeof name!=="string"||(!toolsByName.has(name)&&!optionalTool(name,env)))
     return fail(-32602,"Unknown tool",id);
   const args=checkArguments(name,params.arguments??{},env);
   if(args===null)return fail(-32602,"Invalid tool arguments",id);
@@ -188,6 +228,18 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     }else if(name==='revoke_health_connect_ingest_token'){
       if(env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')throw Error('Connection disabled');
       data=await revokeIngestTokens(db,userId,args.confirm);
+    }else if(name==="get_ai_usage"){
+      const usage=await readOwnUsage(db,{
+        userId,day:utcDay(),includeGlobal:usageAdmin(env,userId)
+      });
+      if(!usage.ok)throw Error("quota");
+      data={day:usage.day,used:usage.used,cap:usage.cap,remaining:usage.remaining};
+      if(usage.global)data.global=usage.global;
+    }else if(name==="get_weekly_digest"){
+      const digest=await buildWeeklyDigest({db,userId,env,whoopRequest,end:args.end});
+      if(!digest.ok)throw Error("digest");
+      data={kind:digest.kind,period:digest.period,recovery_count:digest.recovery_count,
+        sleep_count:digest.sleep_count,summary:digest.summary};
     }else if(extraTools.some(t=>t.name===name)){
       data=await readExtraTool(db,userId,name,queryArgs(args));
     }else if(!historyTools.has(name)||!args.auto_page){
