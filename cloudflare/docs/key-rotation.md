@@ -12,6 +12,14 @@
 - Promotion: set `WHOOP_TOKEN_AES256_KEY` to the k2 value and keep NEXT the same value (k2 envelopes keep opening via NEXT).
   Then remove the k1 value later. A future change can drop the NEXT name.
 
+## Rollback limit (read before setting NEXT)
+- Once any row holds a `v2.k2.` envelope, roll back only to Worker versions that include dual-key support (this PR or later).
+  An older version cannot read `v2.k2.` envelopes, and those users would have to reconnect WHOOP.
+- Before setting NEXT, the value must exist in two places, both verified: the Worker secret, and the `BK_WHOOP_TOKEN_AES256_KEY_NEXT`
+  Secrets Store backup (bound and resolvable). Keep a protected box copy as well. Losing k2 after migration means every user reconnects.
+- Rows within 5 minutes of token expiry are never re-encrypted, so the re-encryption cannot race a refresh. If a refresh write still
+  misses because only the ciphertext changed (same refresh token), the refresh retries against the current ciphertext.
+
 ## Secrets Store backup
 Optional `secrets_store_secrets` bindings named `BK_<SECRET>`: `BK_WHOOP_CLIENT_ID`, `BK_WHOOP_CLIENT_SECRET`,
 `BK_WHOOP_TOKEN_AES256_KEY`, `BK_WHOOP_TOKEN_AES256_KEY_NEXT` and `BK_AI_ACCOUNT_ANALYTICS_TOKEN`.

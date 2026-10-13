@@ -78,8 +78,8 @@ test("batch migration re-encrypts mixed rows to k2, logs only counts, and is ide
       assert.equal((await openWithKeyring(r.encrypted_refresh_token,{userId:id,purpose:"refresh",keys:nextOnly})).token,"ref-"+id);
     }
     assert.equal((await migrateAllTokens(d,env,{now:()=>now+1})).skipped,"throttled");
-    assert.equal((await migrateAllTokens(d,env,{force:true})).migrated,0);
-    assert.equal((await migrateAllTokens(d,{WHOOP_TOKEN_AES256_KEY:OLD},{force:true})).skipped,"no_next_key");
+    assert.equal((await migrateAllTokens(d,env,{force:true,now:()=>now})).migrated,0);
+    assert.equal((await migrateAllTokens(d,{WHOOP_TOKEN_AES256_KEY:OLD},{force:true,now:()=>now})).skipped,"no_next_key");
   }finally{cap.restore();d.close();}
   noSecrets(cap.lines.join("\n"));
   assert.ok(cap.lines.some(l=>l.includes('"token_key_migration"')&&l.includes('"remaining":0')));
@@ -91,7 +91,7 @@ test("a row that fails to decrypt is counted and left untouched",async()=>{
     const env={WHOOP_TOKEN_AES256_KEY:OLD,WHOOP_TOKEN_AES256_KEY_NEXT:NEXT};
     await insert(d,A,tokenKeyring({WHOOP_TOKEN_AES256_KEY:randomBytes(32).toString("base64url")}));
     const before=row(d,A).encrypted_access_token;
-    const out=await migrateAllTokens(d,env,{force:true});
+    const out=await migrateAllTokens(d,env,{force:true,now:()=>now});
     assert.equal(out.failed,1);assert.equal(out.remaining,1);
     assert.equal(row(d,A).encrypted_access_token,before);
   }finally{cap.restore();d.close();}
@@ -144,5 +144,32 @@ test("a decrypt failure with a valid primary key never consults the store",async
     const env=await resolveSecrets(raw);
     await assert.rejects(whoopAccessToken(d,A,env,{now:()=>now}));
     assert.equal(gets,0);
+  }finally{cap.restore();d.close();}
+});
+
+test("a re-encryption landing mid-refresh does not drop the rotated refresh token",async()=>{
+  const d=fixture();const cap=capture();
+  try{
+    const oldKeys=tokenKeyring({WHOOP_TOKEN_AES256_KEY:OLD});
+    await insert(d,A,oldKeys);
+    d.sqlite.prepare("UPDATE whoop_connections SET expires_at=? WHERE user_id=?").run(new Date(now-1000).toISOString(),A);
+    const env={WHOOP_TOKEN_AES256_KEY:OLD,WHOOP_TOKEN_AES256_KEY_NEXT:NEXT,WHOOP_CLIENT_ID:"synthetic-client",WHOOP_CLIENT_SECRET:"synthetic-secret"};
+    const keys=tokenKeyring(env);
+    // The batch pass skips this row (near expiry), even when forced.
+    resetMigrationThrottle();
+    assert.equal((await migrateAllTokens(d,env,{now:()=>now,force:true})).migrated,0);
+    const token=await whoopAccessToken(d,A,env,{now:()=>now,fetcher:async()=>{
+      // Simulate a re-encryption racing in while WHOOP answers.
+      const r=row(d,A);
+      const acc=await sealWithKeyring("acc-"+A,{userId:A,purpose:"access",keys});
+      const ref=await sealWithKeyring("ref-"+A,{userId:A,purpose:"refresh",keys});
+      d.sqlite.prepare("UPDATE whoop_connections SET encrypted_access_token=?,encrypted_refresh_token=? WHERE user_id=? AND encrypted_refresh_token=?")
+        .run(acc,ref,A,r.encrypted_refresh_token);
+      return new Response(JSON.stringify({access_token:"rotated-access",refresh_token:"rotated-refresh",expires_in:3600}),{status:200});
+    }});
+    assert.equal(token,"rotated-access");
+    const r=row(d,A);
+    assert.equal((await openWithKeyring(r.encrypted_refresh_token,{userId:A,purpose:"refresh",keys})).token,"rotated-refresh");
+    assert.equal(r.encryption_key_version,"k2");
   }finally{cap.restore();d.close();}
 });

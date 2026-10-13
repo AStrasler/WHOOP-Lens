@@ -3,9 +3,11 @@
 // the k1 path stays until a later promotion. Logs counts and key ids only.
 import {openWithKeyring,sealWithKeyring,needsReseal,tokenKeyring} from "./token-crypto.mjs";
 const BATCH_INTERVAL_MS=10*60_000;
+// Rows close to expiry may have a refresh in flight. Leave them alone.
+export const EXPIRY_MARGIN_MS=5*60_000;
 let lastBatch=0;
 export function resetMigrationThrottle(){lastBatch=0;}
-export async function migrateConnection(db,userId,row,keys){
+export async function migrateConnection(db,userId,row,keys,{now=Date.now}={}){
   if(keys.current!=="k2")return "current";
   const access=await openWithKeyring(row.encrypted_access_token,{userId,purpose:"access",keys});
   const refresh=await openWithKeyring(row.encrypted_refresh_token,{userId,purpose:"refresh",keys});
@@ -17,8 +19,9 @@ export async function migrateConnection(db,userId,row,keys){
   const result=await db.prepare(
     "UPDATE whoop_connections SET encrypted_access_token=?1,encrypted_refresh_token=?2,"+
     "encryption_key_version='k2',updated_at=CURRENT_TIMESTAMP "+
-    "WHERE user_id=?3 AND encrypted_access_token=?4 AND encrypted_refresh_token=?5"
-  ).bind(nextAccess,nextRefresh,userId,row.encrypted_access_token,row.encrypted_refresh_token).run();
+    "WHERE user_id=?3 AND encrypted_access_token=?4 AND encrypted_refresh_token=?5 AND expires_at>?6"
+  ).bind(nextAccess,nextRefresh,userId,row.encrypted_access_token,row.encrypted_refresh_token,
+         new Date(now()+EXPIRY_MARGIN_MS).toISOString()).run();
   return result?.success&&result.meta?.changes===1?"migrated":"raced";
 }
 export async function tokenKeyCounts(db){
@@ -38,12 +41,13 @@ export async function migrateAllTokens(db,env,{limit=25,now=Date.now,force=false
   lastBatch=now();
   const rows=await db.prepare(
     "SELECT user_id,encrypted_access_token,encrypted_refresh_token FROM whoop_connections "+
-    "WHERE encrypted_access_token NOT LIKE 'v2.k2.%' OR encrypted_refresh_token NOT LIKE 'v2.k2.%' LIMIT ?1"
-  ).bind(limit).all();
+    "WHERE (encrypted_access_token NOT LIKE 'v2.k2.%' OR encrypted_refresh_token NOT LIKE 'v2.k2.%') "+
+    "AND expires_at>?2 LIMIT ?1"
+  ).bind(limit,new Date(now()+EXPIRY_MARGIN_MS).toISOString()).all();
   let migrated=0,failed=0,raced=0;
   for(const row of rows?.results||[]){
     try{
-      const outcome=await migrateConnection(db,row.user_id,row,keys);
+      const outcome=await migrateConnection(db,row.user_id,row,keys,{now});
       if(outcome==="migrated")migrated++;
       else if(outcome==="raced")raced++;
     }catch{failed++;}

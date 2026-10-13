@@ -20,7 +20,15 @@ export const SECRET_RULES=Object.freeze({
   AI_ACCOUNT_ANALYTICS_TOKEN:v=>noSpace(v)&&v.length>=20&&v.length<=4096
 });
 export const BACKUP_PREFIX="BK_";
-function log(line){console.log(JSON.stringify({event:"secret_source",...line}));}
+// Each distinct outcome is logged once per isolate, not on every request.
+const logged=new Set();
+export function resetSecretLog(){logged.clear();}
+function log(line){
+  const key=JSON.stringify(line);
+  if(logged.has(key))return;
+  logged.add(key);
+  console.log(JSON.stringify({event:"secret_source",...line}));
+}
 export async function getSecret(env,name){
   const valid=SECRET_RULES[name];
   if(!valid)throw Error("Unknown secret");

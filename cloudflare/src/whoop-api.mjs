@@ -24,18 +24,18 @@ function config(env) {
 async function openToken(envelope,id,purpose,keys){
   return (await openWithKeyring(envelope,{userId:id,purpose,keys})).token;
 }
-async function backgroundMigrate(db,id,row,keys,env){
+async function backgroundMigrate(db,id,row,keys,env,now){
   // Never blocks or fails a read. Counts only are logged by the batch pass.
   try{
     const opened=await openWithKeyring(row.encrypted_access_token,{userId:id,purpose:"access",keys});
     const refreshKey=row.encrypted_refresh_token?await openWithKeyring(row.encrypted_refresh_token,{userId:id,purpose:"refresh",keys}):null;
     if(needsReseal(row.encrypted_access_token,opened.key,keys)||
        (refreshKey&&needsReseal(row.encrypted_refresh_token,refreshKey.key,keys))){
-      const outcome=await migrateConnection(db,id,row,keys);
+      const outcome=await migrateConnection(db,id,row,keys,{now});
       console.log(JSON.stringify({event:"token_key_lazy",key:keys.current,outcome}));
     }
   }catch{console.log(JSON.stringify({event:"token_key_lazy",key:keys.current,outcome:"failed"}));}
-  try{await migrateAllTokens(db,env);}catch{/* counts are logged when it runs */}
+  try{await migrateAllTokens(db,env,{now});}catch{/* counts are logged when it runs */}
 }
 function clientConfig(env){
   if(typeof env?.WHOOP_CLIENT_ID!=="string"||!env.WHOOP_CLIENT_ID||
@@ -79,7 +79,7 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
   const currentExpiry=Date.parse(row.expires_at);
   if(Number.isFinite(currentExpiry)&&currentExpiry>now()+60_000){
     const token=await openToken(row.encrypted_access_token,id,"access",key);
-    if(key.current==="k2")await backgroundMigrate(db,id,row,key,env);
+    if(key.current==="k2")await backgroundMigrate(db,id,row,key,env,now);
     return token;
   }
   clientConfig(env);
@@ -110,17 +110,33 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
   const nextRefreshEnvelope=await sealWithKeyring(nextRefresh,{userId:id,purpose:"refresh",keys:key});
   const expiresAt=new Date(now()+Number(tokens.expires_in)*1000).toISOString();
   // Optimistic update: do not overwrite a connection already refreshed elsewhere.
-  const result=await db.prepare(
+  const scope=typeof tokens.scope==="string"?tokens.scope:(row.scope||"");
+  const write=expected=>db.prepare(
     "UPDATE whoop_connections SET encrypted_access_token=?1,encrypted_refresh_token=?2,"+
-    "expires_at=?3,scope=?4,updated_at=CURRENT_TIMESTAMP WHERE user_id=?5 AND encrypted_refresh_token=?6"
-  ).bind(nextAccessEnvelope,nextRefreshEnvelope,expiresAt,
-         typeof tokens.scope==="string"?tokens.scope:(row.scope||""),id,row.encrypted_refresh_token).run();
+    "expires_at=?3,scope=?4,encryption_key_version=?7,updated_at=CURRENT_TIMESTAMP "+
+    "WHERE user_id=?5 AND encrypted_refresh_token=?6"
+  ).bind(nextAccessEnvelope,nextRefreshEnvelope,expiresAt,scope,id,expected,
+         key.current==="k2"?"k2":"v1").run();
+  let result=await write(row.encrypted_refresh_token);
+  if(!result.success||result.meta?.changes!==1){
+    // The ciphertext may have changed only because the row was re-encrypted
+    // (same refresh token, new key). Then our rotation is still the newest:
+    // retry against the current ciphertext so the new refresh token is kept.
+    const current=await db.prepare(
+      "SELECT encrypted_refresh_token FROM whoop_connections WHERE user_id=?1 LIMIT 1"
+    ).bind(id).first();
+    if(current?.encrypted_refresh_token&&current.encrypted_refresh_token!==row.encrypted_refresh_token){
+      let same=false;
+      try{same=await openToken(current.encrypted_refresh_token,id,"refresh",key)===refresh;}catch{same=false;}
+      if(same)result=await write(current.encrypted_refresh_token);
+    }
+  }
   if(!result.success||result.meta?.changes!==1){
     const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep);
     if(winner)return winner;
     throw Error("WHOOP refresh raced or failed");
   }
-  if(key.current==="k2"){try{await migrateAllTokens(db,env);}catch{/* logged when it runs */}}
+  if(key.current==="k2"){try{await migrateAllTokens(db,env,{now});}catch{/* logged when it runs */}}
   return tokens.access_token;
 }
 export async function callWhoop(db,userId,resource,env,opts={},deps={}){
