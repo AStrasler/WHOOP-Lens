@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { sealWhoopToken, openWhoopToken } from "../src/token-crypto.mjs";
 import { callWhoop, whoopAccessToken } from "../src/whoop-api.mjs";
 import { createStagingRouter } from "../src/router.mjs";
-import { d1Prepare } from "./d1-sqlite.mjs";
+import { d1Prepare, d1Database } from "./d1-sqlite.mjs";
 
 const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -24,7 +24,7 @@ function dbFixture() {
   }
   return {
     sqlite,close(){sqlite.close();},
-    prepare: d1Prepare(sqlite)
+    ...d1Database(sqlite),
   };
 }
 async function connect(db,id,{expiry=now+3600000,role="public"}={}){
@@ -173,5 +173,35 @@ test("WHOOP API redirects are never followed and cannot leak bearer tokens",asyn
         return new Response(null,{status:302,headers:{location:"https://attacker.invalid/redirect"}});
       }
     }),/WHOOP API request failed/);
+  }finally{d.close();}
+});
+test("parallel expired-token requests share one rotation instead of failing",async()=>{
+  const d=dbFixture();
+  try{
+    await connect(d,A,{expiry:now-1000});
+    let uses=0,release;
+    const gate=new Promise(r=>{release=r;});
+    const fetcher=async(url,options)=>{
+      assert.equal(url,"https://api.prod.whoop.com/oauth/oauth2/token");
+      const token=new URLSearchParams(options.body).get("refresh_token");
+      uses++;
+      if(uses===1){await gate;return response({access_token:"rotated-access",refresh_token:"rotated-refresh",expires_in:3600});}
+      // The second use of the same rotated-away refresh token is rejected by WHOOP.
+      assert.equal(token,"test-refresh-"+A);
+      return new Response("{}",{status:400});
+    };
+    const first=whoopAccessToken(d,A,env,{now:()=>now,fetcher});
+    await new Promise(r=>setImmediate(r));
+    const second=whoopAccessToken(d,A,env,{now:()=>now,fetcher,
+      sleep:async()=>{release();await first;}});
+    assert.equal(await first,"rotated-access");
+    // Second request lost the race at WHOOP after the winner stored new tokens.
+    assert.equal(await second,"rotated-access");
+    // A genuine failure with nothing refreshed elsewhere still fails.
+    const d2=dbFixture();try{
+      await connect(d2,A,{expiry:now-1000});
+      await assert.rejects(whoopAccessToken(d2,A,env,{now:()=>now,
+        fetcher:async()=>new Response("{}",{status:400}),sleep:async()=>{}}),/refresh failed/);
+    }finally{d2.close();}
   }finally{d.close();}
 });

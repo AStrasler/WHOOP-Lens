@@ -34,7 +34,25 @@ async function boundedJson(response){
   if(text.length>2_000_000)throw Error("WHOOP response too large");
   return JSON.parse(text);
 }
-export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.now}={}){
+async function concurrentlyRefreshed(db,id,previous,key,now,sleep){
+  // Bounded wait (about 1.5 s) for the winning request to store its rotation.
+  for(let attempt=0;attempt<4;attempt++){
+    if(attempt)await sleep(500);
+    const token=await storedRotation(db,id,previous,key,now);
+    if(token)return token;
+  }
+  return null;
+}
+async function storedRotation(db,id,previous,key,now){
+  const row=await db.prepare(
+    "SELECT encrypted_access_token,encrypted_refresh_token,expires_at FROM whoop_connections WHERE user_id=?1 LIMIT 1"
+  ).bind(id).first();
+  if(!row||row.encrypted_refresh_token===previous.encrypted_refresh_token)return null;
+  const expiry=Date.parse(row.expires_at);
+  if(!Number.isFinite(expiry)||expiry<=now()+60_000)return null;
+  return openWhoopToken(row.encrypted_access_token,{userId:id,purpose:"access",key});
+}
+export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
   const id=ownerId(userId),key=config(env);
   if(!await activeMembership(db,id))throw Error("Membership required");
   const row=await db.prepare(
@@ -54,7 +72,13 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
     method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},
     body:form,redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
   });
-  if(!response.ok)throw Error("WHOOP refresh failed");
+  if(!response.ok){
+    // WHOOP rotates refresh tokens: a parallel request that already used this
+    // one makes ours fail. Use the access token that request stored, if any.
+    const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep);
+    if(winner)return winner;
+    throw Error("WHOOP refresh failed");
+  }
   const tokens=await boundedJson(response);
   if(typeof tokens?.access_token!=="string"||tokens.access_token.length<1||
      !Number.isFinite(Number(tokens.expires_in))||Number(tokens.expires_in)<60 ||
@@ -71,7 +95,11 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
     "expires_at=?3,scope=?4,updated_at=CURRENT_TIMESTAMP WHERE user_id=?5 AND encrypted_refresh_token=?6"
   ).bind(nextAccessEnvelope,nextRefreshEnvelope,expiresAt,
          typeof tokens.scope==="string"?tokens.scope:(row.scope||""),id,row.encrypted_refresh_token).run();
-  if(!result.success||result.meta?.changes!==1)throw Error("WHOOP refresh raced or failed");
+  if(!result.success||result.meta?.changes!==1){
+    const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep);
+    if(winner)return winner;
+    throw Error("WHOOP refresh raced or failed");
+  }
   return tokens.access_token;
 }
 export async function callWhoop(db,userId,resource,env,opts={},deps={}){
