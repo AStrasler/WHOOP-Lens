@@ -1,5 +1,9 @@
 import { openaiAppsChallengeResponse } from "./challenge.mjs";
 import capabilityManifest from "./capabilities.json" with { type: "json" };
+import { accountArguments, accountToolEnabled, accountTools } from "./account-tools.mjs";
+import { importHealthConnectFile, publicImportError, withdrawHealthConnectImport } from "./health-import.mjs";
+import { healthConnectWebhook, issueIngestToken, revokeIngestTokens, webhookOwner } from "./health-connect-webhook.mjs";
+import { callRpc, supabaseMemberActive } from "./store.mjs";
 
 // Deploy these bytes. Live function version 40 matched this tree except an extra
 // caret in the domain class ([^^\s@] versus [^\s@]). Keep this pattern.
@@ -70,6 +74,9 @@ const discoveryGuidance = [
   "WHOOP Stress Monitor history is not in the official WHOOP developer API. There is no measurement of low, medium, or high stress-zone duration, non-activity high stress, or a Stress Monitor timeline. Do not estimate those durations from cycle strain, average heart rate, HRV, resting heart rate, or workouts. Say that the official API does not provide this data. If the user pastes their own Stress Trends summary, label it user-provided, keep it separate from synced WHOOP measurements, and do not store it.",
 ].join(" ");
 const fullInstructions = instructions + " " + discoveryGuidance;
+const serverInfo = { name: "whoop-lens", version: "1.0.0" };
+const PROTOCOL_2026 = "2026-07-28";
+const legacyProtocolHeaders = new Set(["2025-11-25", "2025-06-18", "2025-03-26"]);
 const metricEvents = new Set(["request", "seat_denied", "waitlist", "token_refresh", "whoop_retry", "tool_call", "oauth_callback"]);
 const metricOutcomes = new Set([
   "ok", "denied", "error", "rate_limited", "stored", "already_listed", "not_needed", "unavailable",
@@ -78,6 +85,7 @@ const metricOutcomes = new Set([
 const toolNames = new Set([
   "get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles",
   "get_samsung_health", "get_health_connect", "get_medical_context", "connect_whoop", "get_capabilities",
+  ...accountTools.map((tool) => tool.name),
 ]);
 
 export function linkedEmail(value) {
@@ -551,10 +559,131 @@ export function createWhoopMcp({
   }
 
   async function memberActive(userId) {
-    const { data: member, error } = await db.from("whoop_members").select("active").eq("user_id", userId).maybeSingle();
-    if (error) return { error: true };
-    if (member && member.active === false) return { active: false };
-    return { active: true };
+    return supabaseMemberActive(db, userId);
+  }
+
+  function flagOn(name) {
+    return env(name) === "true";
+  }
+
+  function listedTools() {
+    const snapshots = ["get_profile", "get_body_measurements"].map((name) => ({
+      name,
+      description: toolDescriptions[name],
+      inputSchema: snapshotSchema,
+      annotations: readOnly,
+    }));
+    const history = ["get_recovery", "get_sleep", "get_workouts", "get_cycles"].map((name) => ({
+      name,
+      description: toolDescriptions[name],
+      inputSchema: historySchema,
+      annotations: readOnly,
+    }));
+    return snapshots.concat(history, [
+      {
+        name: "get_capabilities",
+        description: toolDescriptions.get_capabilities,
+        inputSchema: capabilitySchema,
+        annotations: closed,
+      },
+      {
+        name: "get_medical_context",
+        description: toolDescriptions.get_medical_context,
+        inputSchema: {
+          type: "object",
+          properties: {
+            limit: { type: "integer", minimum: 1, maximum: 100 },
+            offset: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+        annotations: closed,
+      },
+      {
+        name: "get_health_connect",
+        description: toolDescriptions.get_health_connect,
+        inputSchema: {
+          type: "object",
+          properties: {
+            metric: { type: "string", enum: ["steps_daily", "sleep_session", "heart_rate", "exercise_session"] },
+            limit: { type: "integer", minimum: 1, maximum: 100 },
+            offset: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+        annotations: closed,
+      },
+      {
+        name: "get_samsung_health",
+        description: "Read Samsung Health records uploaded for the signed-in user. These records are separate from WHOOP. Paginate with offset.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            metric: { type: "string", enum: ["sleep", "heart_rate", "spo2", "steps", "activity", "exercise", "body_composition", "skin_temperature", "energy_score", "blood_pressure", "profile"] },
+            limit: { type: "integer", minimum: 1, maximum: 100 },
+            offset: { type: "integer", minimum: 0 },
+          },
+          additionalProperties: false,
+        },
+        annotations: closed,
+      },
+      {
+        name: "connect_whoop",
+        description: "Return the WHOOP consent URL for the signed-in user.",
+        inputSchema: { type: "object", additionalProperties: false },
+        annotations: closed,
+      },
+    ], accountTools.filter((tool) => accountToolEnabled(tool.name, flagOn)));
+  }
+
+  function toolSuccess(id, data, modern) {
+    const result = { content: [{ type: "text", text: typeof data === "string" ? data : JSON.stringify(data) }] };
+    if (modern) {
+      result.resultType = "complete";
+      if (typeof data !== "string") result.structuredContent = data;
+    }
+    return json({ jsonrpc: "2.0", id, result });
+  }
+
+  function toolFailure(id, message, modern) {
+    const result = { content: [{ type: "text", text: message }], isError: true };
+    if (modern) result.resultType = "complete";
+    return json({ jsonrpc: "2.0", id, result });
+  }
+
+  async function callAccountTool(userId, body, name, modern) {
+    if (!accountToolEnabled(name, flagOn)) {
+      metric(log, { event: "tool_call", outcome: "error", user_id: userId, tool: name });
+      return { response: toolFailure(body.id, "WHOOP data is unavailable for this connection.", modern), outcome: "error" };
+    }
+    const args = accountArguments(name, body.params?.arguments ?? {});
+    if (args === null) {
+      metric(log, { event: "tool_call", outcome: "error", user_id: userId, tool: name });
+      return { response: rpcError(body.id, -32602, "Invalid tool arguments"), outcome: "error" };
+    }
+    try {
+      let data;
+      if (name === "disconnect_whoop") {
+        const removed = await callRpc(db, "disconnect_whoop", { p_user_id: userId });
+        data = { disconnected: true, removed: removed?.removed === true };
+      } else if (name === "import_health_connect_file") {
+        data = await importHealthConnectFile(db, userId, args.file_json, args.consent, { now: now() });
+      } else if (name === "withdraw_health_connect_import") {
+        data = await withdrawHealthConnectImport(db, userId, args.confirm);
+      } else if (name === "issue_health_connect_ingest_token") {
+        data = await issueIngestToken(db, userId, args.consent, { now: now() });
+      } else {
+        data = await revokeIngestTokens(db, userId, args.confirm);
+      }
+      metric(log, { event: "tool_call", outcome: "ok", user_id: userId, tool: name });
+      return { response: toolSuccess(body.id, data, modern), outcome: "ok" };
+    } catch (error) {
+      metric(log, { event: "tool_call", outcome: "error", user_id: userId, tool: name });
+      return {
+        response: toolFailure(body.id, publicImportError(error) || "WHOOP data is unavailable for this connection.", modern),
+        outcome: "error",
+      };
+    }
   }
 
   async function storeConnection(userId, tokenBody, role) {
@@ -601,6 +730,21 @@ export function createWhoopMcp({
           code_challenge_methods_supported: ["S256"],
           token_endpoint_auth_methods_supported: ["none"],
         }), { route, outcome: "ok" });
+      }
+      if (url.pathname.endsWith("/api/health-connect/webhook")) {
+        const response = await healthConnectWebhook(req, {
+          enabled: flagOn("HEALTH_CONNECT_WEBHOOK_ENABLED"),
+          db,
+        }, { now });
+        const owner = webhookOwner(response);
+        const outcome = response.status === 200 ? "ok"
+          : response.status === 401 ? "unauthenticated"
+          : response.status === 403 ? "denied"
+          : response.status === 429 ? "rate_limited"
+          : response.status === 400 || response.status === 413 ? "invalid"
+          : response.status === 503 ? "unavailable"
+          : "error";
+        return finish(response, { route, outcome, user_id: owner || undefined });
       }
       const me = await user(req);
       if (url.pathname.endsWith("/callback")) {
@@ -739,109 +883,98 @@ export function createWhoopMcp({
       }
       if (url.pathname.endsWith("/mcp")) {
         const body = await req.json().catch(() => ({}));
+        const protocolHeader = req.headers.get("mcp-protocol-version");
+        const protocolEnabled = flagOn("MCP_2026_07_28_ENABLED");
+        const modern = protocolEnabled && protocolHeader === PROTOCOL_2026;
+        if (protocolEnabled && protocolHeader != null && protocolHeader !== PROTOCOL_2026 && !legacyProtocolHeaders.has(protocolHeader)) {
+          return finish(json({ error: "Unsupported MCP protocol version" }, 400), { route, outcome: "error", user_id: userId });
+        }
+        if (modern) {
+          if (req.headers.get("mcp-method") !== body?.method) {
+            return finish(json({ error: "MCP method header mismatch" }, 400), { route, outcome: "error", user_id: userId });
+          }
+          const nameHeader = req.headers.get("mcp-name");
+          if (body?.method === "tools/call") {
+            if (typeof body.params?.name !== "string" || nameHeader !== body.params.name) {
+              return finish(json({ error: "MCP tool header mismatch" }, 400), { route, outcome: "error", user_id: userId });
+            }
+          } else if (nameHeader != null) {
+            return finish(json({ error: "Unexpected MCP tool header" }, 400), { route, outcome: "error", user_id: userId });
+          }
+        }
         if (typeof body.method === "string" && body.method.startsWith("notifications/")) {
           return finish(json({ jsonrpc: "2.0", result: {} }), { route, outcome: "ok", user_id: userId });
         }
         if (body.method === "ping") return finish(json({ jsonrpc: "2.0", id: body.id, result: {} }), { route, outcome: "ok", user_id: userId });
+        if (body.method === "server/discover") {
+          if (!modern) {
+            return finish(json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: "Unsupported MCP method" } }, 400), { route, outcome: "error", user_id: userId });
+          }
+          return finish(json({
+            jsonrpc: "2.0",
+            id: body.id,
+            result: {
+              resultType: "complete",
+              supportedVersions: [PROTOCOL_2026],
+              capabilities: { tools: {} },
+              ttlMs: 0,
+              cacheScope: "private",
+              serverInfo,
+              _meta: { "io.modelcontextprotocol/serverInfo": serverInfo },
+              instructions: fullInstructions,
+            },
+          }), { route, outcome: "ok", user_id: userId });
+        }
         if (body.method === "initialize") {
+          if (modern) {
+            return finish(rpcError(body.id, -32601, "Method not available for stateless MCP"), { route, outcome: "error", user_id: userId });
+          }
           return finish(json({
             jsonrpc: "2.0",
             id: body.id,
             result: {
               protocolVersion: "2025-06-18",
               capabilities: { tools: {} },
-              serverInfo: { name: "whoop-lens", version: "1.0.0" },
+              serverInfo,
               instructions: fullInstructions,
             },
           }), { route, outcome: "ok", user_id: userId });
         }
         if (body.method === "tools/list") {
-          const snapshots = ["get_profile", "get_body_measurements"].map((name) => ({
-            name,
-            description: toolDescriptions[name],
-            inputSchema: snapshotSchema,
-            annotations: readOnly,
-          }));
-          const history = ["get_recovery", "get_sleep", "get_workouts", "get_cycles"].map((name) => ({
-            name,
-            description: toolDescriptions[name],
-            inputSchema: historySchema,
-            annotations: readOnly,
-          }));
-          return finish(json({
-            jsonrpc: "2.0",
-            id: body.id,
-            result: {
-              tools: snapshots.concat(history, [
-                {
-                  name: "get_capabilities",
-                  description: toolDescriptions.get_capabilities,
-                  inputSchema: capabilitySchema,
-                  annotations: closed,
-                },
-                {
-                  name: "get_medical_context",
-                  description: toolDescriptions.get_medical_context,
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      limit: { type: "integer", minimum: 1, maximum: 100 },
-                      offset: { type: "integer", minimum: 0 },
-                    },
-                    additionalProperties: false,
-                  },
-                  annotations: closed,
-                },
-                {
-                  name: "get_health_connect",
-                  description: toolDescriptions.get_health_connect,
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      metric: { type: "string", enum: ["steps_daily", "sleep_session", "heart_rate", "exercise_session"] },
-                      limit: { type: "integer", minimum: 1, maximum: 100 },
-                      offset: { type: "integer", minimum: 0 },
-                    },
-                    additionalProperties: false,
-                  },
-                  annotations: closed,
-                },
-                {
-                  name: "get_samsung_health",
-                  description: "Read Samsung Health records uploaded for the signed-in user. These records are separate from WHOOP. Paginate with offset.",
-                  inputSchema: {
-                    type: "object",
-                    properties: {
-                      metric: { type: "string", enum: ["sleep", "heart_rate", "spo2", "steps", "activity", "exercise", "body_composition", "skin_temperature", "energy_score", "blood_pressure", "profile"] },
-                      limit: { type: "integer", minimum: 1, maximum: 100 },
-                      offset: { type: "integer", minimum: 0 },
-                    },
-                    additionalProperties: false,
-                  },
-                  annotations: closed,
-                },
-                {
-                  name: "connect_whoop",
-                  description: "Return the WHOOP consent URL for the signed-in user.",
-                  inputSchema: { type: "object", additionalProperties: false },
-                  annotations: closed,
-                },
-              ]),
-            },
-          }), { route, outcome: "ok", user_id: userId });
+          const result = { tools: listedTools() };
+          if (modern) {
+            result.resultType = "complete";
+            result.ttlMs = 300000;
+            result.cacheScope = "private";
+          }
+          return finish(json({ jsonrpc: "2.0", id: body.id, result }), { route, outcome: "ok", user_id: userId });
         }
         if (body.method === "tools/call") {
           const name = body.params?.name;
           const tool = toolNames.has(name) ? name : undefined;
+          if (accountTools.some((item) => item.name === name)) {
+            const called = await callAccountTool(me.id, body, name, modern);
+            return finish(called.response, { route, outcome: called.outcome, user_id: userId, tool: name });
+          }
           try {
             if (name === "connect_whoop") {
               const authorization = await whoopAuthorizationUrl(me.id, me.email);
               metric(log, { event: "tool_call", outcome: "ok", user_id: userId, tool: "connect_whoop" });
-              return finish(json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: authorization.url }] } }), { route, outcome: "ok", user_id: userId, tool: "connect_whoop" });
+              const payload = { content: [{ type: "text", text: authorization.url }] };
+              if (modern) {
+                payload.resultType = "complete";
+                payload.structuredContent = { authorization_url: authorization.url };
+              }
+              return finish(json({ jsonrpc: "2.0", id: body.id, result: payload }), { route, outcome: "ok", user_id: userId, tool: "connect_whoop" });
             }
             const result = await callTool(me.id, name, body.params?.arguments ?? {});
             metric(log, { event: "tool_call", outcome: "ok", user_id: userId, tool, pages: result?.pages_fetched });
-            return finish(json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify(result) }] } }), { route, outcome: "ok", user_id: userId, tool });
+            const payload = { content: [{ type: "text", text: JSON.stringify(result) }] };
+            if (modern) {
+              payload.resultType = "complete";
+              payload.structuredContent = result;
+            }
+            return finish(json({ jsonrpc: "2.0", id: body.id, result: payload }), { route, outcome: "ok", user_id: userId, tool });
           } catch (error) {
             if (error instanceof RateLimitError) {
               metric(log, { event: "tool_call", outcome: "rate_limited", user_id: userId, tool });
@@ -891,6 +1024,7 @@ function routeName(url, method) {
   if (path.endsWith("/status")) return "status";
   if (path.endsWith("/connect")) return "connect";
   if (path.endsWith("/waitlist")) return "waitlist";
+  if (path.endsWith("/api/health-connect/webhook")) return "health-connect-webhook";
   if (path.endsWith("/mcp")) return "mcp";
   return "root";
 }

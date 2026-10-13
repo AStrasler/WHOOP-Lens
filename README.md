@@ -41,7 +41,7 @@ WHOOP Stress Monitor history is not in the official WHOOP developer API. There i
 
 ## Existing Supabase connector
 
-The Supabase function stays up. It is the working path for an existing WHOOP connection.
+The Supabase function stays up. It is the working path for an existing WHOOP connection. Disconnect, Health Connect file import, phone ingest tokens, the Health Connect webhook, and MCP `2026-07-28` `server/discover` are in this source and stay off unless the matching function environment variable is exactly `true`. Those variables are `WHOOP_DISCONNECT_ENABLED`, `WEB_HEALTH_IMPORT_ENABLED`, `HEALTH_CONNECT_WEBHOOK_ENABLED`, and `MCP_2026_07_28_ENABLED`. Unset means off. `supabase/migrations/20261013120000_health_connect_consent_and_ingest.sql` is not applied to the live project by this change, and this change does not deploy the function.
 
 - Server URL: `https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/mcp`
 - Setup and consent: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/)
@@ -95,7 +95,7 @@ The Supabase function writes one JSON object per metric through `console.log`. F
 
 The consent and connection UI in `docs/` is the GitHub Pages site: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/). That site signs a person into the existing Supabase connector. This repository does not add a separate account system for that path.
 
-WHOOP requests for the existing connector are handled by the Supabase edge function `whoop-mcp`. Its source is `supabase/functions/whoop-mcp/` (`index.ts` plus `handler.mjs` and `challenge.mjs`). Those files are the bytes that should be deployed. `supabase/whoop-mcp.SOURCE.sha256` is a checksum of them, and `node --test` fails if the files drift from that lock. Supabase processes those requests.
+WHOOP requests for the existing connector are handled by the Supabase edge function `whoop-mcp`. Its source is `supabase/functions/whoop-mcp/` (`index.ts`, `handler.mjs`, `challenge.mjs`, and the other modules in that directory, including the vendored Health Connect parser). Those files are the bytes that should be deployed. `supabase/whoop-mcp.SOURCE.sha256` is a checksum of them, and `node --test` fails if the files drift from that lock. Supabase processes those requests.
 
 WHOOP access and refresh tokens for that connector are encrypted per Supabase user and stored in Supabase. They are not stored only in the browser. The Pages app keeps the Supabase sign-in session in memory for the open tab. Those tokens are not copied to Cloudflare.
 

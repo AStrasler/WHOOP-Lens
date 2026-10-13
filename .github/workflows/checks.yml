@@ -16,5 +16,9 @@ jobs:
           node --check docs/landing.mjs
           node --check supabase/functions/whoop-mcp/challenge.mjs
           node --check supabase/functions/whoop-mcp/handler.mjs
+          node --check supabase/functions/whoop-mcp/store.mjs
+          node --check supabase/functions/whoop-mcp/account-tools.mjs
+          node --check supabase/functions/whoop-mcp/health-import.mjs
+          node --check supabase/functions/whoop-mcp/health-connect-webhook.mjs
           node --experimental-strip-types --check supabase/functions/whoop-mcp/index.ts
           node --test docs/*.test.mjs supabase/functions/tests/*.test.mjs

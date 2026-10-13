@@ -4,6 +4,8 @@ Phone delivery into WHOOP Lens uses the open-source Android app [HC Webhook](htt
 
 This path is in the repository and is not deployed. `HEALTH_CONNECT_WEBHOOK_ENABLED` is `false` in both Wrangler configs. Migration `cloudflare/migrations/0007_health_connect_ingest.sql` is not applied to production D1 `whoop-lens-migration`. Posts succeed only after that migration is applied and the flag is true on the `whoop-lens` Worker.
 
+The Supabase function `whoop-mcp` has the same ingest, also default off. It accepts posts only when `HEALTH_CONNECT_WEBHOOK_ENABLED` is `true` in the function environment and `supabase/migrations/20261013120000_health_connect_consent_and_ingest.sql` has been applied. This repository change does not apply that migration and does not deploy the function. The URL, once both gates are open, is `https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/api/health-connect/webhook`. The consent string, `hct_` token, stored metrics, skip-and-count behavior, and per-user bearer are the same as the Worker. A missing `whoop_members` row stays active, matching the rest of that function; `active = false` still blocks the post.
+
 ## Phone
 
 1. Install the free FOSS build with Obtainium from the GitHub repository. The release asset is `app-foss-release.apk`.

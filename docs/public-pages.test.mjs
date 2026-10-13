@@ -87,7 +87,7 @@ test("the edge function serves the challenge from the environment on GET only", 
 test("every tool keeps readOnlyHint, destructiveHint, and openWorldHint", () => {
   assert.match(source, /const readOnly = \{ readOnlyHint: true, destructiveHint: false, openWorldHint: true \}/);
   assert.match(source, /const closed = \{ readOnlyHint: true, destructiveHint: false, openWorldHint: false \}/);
-  const list = source.slice(source.indexOf('body.method === "tools/list"'), source.indexOf('body.method === "tools/call"'));
+  const list = source.slice(source.indexOf("function listedTools()"), source.indexOf("function toolSuccess"));
   for (const name of ["get_profile", "get_body_measurements", "get_recovery", "get_sleep", "get_workouts", "get_cycles", "get_samsung_health", "get_health_connect", "get_medical_context", "get_capabilities", "connect_whoop"]) {
     assert.match(list, new RegExp(name));
   }
@@ -100,4 +100,9 @@ test("every tool keeps readOnlyHint, destructiveHint, and openWorldHint", () => 
     "annotations: closed",
     "annotations: closed",
   ]);
+  const account = read("../supabase/functions/whoop-mcp/account-tools.mjs");
+  assert.match(account, /readOnlyHint: false, destructiveHint: true, openWorldHint: false/);
+  assert.match(account, /disconnect_whoop/);
+  assert.match(account, /withdraw_health_connect_import/);
+  assert.match(account, /revoke_health_connect_ingest_token/);
 });

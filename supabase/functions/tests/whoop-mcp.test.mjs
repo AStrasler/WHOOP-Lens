@@ -5,217 +5,22 @@ import {
   PUBLIC_SEAT_LIMIT,
   WAITLIST_DESTINATION,
   WHOOP_REDIRECT_URI,
-  createWhoopMcp,
   evaluateSeats,
   linkedEmail,
   metric,
   retryAfterMs,
 } from "../whoop-mcp/handler.mjs";
-
-const userA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-const userB = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-const developer = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-const encKey = "test-only-encryption-key";
-const secretMarkers = [
-  "test-client-secret",
-  "oauth-code-do-not-log",
-  "access-do-not-log",
-  "refresh-do-not-log",
-  "health-payload-marker",
-  "session-do-not-log",
-  "Bearer ",
-  "a@b^c.com",
-  "b@example.com",
-];
-
-function clone(value) {
-  return value === undefined ? value : structuredClone(value);
-}
-
-function createMemoryDb(initial = {}) {
-  const tables = {
-    whoop_connections: clone(initial.whoop_connections ?? []),
-    whoop_oauth_states: clone(initial.whoop_oauth_states ?? []),
-    whoop_members: clone(initial.whoop_members ?? []),
-    whoop_waitlist: clone(initial.whoop_waitlist ?? []),
-    samsung_health_records: clone(initial.samsung_health_records ?? []),
-    health_connect_records: clone(initial.health_connect_records ?? []),
-    medical_context_entries: clone(initial.medical_context_entries ?? []),
-  };
-  let upsertError = null;
-  function from(name) {
-    if (memoryApi.missingTables?.has(name)) {
-      const query = {
-        select() { return query; }, eq() { return query; }, order() { return query; }, range() { return query; },
-        then(resolve, reject) {
-          return Promise.resolve({ data: null, error: { code: "42P01", message: "relation does not exist in schema cache" } }).then(resolve, reject);
-        },
-      };
-      return query;
-    }
-    if (!Object.hasOwn(tables, name)) throw new Error("Unknown table " + name);
-    const filters = [];
-    const orders = [];
-    let range = null;
-    let operation = "select";
-    let payload = null;
-    const query = {
-      select() { return query; },
-      insert(row) { operation = "insert"; payload = row; return query; },
-      update(row) { operation = "update"; payload = row; return query; },
-      upsert(row) { operation = "upsert"; payload = row; return query; },
-      delete() { operation = "delete"; return query; },
-      eq(column, value) { filters.push({ op: "eq", column, value }); return query; },
-      neq(column, value) { filters.push({ op: "neq", column, value }); return query; },
-      order(column, options = {}) { orders.push({ column, ascending: options.ascending !== false }); return query; },
-      range(start, end) { range = [start, end]; return query; },
-      maybeSingle() { return exec(true); },
-      then(resolve, reject) { return exec(false).then(resolve, reject); },
-    };
-    function matches(row) {
-      return filters.every((filter) => filter.op === "eq" ? row[filter.column] === filter.value : row[filter.column] !== filter.value);
-    }
-    function exec(single) {
-      const rows = tables[name];
-      if (operation === "insert") {
-        const copy = clone(payload);
-        rows.push(copy);
-        return Promise.resolve({ data: single ? copy : [copy], error: null });
-      }
-      if (operation === "upsert") {
-        if (upsertError) {
-          const error = upsertError;
-          upsertError = null;
-          return Promise.resolve({ data: null, error });
-        }
-        const copy = clone(payload);
-        const index = rows.findIndex((row) => row.user_id === copy.user_id);
-        if (index === -1) rows.push(copy);
-        else rows[index] = { ...rows[index], ...copy };
-        return Promise.resolve({ data: null, error: null });
-      }
-      if (operation === "update") {
-        for (const row of rows) if (matches(row)) Object.assign(row, clone(payload));
-        return Promise.resolve({ data: null, error: null });
-      }
-      if (operation === "delete") {
-        tables[name] = rows.filter((row) => !matches(row));
-        return Promise.resolve({ data: null, error: null });
-      }
-      let selected = rows.filter(matches);
-      if (orders.length) {
-        selected = selected.slice().sort((left, right) => {
-          for (const order of orders) {
-            if (left[order.column] === right[order.column]) continue;
-            const compared = left[order.column] > right[order.column] ? 1 : -1;
-            return order.ascending ? compared : -compared;
-          }
-          return 0;
-        });
-      }
-      if (range) selected = selected.slice(range[0], range[1] + 1);
-      if (single) return Promise.resolve({ data: selected[0] ? clone(selected[0]) : null, error: null });
-      return Promise.resolve({ data: selected.map(clone), error: null });
-    }
-    return query;
-  }
-  const memoryApi = {
-    from,
-    tables,
-    missingTables: new Set(),
-    failNextUpsert(error) { upsertError = error; },
-  };
-  return memoryApi;
-}
-
-function createHarness(options = {}) {
-  const memory = createMemoryDb(options.rows);
-  const users = new Map([
-    ["session-do-not-log-a", { id: userA, email: "a@b^c.com" }],
-    ["session-do-not-log-b", { id: userB, email: "b@example.com" }],
-    ["session-do-not-log-dev", { id: developer, email: "dev@example.com" }],
-  ]);
-  for (const [token, user] of options.users ?? []) users.set(token, user);
-  const byId = new Map([...users.values()].map((user) => [user.id, user]));
-  const fetches = [];
-  const logs = [];
-  const env = {
-    WHOOP_CLIENT_ID: "test-client-id",
-    WHOOP_CLIENT_SECRET: "test-client-secret",
-    OPENAI_APPS_CHALLENGE: "challenge-token",
-    ...options.env,
-  };
-  let clock = options.now ?? 1_700_000_000_000;
-  const db = {
-    from: memory.from,
-    auth: {
-      async getUser(token) {
-        return { data: { user: users.get(token) ?? null }, error: null };
-      },
-      admin: {
-        async getUserById(id) {
-          return { data: { user: byId.get(id) ?? null }, error: null };
-        },
-      },
-    },
-  };
-  const handle = createWhoopMcp({
-    db,
-    encKey,
-    env: (name) => env[name],
-    fetchImpl: async (url, init) => {
-      fetches.push({ url: String(url), init });
-      return options.fetch(url, init, fetches);
-    },
-    now: () => clock,
-    sleep: async () => { options.sleeps = (options.sleeps ?? 0) + 1; },
-    randomUUID: options.randomUUID ?? (() => "11111111-1111-4111-8111-111111111111"),
-    log: (entry) => logs.push(entry),
-  });
-  return {
-    handle,
-    db,
-    memory,
-    logs,
-    fetches,
-    env,
-    setNow(value) { clock = value; },
-    now: () => clock,
-  };
-}
-
-function request(path, { method = "GET", token, body, search = "" } = {}) {
-  return new Request("https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp" + path + search, {
-    method,
-    headers: {
-      ...(token ? { authorization: "Bearer " + token } : {}),
-      ...(body === undefined ? {} : { "content-type": "application/json" }),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-}
-
-function assertSafe(logs, extra = []) {
-  const text = JSON.stringify(logs);
-  for (const marker of secretMarkers.concat(extra)) assert.equal(text.includes(marker), false, marker);
-}
-
-function tokenFetch(url) {
-  return String(url).includes("/oauth/oauth2/token");
-}
-
-function jsonResponse(body, status = 200, headers = {}) {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
-}
-
-function issuedTokens(label) {
-  return {
-    access_token: "access-do-not-log-" + label,
-    refresh_token: "refresh-do-not-log-" + label,
-    expires_in: 3600,
-    scope: "offline read:profile",
-  };
-}
+import {
+  assertSafe,
+  createHarness,
+  developer,
+  issuedTokens,
+  jsonResponse,
+  request,
+  tokenFetch,
+  userA,
+  userB,
+} from "./harness.mjs";
 
 test("linked email accepts a normal address and a caret in the domain", () => {
   assert.equal(linkedEmail("user@example.com"), "user@example.com");

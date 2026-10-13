@@ -2,6 +2,8 @@
 
 **Status: review only. No production migration, function deployment, user-data import or app rollout authorized by this document.**
 
+`supabase/migrations/20261013120000_health_connect_consent_and_ingest.sql` adds consent and ingest-token tables. It is not applied to the live project by the change that added it. The new Supabase tools and webhook stay off until their environment flags are set to `true` after a separate approval.
+
 ## Implementation chain
 
 - PR #8 provides WHOOP Lens capability/limitation discovery.
