@@ -93,7 +93,7 @@ test('both Workers have all launch gates off and no public route',()=>{
   assert.match(resourceConfig,/"OAUTH_RESOURCE_ENABLED"\s*:\s*"false"/);
   assert.match(resourceConfig,/"binding"\s*:\s*"AUTH_SERVER"/);
   assert.match(resourceConfig,/"service"\s*:\s*"whoop-lens-auth"/);
-  for(const name of ['MCP_ENABLED','WHOOP_READS_ENABLED','MIGRATION_API_ENABLED'])
+  for(const name of ['MCP_ENABLED','WHOOP_READS_ENABLED','MIGRATION_API_ENABLED','WEB_HEALTH_IMPORT_ENABLED'])
     assert.match(resourceConfig,new RegExp('"'+name+'"\\s*:\\s*"false"'));
   assert.match(resource,/activeMembership\(env\.DB,id\)/);
   assert.match(resource,/verifyIdentity:async\(\)=>id/);

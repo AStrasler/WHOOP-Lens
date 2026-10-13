@@ -1,4 +1,6 @@
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
+import {revokeWhoopConnection} from './whoop-oauth.mjs';
+import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
 import {hostInstructions,serverInfo} from './host-instructions.mjs';
 // Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
@@ -137,6 +139,15 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       const content={content:[{type:'text',text:result.authorization_url}]};
       if(modern){content.resultType='complete';content.structuredContent=result;}
       return ok(id,content);
+    }else if(name==='disconnect_whoop'){
+      if(env.WHOOP_OAUTH_ENABLED!=='true')throw Error('Connection disabled');
+      data=await revokeWhoopConnection(db,userId);
+    }else if(name==='import_health_connect_file'){
+      if(env.WEB_HEALTH_IMPORT_ENABLED!=='true')throw Error('Connection disabled');
+      data=await importHealthConnectFile(db,userId,args.file_json,args.consent);
+    }else if(name==='withdraw_health_connect_import'){
+      if(env.WEB_HEALTH_IMPORT_ENABLED!=='true')throw Error('Connection disabled');
+      data=await withdrawHealthConnectImport(db,userId,args.confirm);
     }else if(extraTools.some(t=>t.name===name)){
       data=await readExtraTool(db,userId,name,args);
     }else if(!historyTools.has(name)||!args.auto_page){
@@ -161,8 +172,10 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     const result={content:[{type:"text",text:JSON.stringify(data)}]};
     if(modern){result.resultType="complete";result.structuredContent=data;}
     return ok(id,result);
-  }catch{
+  }catch(error){
     // No details about secrets, token status, providers, account existence or SQL.
-    return toolError(id,"WHOOP data is unavailable for this connection.",modern);
+    // File-import validation messages are safe to show; everything else stays generic.
+    const safe=publicImportError(error);
+    return toolError(id,safe||"WHOOP data is unavailable for this connection.",modern);
   }
 }

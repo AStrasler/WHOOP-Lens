@@ -3,6 +3,7 @@ import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
 import { callWhoop } from "./whoop-api.mjs";
 import { createWhoopAuthorization, acceptWhoopCallback } from "./whoop-oauth.mjs";
 import { handleMcpRpc, validateMcpTransport } from "./mcp.mjs";
+import { healthConnectHttp } from "./health-import.mjs";
 
 function json(data, status=200) {
   return new Response(JSON.stringify(data), {
@@ -63,6 +64,22 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       }catch(error){
         if(error instanceof AccessDenied)return json({error:"Unauthorized"},error.status);
         return json({error:"MCP staging unavailable"},503);
+      }
+    }
+    if(preliminaryUrl.pathname==="/v1/health-connect"||
+       preliminaryUrl.pathname==="/v1/health-connect/import"||
+       preliminaryUrl.pathname==="/v1/health-connect/status"){
+      if(env?.WEB_HEALTH_IMPORT_ENABLED!=="true")
+        return json({error:"Health Connect file import is not activated"},503);
+      if(!env?.DB)return json({error:"Staging unavailable"},503);
+      try{
+        const userId=await verifyIdentity(request,env);
+        if(!await activeMembership(env.DB,userId))
+          return json({error:"Not authorized for WHOOP Lens"},403);
+        return healthConnectHttp(request,env,userId);
+      }catch(error){
+        if(error instanceof AccessDenied)return json({error:"Unauthorized"},error.status);
+        return json({error:"Health Connect import unavailable"},503);
       }
     }
     if (request.method !== "GET")

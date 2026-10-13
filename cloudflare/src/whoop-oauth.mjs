@@ -103,3 +103,11 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
   if(!saved?.success||saved.meta?.changes!==1)throw Error("WHOOP connection save failed");
   return {connected:true,seat_role:role};
 }
+export async function revokeWhoopConnection(db,userId){
+  const id=validateUser(userId);
+  if(!await activeMembership(db,id))throw Error("Membership required");
+  const states=await db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1").bind(id).run();
+  const removed=await db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id).run();
+  if(!states?.success||!removed?.success)throw Error("WHOOP disconnect failed");
+  return {disconnected:true,removed:removed.meta?.changes===1};
+}

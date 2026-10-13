@@ -40,22 +40,24 @@ test("MCP is entirely inert until its third switch is enabled",async()=>{
   });
   assert.equal(response.status,503);
   assert.equal(checked,0);assert.equal(called,0);assert.equal(database.count(),0);
-  for(const key of ["MIGRATION_API_ENABLED","WHOOP_READS_ENABLED","WHOOP_OAUTH_ENABLED","MCP_ENABLED"])
+  for(const key of ["MIGRATION_API_ENABLED","WHOOP_READS_ENABLED","WHOOP_OAUTH_ENABLED","MCP_ENABLED","WEB_HEALTH_IMPORT_ENABLED"])
     assert.match(cfg,new RegExp('"'+key+'"\\s*:\\s*"false"'));
   assert.match(cfg,/"workers_dev"\s*:\s*false/);
   assert.match(cfg,/"preview_urls"\s*:\s*false/);
 });
 
-test("MCP 2026 protocol discovers eleven bounded account tools",async()=>{
+test("MCP 2026 protocol discovers fourteen bounded account tools",async()=>{
   const route=router();
   const result=await route(req(payload("tools/list")),enabled(db()));
   assert.equal(result.status,200);
   const body=await result.json();
   assert.equal(body.result.resultType,"complete");
   assert.equal(body.result.cacheScope,"private");
-  assert.equal(body.result.tools.length,11);
+  assert.equal(body.result.tools.length,14);
   assert.deepEqual(body.result.tools.map(x=>x.name),mcpTools.map(x=>x.name));
-  assert.ok(body.result.tools.every(t=>t.annotations.readOnlyHint===(t.name!=='connect_whoop')&&t.annotations.destructiveHint===false));
+  const writes=new Set(['connect_whoop','disconnect_whoop','import_health_connect_file','withdraw_health_connect_import']);
+  const destructive=new Set(['disconnect_whoop','withdraw_health_connect_import']);
+  assert.ok(body.result.tools.every(t=>t.annotations.readOnlyHint===!writes.has(t.name)&&t.annotations.destructiveHint===destructive.has(t.name)));
   assert.doesNotMatch(JSON.stringify(body.result.tools),/delete_|write_|admin_sql/);
   const discover=await route(req(payload("server/discover")),enabled(db()));
   const discovery=(await discover.json()).result;
@@ -106,7 +108,7 @@ test("Legacy initialization and tools/list continue without exposing arbitrary m
   assert.match(initBody.result.instructions,/label it user-provided/);
   const result=await route(req(payload("tools/list"),{version:legacy}),enabled(db()));
   const list=(await result.json()).result;
-  assert.equal(list.tools.length,11);assert.equal(Object.hasOwn(list,"resultType"),false);
+  assert.equal(list.tools.length,14);assert.equal(Object.hasOwn(list,"resultType"),false);
   const forbidden=await route(req(payload("resources/read"),{version:legacy}),enabled(db()));
   assert.equal((await forbidden.json()).error.code,-32601);
   const notification={jsonrpc:"2.0",method:"notifications/initialized",params:{}};
@@ -126,7 +128,7 @@ test("ChatGPT protocol versions initialize with the same host instructions",asyn
     assert.match(body.result.instructions,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
     const listed=await route(req(payload("tools/list"),{version}),enabled(db()));
     assert.equal(listed.status,200);
-    assert.equal((await listed.json()).result.tools.length,11);
+    assert.equal((await listed.json()).result.tools.length,14);
   }
   const modernInit=await route(req(payload("initialize",1,{protocolVersion:"2026-07-28",capabilities:{},
     clientInfo:{name:"test",version:"1"}})),enabled(db()));

@@ -45,7 +45,7 @@ test('local reads isolate accounts, deserialize JSON and paginate deterministica
   }finally{db.sql.close();}
 });
 test('all added tools reject owner overrides and invalid bounded inputs',()=>{
-  for(const tool of ['get_samsung_health','get_health_connect','get_medical_context','get_capabilities','connect_whoop']){
+  for(const tool of ['get_samsung_health','get_health_connect','get_medical_context','get_capabilities','connect_whoop','disconnect_whoop','import_health_connect_file','withdraw_health_connect_import']){
     assert.equal(extraArguments(tool,{user_id:B}),null);
     assert.equal(extraArguments(tool,{sql:'SELECT *'}),null);
     assert.equal(extraArguments(tool,[]),null);

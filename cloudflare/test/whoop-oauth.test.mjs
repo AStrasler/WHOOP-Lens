@@ -3,7 +3,7 @@ import test from "node:test";
 import { randomBytes } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
-import { createWhoopAuthorization,acceptWhoopCallback } from "../src/whoop-oauth.mjs";
+import { createWhoopAuthorization,acceptWhoopCallback,revokeWhoopConnection } from "../src/whoop-oauth.mjs";
 import { openWhoopToken } from "../src/token-crypto.mjs";
 import { createStagingRouter } from "../src/router.mjs";
 import { d1Prepare } from "./d1-sqlite.mjs";
@@ -161,5 +161,26 @@ test("WHOOP OAuth token exchange rejects redirects without following them",async
       }
     }),/WHOOP token exchange failed/);
     assert.equal(d.sqlite.prepare("SELECT COUNT(*) c FROM whoop_connections WHERE user_id=?").get(A).c,0);
+  }finally{d.close();}
+});
+
+test("disconnect deletes only the caller WHOOP credentials and pending state",async()=>{
+  const d=fixture();try{
+    for(const [id,hash] of [[A,"a".repeat(64)],[B,"b".repeat(64)]]){
+      d.sqlite.prepare("INSERT INTO whoop_connections(user_id,expires_at,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,?,?,?,?,?)")
+        .run(id,"2027-01-01","sealed-access","sealed-refresh","v1","public");
+      d.sqlite.prepare("INSERT INTO whoop_oauth_states(state_hash,user_id,expires_at) VALUES(?,?,?)").run(hash,id,"2027-01-01");
+    }
+    const removed=await revokeWhoopConnection(d,A);
+    assert.deepEqual(removed,{disconnected:true,removed:true});
+    assert.equal(d.sqlite.prepare("SELECT COUNT(*) c FROM whoop_connections WHERE user_id=?").get(A).c,0);
+    assert.equal(d.sqlite.prepare("SELECT COUNT(*) c FROM whoop_oauth_states WHERE user_id=?").get(A).c,0);
+    assert.equal(d.sqlite.prepare("SELECT COUNT(*) c FROM whoop_connections WHERE user_id=?").get(B).c,1);
+    assert.equal(d.sqlite.prepare("SELECT encrypted_refresh_token t FROM whoop_connections WHERE user_id=?").get(B).t,"sealed-refresh");
+    const again=await revokeWhoopConnection(d,A);
+    assert.deepEqual(again,{disconnected:true,removed:false});
+    d.sqlite.prepare("UPDATE whoop_members SET active=0 WHERE user_id=?").run(B);
+    await assert.rejects(revokeWhoopConnection(d,B),/Membership required/);
+    assert.equal(d.sqlite.prepare("SELECT COUNT(*) c FROM whoop_connections WHERE user_id=?").get(B).c,1);
   }finally{d.close();}
 });

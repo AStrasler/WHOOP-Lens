@@ -13,11 +13,22 @@ const definitions=[
   ['get_capabilities','Describe registered tools, account data availability and limitations.',{
     category:{type:'string',enum:categories},limit:{type:'integer',minimum:1,maximum:25},
     offset:{type:'integer',minimum:0,maximum:1000},include_planned:{type:'boolean'}}],
-  ['connect_whoop','Create a short-lived WHOOP consent link for the signed-in account. Requires user completion.',{}]
+  ['connect_whoop','Create a short-lived WHOOP consent link for the signed-in account. Requires user completion.',{}],
+  ['disconnect_whoop','Delete only this account’s stored WHOOP credentials on WHOOP Lens. The WHOOP account itself is unchanged.',{}],
+  ['import_health_connect_file','Store a user-selected WHOOP Lens Health Connect v2 JSON file for the signed-in account. This is a file import, not a live Health Connect sync.',{
+    consent:{type:'string',enum:['store-health-connect-file']},
+    file_json:{type:'string',minLength:2,maxLength:12000}}],
+  ['withdraw_health_connect_import','Delete stored Health Connect file imports for the signed-in account and record consent withdrawal.',{
+    confirm:{type:'string',enum:['delete-my-health-connect-records']}}]
 ];
+const accountWrites=new Set(['connect_whoop','disconnect_whoop','import_health_connect_file','withdraw_health_connect_import']);
 export const extraTools=definitions.map(([name,description,properties])=>({name,description,
   inputSchema:{type:'object',properties,additionalProperties:false},
-  annotations:{readOnlyHint:name!=='connect_whoop',destructiveHint:false,openWorldHint:name==='connect_whoop'}}));
+  annotations:{
+    readOnlyHint:!accountWrites.has(name),
+    destructiveHint:name==='disconnect_whoop'||name==='withdraw_health_connect_import',
+    openWorldHint:name==='connect_whoop'
+  }}));
 export function extraArguments(name,args){
   const tool=extraTools.find(t=>t.name===name);
   if(!tool||!args||typeof args!=='object'||Array.isArray(args))return null;
@@ -29,7 +40,15 @@ export function extraArguments(name,args){
     if(rule.type==='boolean'&&typeof value!=='boolean')return null;
     if(rule.enum&&!rule.enum.includes(value))return null;
   }
-  return name==='connect_whoop'?{}:{limit:25,offset:0,...args};
+  if(name==='connect_whoop'||name==='disconnect_whoop')return {};
+  if(name==='withdraw_health_connect_import')
+    return args.confirm==='delete-my-health-connect-records'?{confirm:args.confirm}:null;
+  if(name==='import_health_connect_file'){
+    if(args.consent!=='store-health-connect-file'||typeof args.file_json!=='string'||
+       args.file_json.length<2||args.file_json.length>12000)return null;
+    return {consent:args.consent,file_json:args.file_json};
+  }
+  return {limit:25,offset:0,...args};
 }
 async function rows(db,sql,args){
   const result=await db.prepare(sql).bind(...args).all();
@@ -60,7 +79,7 @@ export async function readExtraTool(db,userId,name,args){
   const next_offset=data.length>limit?offset+limit:null;
   if(name==='get_medical_context')return {entries:records,next_offset,provenance:'user_approved_medical_context'};
   return {records,next_offset,source:name==='get_samsung_health'?'samsung_health':'health_connect',
-    transport:name==='get_samsung_health'?'samsung_health_data_sdk':'health_connect_companion'};
+    transport:name==='get_samsung_health'?'samsung_health_data_sdk':'web_file_import'};
 }
 async function catalog(db,userId,{category,limit=25,offset=0,include_planned=true}){
   const connected=(await connectionStatus(db,userId)).connected;
@@ -73,11 +92,17 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
   const localTools={'samsung':'get_samsung_health','health-connect':'get_health_connect','medical-context':'get_medical_context'};
   const capabilities=manifest.capabilities.map(item=>{
     let value={...item};
-    if(localTools[item.id])return {...value,category:'optional',delivery:'mcp_tool',
-      tools:[localTools[item.id]],status:available[item.id]?'available':'requires_connection_or_data',
-      provides:'Reads existing authorized records; does not import or sync new data.',
-      limitations:['Records are source-labeled and account-scoped. No automatic phone sync or EHR import.'],
-      availability_reason:available[item.id]?'Authorized records exist.':'No authorized records are present for this account.'};
+    if(localTools[item.id]){
+      const health=item.id==='health-connect';
+      return {...value,category:'optional',delivery:'mcp_tool',
+        name:health?'Health Connect file import':value.name,
+        description:health?'Reads Health Connect v2 JSON stored for this account. This is not a live phone sync.':value.description,
+        tools:[localTools[item.id]],status:available[item.id]?'available':'requires_connection_or_data',
+        provides:health?'Reads a user-selected file import. It does not sync a phone or authorize native Health Connect.':'Reads existing authorized records; does not import or sync new data.',
+        data_requirements:health?['Separate consent and a WHOOP Lens Health Connect v2 JSON file.']:value.data_requirements,
+        limitations:['Records are source-labeled and account-scoped. No automatic phone sync or EHR import.'],
+        availability_reason:available[item.id]?'Authorized records exist.':'No authorized records are present for this account.'};
+    }
     const needsWhoop=item.tools.some(t=>['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles'].includes(t));
     return {...value,status:needsWhoop&&!connected?'requires_connection_or_data':item.status,
       availability_reason:needsWhoop&&!connected?'Connect WHOOP first.':
@@ -86,7 +111,8 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
   }).filter(item=>(!category||item.category===category)&&(include_planned||!['planned','unsupported'].includes(item.status)));
   return {schema_version:manifest.schema_version,registry_version:'cloudflare-1.2',source:'bundled_cloudflare_catalog',
     global_limitations:[...manifest.global_limitations.filter(s=>!s.startsWith('Android Health Connect')),
-      'Local record tools read authorized imports only; automatic imports and sync are not enabled.'],
+      'Local record tools read authorized imports only; automatic imports and sync are not enabled.',
+      'Health Connect data on this server is a user-selected file import, not a live Health Connect synchronization.'],
     total:capabilities.length,next_offset:offset+limit<capabilities.length?offset+limit:null,
     capabilities:capabilities.slice(offset,offset+limit)};
 }
