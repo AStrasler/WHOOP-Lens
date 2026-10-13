@@ -81,12 +81,16 @@ export function makeConsentFlow({
       checkConfig(env);
       const selected=form.getAll('scope');
       if(!allowedSelection(selected,['mcp:read','offline_access']))return oauthError();
-      const approved=await oauth.approveConsent(request,handle,{scope:selected});
-      if(!Array.isArray(approved.request?.scope)||
-         !allowedSelection(selected,approved.request.scope))return oauthError();
+      // Consume without the provider's scope replacement: approveConsent({scope})
+      // overwrites request.scope, which would erase whether offline_access was
+      // offered and let a member add scopes the client never requested.
+      const approved=await oauth.approveConsent(request,handle);
+      const offered=approved.request?.scope;
+      if(!Array.isArray(offered)||!allowedSelection(selected,offered))return oauthError();
+      const offlineOffered=offered.includes('offline_access');
       const verifier=pkceVerifier();
-      const upstream=await oauth.beginUpstream(approved.request,{
-        data:{verifier,grantedScopes:selected},headers:approved.headers
+      const upstream=await oauth.beginUpstream({...approved.request,scope:[...selected]},{
+        data:{verifier,grantedScopes:selected,offlineOffered},headers:approved.headers
       });
       const location=await startUrl({state:upstream.state,verifier,env});
       const headers=new Headers(upstream.headers);
@@ -135,6 +139,7 @@ export function makeConsentFlow({
       const code=url.searchParams.get('code');
       const data=finished.data;
       if(typeof code!=='string'||!data||typeof data.verifier!=='string'||
+         typeof data.offlineOffered!=='boolean'||
          !allowedSelection(data.grantedScopes,finished.request.scope))
         return oauthError(400,cleanup);
       // Subject must be validated by Cloudflare Access and ACTIVE D1 membership.
@@ -143,7 +148,7 @@ export function makeConsentFlow({
       const props={userId};
       // See refresh-grant.mjs. Do not copy this flag onto a declined
       // offline_access selection; that selection must stay without a refresh token.
-      if(!finished.request.scope.includes('offline_access'))props.connectorRefresh=true;
+      if(data.offlineOffered===false)props.connectorRefresh=true;
       const completed=await oauth.completeAuthorization({
         request:finished.request,userId,scope:data.grantedScopes,
         metadata:{},props

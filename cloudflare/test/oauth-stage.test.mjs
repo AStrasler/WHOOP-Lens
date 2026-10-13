@@ -33,7 +33,8 @@ test('consent + OAuth issuer are disabled until independently approved',async()=
   assert.match(consent,/oauth\.beginConsent\(original\)/);
   assert.match(consent,/oauth\.approveConsent\(request,handle/);
   assert.match(consent,/oauth\.denyConsent\(request,handle\)/);
-  assert.match(consent,/oauth\.beginUpstream\(approved\.request/);
+  assert.match(consent,/oauth\.beginUpstream\(\{\.\.\.approved\.request,scope:\[\.\.\.selected\]\}/);
+  assert.match(consent,/offlineOffered===false\)props\.connectorRefresh=true/);
   assert.match(consent,/oauth\.finishUpstream\(request\)/);
   assert.match(consent,/oauth\.completeAuthorization/);
   assert.match(consent,/connectorRefresh/);

@@ -42,14 +42,16 @@ function stub(scope=['mcp:read','offline_access']){
       scope:request.scope,redirectIsLoopback:false};},
     async beginConsent(){calls.begin++;return {handle,headers:new Headers({
       'set-cookie':'__Host-oauth-consent=private; Secure; HttpOnly; SameSite=Lax'})};},
-    async approveConsent(_,h,{scope}){
-      assert.equal(h,handle);assert.deepEqual(scope,['mcp:read']);
+    async approveConsent(_,h,options={}){
+      // The real provider replaces request.scope when options.scope is given.
+      assert.equal(h,handle);assert.equal(options.scope,undefined);
       calls.approve++;return {request,headers:new Headers({'set-cookie':'__Host-oauth-consent=; Max-Age=0'})};
     },
     async denyConsent(_,h){assert.equal(h,handle);calls.deny++;
       return {headers:new Headers({location:'https://chatgpt.com/denied'})};},
     async beginUpstream(r,{data,headers}){
-      assert.equal(r,request);assert.deepEqual(data.grantedScopes,['mcp:read']);
+      assert.deepEqual(r.scope,['mcp:read']);assert.deepEqual(data.grantedScopes,['mcp:read']);
+      assert.equal(data.offlineOffered,request.scope.includes('offline_access'));
       assert.match(data.verifier,/^[A-Za-z0-9_-]{43,128}$/);
       assert.ok(headers);
       calls.upstream++;calls.data=data;
@@ -59,10 +61,10 @@ function stub(scope=['mcp:read','offline_access']){
       assert.match(requestForCallback.headers.get('cookie')||'',/__Host-oauth-upstream=private/);
       calls.finish++;
       if(calls.finish>1)throw Error('state replay');
-      return {request,data:calls.data,headers:new Headers({'set-cookie':'__Host-oauth-upstream=; Max-Age=0'})};
+      return {request:{...request,scope:calls.data.grantedScopes},data:calls.data,headers:new Headers({'set-cookie':'__Host-oauth-upstream=; Max-Age=0'})};
     },
     async completeAuthorization({request:r,userId,scope:granted,props}){
-      assert.equal(r,request);assert.equal(userId,A);assert.deepEqual(granted,['mcp:read']);
+      assert.deepEqual(r.scope,['mcp:read']);assert.equal(userId,A);assert.deepEqual(granted,['mcp:read']);
       const expected={userId:A};
       if(!request.scope.includes('offline_access'))expected.connectorRefresh=true;
       assert.deepEqual(props,expected);calls.complete++;

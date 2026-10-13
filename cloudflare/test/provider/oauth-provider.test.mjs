@@ -229,3 +229,10 @@ test('resource routes only the WHOOP callback outside MCP bearer validation',asy
 });
 
 function makeConsentFlow(options){return baseConsentFlow({checkConfig:checkUpstreamConfig,startUrl:upstreamAuthorizationUrl,verifyIdentity:verifyUpstreamCode,...options});}
+test('member cannot add offline_access that the client never requested',async()=>{
+  const f=await fixture();try{
+    await assert.rejects(f.start(true,'mcp:read'));
+    assert.equal(f.http.length,0);
+    assert.equal([...f.kv.records.keys()].some(k=>k.startsWith('grant:')),false);
+  }finally{f.db.close();}
+});
