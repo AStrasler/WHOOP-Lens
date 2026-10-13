@@ -525,6 +525,16 @@ test("dates do not authorize stray digits and hedged advice is rejected",()=>{
   const nine=buildSummaryFacts({records:[recovery(9,"2026-10-04")]},"get_recovery");
   assert.equal(outputAcceptable("The recovery score is nine on 2026-10-04.",nine.stats),true);
   assert.equal(outputAcceptable("The recovery score dipped to nine points on 2026-10-04.",nine.stats),true);
+  const recorded=buildSummaryFacts({records:[
+    recovery(66,"2026-10-01"),recovery(66,"2026-10-02"),recovery(66,"2026-10-03"),
+    recovery(66,"2026-10-04"),recovery(66,"2026-10-05")
+  ]},"get_recovery");
+  assert.equal(recorded.stats.observed_days,5);
+  assert.equal(recorded.stats.metrics["score.recovery_score"].latest,66);
+  assert.equal(outputAcceptable("The recovery score of 66 was recorded.",recorded.stats),true);
+  assert.equal(outputAcceptable("These measurements were recorded over 5 observed days.",recorded.stats),true);
+  assert.equal(outputAcceptable("You should see a doctor about the recorded recovery score of 66.",recorded.stats),false);
+  assert.equal(outputAcceptable("The recorded recovery score of 66 suggests a deficiency.",recorded.stats),false);
   const trend=[];
   for(let day=1;day<=25;day++){
     const iso=`2026-09-${String(day).padStart(2,"0")}`;

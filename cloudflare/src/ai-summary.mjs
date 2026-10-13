@@ -55,7 +55,7 @@ const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
   "source sources label per across during no not only also than point points "+
   "ranged averaged rose fell increased decreased reduced stayed peaked lowest highest "+
   "steady steadily compared climbed over start end up down higher lower dipped near "+
-  "while then same remained measured about around above below baseline typical followed").split(" "));
+  "while then same remained measured recorded logged tracked about around above below baseline typical followed").split(" "));
 const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps respiratory "+
   "spo spo2 skin temperature performance score bpm").split(" "));
 const VERBS=new Set(("is are was were be been has have had returned summarize summarized "+
