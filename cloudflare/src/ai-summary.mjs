@@ -5,14 +5,14 @@ import {reconcileQuota,reserveQuota,utcDay} from "./ai-quota.mjs";
 export const summaryTools=new Set([
   "get_body_measurements","get_recovery","get_sleep","get_workouts","get_cycles","get_health_connect"
 ]);
-export const DEFAULT_MODEL="@cf/meta/llama-3.1-8b-instruct-fp8-fast";
-// Neurons per million tokens. Pricing page checked 2026-10-13.
+export const DEFAULT_MODEL="@cf/google/gemma-4-26b-a4b-it";
+// Neurons per million tokens from the Workers AI pricing table, checked 2026-10-13.
+// gemma-4-26b-a4b-it is 9091 / 27273. glm-4.7-flash is 5500 / 36400.
 const MODEL_RATES=Object.freeze({
-  "@cf/meta/llama-3.1-8b-instruct-fp8-fast":{in:4119,out:34868},
   "@cf/google/gemma-4-26b-a4b-it":{in:9091,out:27273},
   "@cf/zai-org/glm-4.7-flash":{in:5500,out:36400}
 });
-const MAX_OUTPUT_TOKENS=180;
+const MAX_OUTPUT_TOKENS=600;
 const TIMEOUT_MS=3000;
 // Chat-template tokens are not in the message text. This margin is part of the
 // input cap, and the reservation uses that whole cap.
@@ -55,7 +55,7 @@ const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
   "source sources label per across during no not only also than point points "+
   "ranged averaged rose fell increased decreased reduced stayed peaked lowest highest "+
   "steady steadily compared climbed over start end up down higher lower dipped near "+
-  "while then same remained measured about around above below baseline typical followed").split(" "));
+  "while then same remained measured recorded logged tracked about around above below baseline typical followed").split(" "));
 const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps respiratory "+
   "spo spo2 skin temperature performance score bpm").split(" "));
 const VERBS=new Set(("is are was were be been has have had returned summarize summarized "+
@@ -812,8 +812,23 @@ function timeoutMs(env){
   const value=Number(raw);
   return value>=50&&value<=TIMEOUT_MS?value:TIMEOUT_MS;
 }
+function visibleContent(value){
+  if(typeof value!=="string"||!value.trim())return null;
+  return value;
+}
+function choiceText(result){
+  const choices=Array.isArray(result?.choices)?result.choices
+    :Array.isArray(result?.result?.choices)?result.result.choices
+    :null;
+  if(!choices)return undefined;
+  // OpenAI-style answers live in message.content. reasoning and
+  // reasoning_content are hidden chain-of-thought and are never returned.
+  return visibleContent(choices[0]?.message?.content);
+}
 function modelText(result){
   if(typeof result==="string")return result;
+  const choice=choiceText(result);
+  if(choice!==undefined)return choice;
   if(typeof result?.response==="string")return result.response;
   if(typeof result?.result==="string")return result.result;
   if(typeof result?.result?.response==="string")return result.result.response;
@@ -836,7 +851,10 @@ async function runOnce(ai,model,payload,ms){
         {role:"system",content:SYSTEM_PROMPT},
         {role:"user",content:JSON.stringify(payload)}
       ],
-      max_tokens:MAX_OUTPUT_TOKENS
+      max_tokens:MAX_OUTPUT_TOKENS,
+      // Both model schemas default enable_thinking to true. Leaving it on
+      // spends the completion budget on hidden reasoning and returns no answer.
+      chat_template_kwargs:{enable_thinking:false}
     }));
     const timeout=new Promise((_,reject)=>{
       timer=setTimeout(()=>reject(Error("summary-timeout")),ms);
