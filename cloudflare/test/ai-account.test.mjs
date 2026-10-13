@@ -400,6 +400,164 @@ test("a last call hours ago stays fresh, and a stale or failed fetch uses the te
   }finally{db.close();}
 });
 
+test("analytics failure logs name the stage and never include the token",async()=>{
+  const db=openDb();
+  const savedFetch=globalThis.fetch;
+  const methods=["log","info","warn","error","debug"];
+  const original={};
+  function capture(fn){
+    const lines=[];
+    for(const method of methods){
+      original[method]=console[method];
+      console[method]=(...args)=>lines.push({method,text:args.map(String).join(" ")});
+    }
+    return Promise.resolve().then(fn).finally(()=>{
+      for(const method of methods)console[method]=original[method];
+    }).then(result=>({result,lines}));
+  }
+  function assertSecretFree(lines){
+    const text=JSON.stringify(lines);
+    assert.equal(text.includes(TOKEN),false);
+    assert.equal(text.includes("header-sentinel"),false);
+    assert.equal(text.includes("path-sentinel"),false);
+    assert.equal(text.includes("extension-sentinel"),false);
+    assert.equal(text.includes("location-sentinel"),false);
+  }
+  function baseEnv(extra={}){
+    return {
+      [ANALYTICS_ACCOUNT_ID]:ACCOUNT,
+      [ANALYTICS_TOKEN_SECRET]:TOKEN,
+      ...extra
+    };
+  }
+  async function run(env){
+    db.sqlite.prepare("DELETE FROM ai_account_snapshot").run();
+    const captured=await capture(()=>loadAccountBudget(db,env,{day:DAY,now:NOW}));
+    assertSecretFree(captured.lines);
+    return captured;
+  }
+  try{
+    const missing=await run({});
+    assert.equal(missing.result.ok,false);
+    assert.deepEqual(missing.lines,[{method:"log",text:JSON.stringify({stage:"not_configured"})}]);
+    const badAccount=await run({
+      [ANALYTICS_ACCOUNT_ID]:"not-an-account",
+      [ANALYTICS_TOKEN_SECRET]:TOKEN
+    });
+    assert.deepEqual(badAccount.lines,[{method:"log",text:JSON.stringify({stage:"not_configured"})}]);
+    globalThis.fetch=undefined;
+    const noFetch=await run(baseEnv({AI_ANALYTICS_FETCH:"not-a-function"}));
+    assert.deepEqual(noFetch.lines,[{method:"log",text:JSON.stringify({stage:"not_configured"})}]);
+    globalThis.fetch=savedFetch;
+    const thrown=await run(baseEnv({
+      AI_ANALYTICS_FETCH:async()=>{
+        throw new Error("network "+TOKEN+" Bearer "+TOKEN);
+      }
+    }));
+    assert.deepEqual(thrown.lines,[{method:"log",text:JSON.stringify({
+      stage:"fetch_throw",name:"Error",message:"network [redacted] Bearer [redacted]"
+    })}]);
+    const http=await run(baseEnv({
+      AI_ANALYTICS_FETCH:async()=>({
+        ok:false,
+        status:403,
+        headers:{authorization:"Bearer "+TOKEN,"x-trace":"header-sentinel",location:"https://example.test/location-sentinel"},
+        async json(){
+          return {errors:[{
+            code:9109,
+            message:"auth failed "+TOKEN,
+            path:["path-sentinel"],
+            headers:{authorization:"Bearer "+TOKEN},
+            extensions:{detail:"extension-sentinel"}
+          }]};
+        }
+      })
+    }));
+    const httpLine=JSON.parse(http.lines[0].text);
+    assert.equal(http.lines.length,1);
+    assert.equal(http.lines[0].method,"log");
+    assert.deepEqual(httpLine,{
+      stage:"http_status",
+      status:403,
+      errors:[{code:9109,message:"auth failed [redacted]"}]
+    });
+    assert.deepEqual(Object.keys(httpLine.errors[0]).sort(),["code","message"]);
+    const graphql=await run(baseEnv({
+      AI_ANALYTICS_FETCH:async()=>({
+        ok:true,
+        status:200,
+        headers:{authorization:"Bearer "+TOKEN,"x-trace":"header-sentinel"},
+        async json(){
+          return {errors:[{
+            message:"unknown field "+TOKEN,
+            path:["path-sentinel"],
+            locations:[{line:4,column:9}],
+            extensions:{code:"UNKNOWN_FIELD",detail:"extension-sentinel",token:TOKEN}
+          }]};
+        }
+      })
+    }));
+    const graphqlLine=JSON.parse(graphql.lines[0].text);
+    assert.deepEqual(graphql.lines,[{method:"log",text:graphql.lines[0].text}]);
+    assert.deepEqual(graphqlLine,{
+      stage:"graphql_errors",
+      status:200,
+      errors:[{code:"UNKNOWN_FIELD",message:"unknown field [redacted]"}]
+    });
+    const shaped=await run(baseEnv({
+      AI_ANALYTICS_FETCH:async()=>({
+        ok:true,
+        status:200,
+        headers:{authorization:"Bearer "+TOKEN},
+        async json(){
+          return {data:{viewer:{accounts:[{aiInferenceAdaptiveGroups:[{sum:{}}]}]}}};
+        }
+      })
+    }));
+    assert.deepEqual(shaped.lines,[{method:"log",text:JSON.stringify({stage:"bad_shape",status:200})}]);
+    const badJson=await run(baseEnv({
+      AI_ANALYTICS_FETCH:async()=>({
+        ok:true,
+        status:200,
+        headers:{authorization:"Bearer "+TOKEN,"x-trace":"header-sentinel"},
+        async json(){throw new Error("bad json "+TOKEN);}
+      })
+    }));
+    assert.deepEqual(badJson.lines,[{method:"log",text:JSON.stringify({
+      stage:"fetch_throw",status:200,name:"Error",message:"bad json [redacted]"
+    })}]);
+    const redirect=await run(baseEnv({
+      AI_ANALYTICS_FETCH:async()=>({
+        ok:false,
+        status:302,
+        headers:{location:"https://example.test/location-sentinel/"+TOKEN,authorization:"Bearer "+TOKEN}
+      })
+    }));
+    assert.deepEqual(redirect.lines,[{method:"log",text:JSON.stringify({stage:"http_status",status:302})}]);
+    const success=await run(baseEnv({
+      AI_ANALYTICS_FETCH:async()=>({
+        ok:true,
+        status:200,
+        headers:{authorization:"Bearer "+TOKEN,"x-trace":"header-sentinel"},
+        async json(){
+          return {data:{viewer:{accounts:[{
+            aiInferenceAdaptiveGroups:[{sum:{totalNeurons:100.2}},{sum:{totalNeurons:25.1}}]
+          }]}}};
+        }
+      })
+    }));
+    assert.equal(success.result.ok,true);
+    assert.equal(success.result.neurons,126);
+    assert.deepEqual(success.lines,[{method:"debug",text:JSON.stringify({groups:2})}]);
+    assert.equal(success.lines[0].text.includes("100.2"),false);
+    assert.equal(success.lines[0].text.includes("126"),false);
+  }finally{
+    globalThis.fetch=savedFetch;
+    for(const method of methods)if(original[method])console[method]=original[method];
+    db.close();
+  }
+});
+
 test("parallel account reservations stop at the shared room",async()=>{
   const db=openDb();
   try{
