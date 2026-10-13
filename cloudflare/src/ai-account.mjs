@@ -27,7 +27,7 @@ const NEURON_QUERY=`query AccountNeurons($accountTag: String!, $start: Time!, $e
         orderBy: [datetime_DESC]
       ) {
         dimensions { datetime }
-        sum { neurons }
+        sum { totalNeurons }
       }
     }
   }
@@ -94,7 +94,7 @@ export function analyticsSample(body){
     const groups=account?.aiInferenceAdaptiveGroups;
     if(!Array.isArray(groups))return null;
     for(const group of groups){
-      const neurons=group?.sum?.neurons;
+      const neurons=group?.sum?.totalNeurons;
       if(typeof neurons!=="number"||!Number.isFinite(neurons)||neurons<0)return null;
       total+=neurons;
       if(!Number.isFinite(total))return null;
