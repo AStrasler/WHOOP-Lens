@@ -1,5 +1,6 @@
 // Optional evidence-grounded summary. Off unless AI_SUMMARY_ENABLED is exactly "true".
 // Stats are computed here. The model sees aggregates and selected numbers only.
+import {loadAccountBudget} from "./ai-account.mjs";
 import {reconcileQuota,reserveQuota,utcDay} from "./ai-quota.mjs";
 export const summaryTools=new Set([
   "get_body_measurements","get_recovery","get_sleep","get_workouts","get_cycles","get_health_connect"
@@ -502,7 +503,8 @@ export async function attachSummary(data,ctx){
   try{
     if(!data||typeof data!=="object"||Array.isArray(data))return data;
     const facts=buildSummaryFacts(data,ctx.tool);
-    const generatedAt=new Date(typeof ctx.now==="number"?ctx.now:Date.now()).toISOString();
+    const now=typeof ctx.now==="number"?ctx.now:Date.now();
+    const generatedAt=new Date(now).toISOString();
     const day=utcDay(Date.parse(generatedAt));
     const fallback={...data,summary:templateSummary(facts,generatedAt)};
     if(!Object.keys(facts.stats.metrics).length)return fallback;
@@ -516,7 +518,12 @@ export async function attachSummary(data,ctx){
     if(!ai||typeof ai.run!=="function")return fallback;
     const estimate=reservationEstimate(model);
     if(!Number.isSafeInteger(estimate)||estimate<1)return fallback;
-    const reserved=await reserveQuota(ctx.db,{userId:ctx.userId,day,estimate});
+    const budget=await loadAccountBudget(ctx.db,ctx.env,{day,now});
+    if(!budget.ok)return fallback;
+    const reserved=await reserveQuota(ctx.db,{
+      userId:ctx.userId,day,estimate,
+      snapshotLocal:budget.snapshotLocal,accountCap:budget.accountCap
+    });
     if(!reserved.ok)return fallback;
     let actual=null,text=null;
     try{

@@ -27,10 +27,20 @@ const pageA={records:[
     user_id:A,note:injection}
 ],next_token:null};
 const pageB={records:[recovery(17,"2026-10-02")],next_token:null};
+const ACCOUNT_ID="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 function openDb(){
   const sqlite=new DatabaseSync(":memory:");
   sqlite.exec(readFileSync(new URL("../migrations/0009_ai_usage.sql",import.meta.url),"utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0010_ai_account_snapshot.sql",import.meta.url),"utf8"));
   return {sqlite,...d1Database(sqlite),close(){sqlite.close();}};
+}
+function withAnalytics(env={},neurons=0){
+  return {
+    AI_ANALYTICS_ACCOUNT_ID:ACCOUNT_ID,
+    AI_ACCOUNT_ANALYTICS_TOKEN:"synthetic-analytics-token",
+    AI_ANALYTICS_QUERY:async()=>({neurons}),
+    ...env
+  };
 }
 function quiet(fn){
   const methods=["log","info","warn","error","debug"];
@@ -65,7 +75,10 @@ test("migration 0009 stores only daily counters",()=>{
 
 test("flag off keeps read responses byte-identical and does not touch quota",async()=>{
   const upstream={records:[{score:{recovery_score:40}}],next_token:null};
-  let calls=0;
+  let calls=0,analytics=0;
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=(...args)=>{analytics++;return originalFetch(...args);};
+  try{
   const whoopRequest=async()=>{calls++;return upstream;};
   const db={prepare(){throw Error("quota storage must stay unused");}};
   const message=rpc("get_recovery",{limit:10});
@@ -87,6 +100,7 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
   const rejected=await call({AI_SUMMARY_ENABLED:"false"},rpc("get_recovery",{limit:10,summary:true}),whoopRequest,db);
   assert.deepEqual(rejected,{jsonrpc:"2.0",id:1,error:{code:-32602,message:"Invalid tool arguments"}});
   assert.equal(calls,5);
+  assert.equal(analytics,0);
   const configs=[
     ["../wrangler.jsonc",true],
     ["../oauth/resource/wrangler.jsonc",true],
@@ -96,18 +110,20 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
     const text=readFileSync(new URL(path,import.meta.url),"utf8");
     assert.match(text,/"AI_SUMMARY_ENABLED"\s*:\s*"false"/);
     if(binding)assert.match(text,/"ai"\s*:\s*\{\s*"binding"\s*:\s*"AI"\s*\}/);
+    assert.doesNotMatch(text,/AI_ACCOUNT_ANALYTICS_TOKEN|AI_ANALYTICS_ACCOUNT_ID|synthetic-analytics-token/);
   }
+  }finally{globalThis.fetch=originalFetch;}
 });
 
 test("summary is additive, isolated, and the model never receives record text",async()=>{
   let seen=null,calls=0;
-  const env={AI_SUMMARY_ENABLED:"true",AI:{
+  const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{
     async run(model,input){
       calls++;seen={model,input};
       return {response:"There are 2 records from 2026-10-01 to 2026-10-03. Recovery score mean is 50 and the latest value is 60. The missing-date count is 1.",
         usage:{prompt_tokens:100,completion_tokens:20}};
     }
-  }};
+  }});
   const db=openDb();
   try{
     const {result:body,lines}=await quiet(()=>handleMcpRpc(rpc("get_recovery",{limit:10,summary:true}),{
@@ -168,10 +184,10 @@ test("invented numbers and advice phrases fall back to the template",async()=>{
       "You should see a doctor about these two records."
     ]){
       let calls=0;
-      const env={AI_SUMMARY_ENABLED:"true",AI:{async run(){
+      const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(){
         calls++;
         return {response,usage:{prompt_tokens:80,completion_tokens:20}};
-      }}};
+      }}});
       const body=await handleMcpRpc(rpc("get_recovery",{summary:true}),{
         db,userId:A,env,whoopRequest:async()=>pageA
       },modern);
@@ -190,11 +206,11 @@ test("prompt injection in record text is not followed",async()=>{
   const db=openDb();
   try{
     let prompt="";
-    const env={AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
+    const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
       prompt=input.messages[1].content;
       return {response:injection+" You should see a doctor. The score is 99999.",
         usage:{prompt_tokens:40,completion_tokens:30}};
-    }}};
+    }}});
     const body=await handleMcpRpc(rpc("get_recovery",{summary:true}),{
       db,userId:A,env,whoopRequest:async()=>pageA
     },modern);
@@ -231,7 +247,7 @@ test("quota denial and timeout use the template and do not retry",async()=>{
     db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES('global',?,100,7500)").run(day);
     let calls=0;
     const denied=await handleMcpRpc(rpc("get_recovery",{summary:true}),{
-      db,userId:A,env:{AI_SUMMARY_ENABLED:"true",AI:{async run(){calls++;return {response:"unused"};}}},
+      db,userId:A,env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(){calls++;return {response:"unused"};}}}),
       whoopRequest:async()=>pageA
     },modern);
     assert.equal(calls,0);
@@ -241,9 +257,9 @@ test("quota denial and timeout use the template and do not retry",async()=>{
     db.sqlite.prepare("UPDATE ai_usage SET used=0 WHERE scope=?").run(userScope(A));
     const started=Date.now();
     const timed=await handleMcpRpc(rpc("get_sleep",{summary:true}),{
-      db,userId:A,env:{AI_SUMMARY_ENABLED:"true",AI_SUMMARY_TIMEOUT_MS:"80",AI:{
+      db,userId:A,env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI_SUMMARY_TIMEOUT_MS:"80",AI:{
         async run(){calls++;return new Promise(()=>{});}
-      }},
+      }}),
       whoopRequest:async()=>pageA
     },modern);
     assert.ok(Date.now()-started<2000);
@@ -265,13 +281,13 @@ test("successful usage is reconciled and an unknown model is not called",async()
   const db=openDb();
   try{
     const day=new Date().toISOString().slice(0,10);
-    const env={AI_SUMMARY_ENABLED:"true",AI_SUMMARY_MODEL:"@cf/google/gemma-4-26b-a4b-it",AI:{
+    const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI_SUMMARY_MODEL:"@cf/google/gemma-4-26b-a4b-it",AI:{
       async run(model){
         assert.equal(model,"@cf/google/gemma-4-26b-a4b-it");
         return {response:"There are 2 records from 2026-10-01 to 2026-10-03. The latest recovery score is 60 and the mean is 50. The missing-date count is 1.",
           usage:{prompt_tokens:100,completion_tokens:20}};
       }
-    }};
+    }});
     const body=await handleMcpRpc(rpc("get_recovery",{summary:true}),{
       db,userId:A,env,whoopRequest:async()=>pageA
     },modern);
@@ -489,12 +505,12 @@ test("summaries use only WHOOP and Health Connect allowlisted fields",async()=>{
     let prompt="";
     const summarized=await attachSummary(hidden,{
       db,userId:A,tool:"get_recovery",
-      env:{AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
         prompt=input.messages[1].content;
         assert.equal(input.max_tokens,MAX_OUTPUT_TOKENS);
         return {response:"The recovery score was 52 on 2026-09-01.",
           usage:{prompt_tokens:40,completion_tokens:12}};
-      }}}
+      }}})
     });
     assert.deepEqual(Object.keys(summarized.summary.stats.metrics),["score.recovery_score","score.resting_heart_rate"]);
     assert.doesNotMatch(prompt,/secret_instruction|custom_metric|Ignore previous|99999/);
@@ -520,11 +536,11 @@ test("the reserved input cap covers the call and over-cap usage is kept",async()
   const db=openDb();
   try{
     let request=null;
-    const env={AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
+    const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
       request=input;
       return {response:"There are 26 records from 2026-01-01 to 2026-09-15. The latest recovery score is 70.",
         usage:{prompt_tokens:100,completion_tokens:20}};
-    }}};
+    }}});
     const body=await handleMcpRpc(rpc("get_recovery",{summary:true}),{
       db,userId:A,env,whoopRequest:async()=>({records,next_token:null})
     },modern);

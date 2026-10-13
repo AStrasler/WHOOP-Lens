@@ -13,6 +13,24 @@ WHERE day = ?2
        WHERE day = ?2 AND scope IN (?3, 'global')
          AND used + ?1 <= cap) = 2
 RETURNING scope, used`;
+// ?4 is global used at the analytics snapshot. ?5 is 10000 - margin - analytics + that snapshot.
+// Usage already inside the snapshot is not added again. Later reservations still shrink the room.
+// A global counter below the snapshot does not reopen room until analytics agrees.
+const RESERVE_ACCOUNT=`UPDATE ai_usage
+SET used = used + ?1
+WHERE day = ?2
+  AND scope IN (?3, 'global')
+  AND (SELECT COUNT(*) FROM ai_usage
+       WHERE day = ?2 AND scope IN (?3, 'global')
+         AND used + ?1 <= cap) = 2
+  AND (
+    SELECT CASE
+      WHEN used > ?4 THEN used + ?1
+      ELSE ?4 + ?1
+    END
+    FROM ai_usage WHERE day = ?2 AND scope = 'global'
+  ) <= ?5
+RETURNING scope, used`;
 const REFUND_BOTH=`UPDATE ai_usage
 SET used = used - ?1
 WHERE day = ?2
@@ -74,16 +92,27 @@ async function insertCounter(db,scope,day,cap){
   const result=await db.prepare(INSERT).bind(scope,day,cap).run();
   if(!result||result.success===false)throw Error("quota");
 }
-export async function reserveQuota(db,{userId,day,estimate}){
+function accountPredicate(snapshotLocal,accountCap){
+  if(snapshotLocal===undefined&&accountCap===undefined)return null;
+  if(!Number.isSafeInteger(snapshotLocal)||snapshotLocal<0)return false;
+  if(!Number.isSafeInteger(accountCap))return false;
+  return {snapshotLocal,accountCap};
+}
+export async function reserveQuota(db,{userId,day,estimate,snapshotLocal,accountCap}={}){
   const scope=userScope(userId);
   try{
     if(!db||typeof db.prepare!=="function")return {ok:false};
     if(!validUser(userId)||!validDay(day)||!validEstimate(estimate))return {ok:false};
+    const account=accountPredicate(snapshotLocal,accountCap);
+    if(account===false)return {ok:false};
     await insertCounter(db,scope,day,USER_CAP);
     await insertCounter(db,GLOBAL_SCOPE,day,GLOBAL_CAP);
     let update;
-    try{update=await readUpdate(db,RESERVE,[estimate,day,scope]);}
-    catch{return {ok:false};}
+    try{
+      update=account
+        ?await readUpdate(db,RESERVE_ACCOUNT,[estimate,day,scope,account.snapshotLocal,account.accountCap])
+        :await readUpdate(db,RESERVE,[estimate,day,scope]);
+    }catch{return {ok:false};}
     if(accepted(update,scope))return {ok:true,estimate,scope,day};
     await undo(db,{day,estimate,scope,rows:update.rows,changes:update.changes});
     return {ok:false};
