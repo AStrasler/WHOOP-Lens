@@ -166,7 +166,7 @@ async function queryNeurons(env,{accountId,token,start,end}){
   try{
     const response=await fetchImpl(ANALYTICS_URL,{
       method:"POST",
-      redirect:"error",
+      redirect:"manual",
       signal:controller.signal,
       headers:{
         "content-type":"application/json",

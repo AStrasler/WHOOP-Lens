@@ -276,7 +276,7 @@ test("the GraphQL analytics query sums neurons and fail closed on a bad response
     assert.equal(calls,1);
     assert.equal(seen.url,"https://api.cloudflare.com/client/v4/graphql");
     assert.equal(seen.init.method,"POST");
-    assert.equal(seen.init.redirect,"error");
+    assert.equal(seen.init.redirect,"manual");
     assert.equal(seen.init.headers.authorization,"Bearer "+TOKEN);
     const body=JSON.parse(seen.init.body);
     assert.match(body.query,/aiInferenceAdaptiveGroups/);

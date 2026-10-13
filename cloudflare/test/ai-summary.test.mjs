@@ -211,6 +211,7 @@ test("invented numbers and advice phrases fall back to the template",async()=>{
       const summary=summaryOf(body);
       assert.equal(calls,1);
       assert.equal(summary.status,"template");
+      assert.equal(summary.fallback_reason,"filter");
       assert.equal(summary.model,null);
       assert.doesNotMatch(summary.text,/99999|see a doctor|diagnos/i);
       assert.equal(summary.stats.metrics["score.recovery_score"].max,60);
@@ -269,6 +270,7 @@ test("quota denial and timeout use the template and do not retry",async()=>{
     },modern);
     assert.equal(calls,0);
     assert.equal(summaryOf(denied).status,"template");
+    assert.equal(summaryOf(denied).fallback_reason,"quota");
     assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=?").get(userScope(A)).used,2500);
     assert.equal(JSON.parse(denied.result.content[0].text).records.length,2);
     db.sqlite.prepare("UPDATE ai_usage SET used=0 WHERE scope=?").run(userScope(A));
@@ -282,6 +284,7 @@ test("quota denial and timeout use the template and do not retry",async()=>{
     assert.ok(Date.now()-started<2000);
     assert.equal(calls,1);
     assert.equal(summaryOf(timed).status,"template");
+    assert.equal(summaryOf(timed).fallback_reason,"timeout");
     assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=?").get(userScope(A)).used,
       reservationEstimate(DEFAULT_MODEL));
     const broken={prepare(){throw Error("D1 unavailable");}};
@@ -328,6 +331,7 @@ test("successful usage is reconciled and an unknown model is not called",async()
     });
     assert.equal(calls,0);
     assert.equal(skipped.summary.status,"template");
+    assert.equal(skipped.summary.fallback_reason,"model_error");
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM ai_usage WHERE scope=?").get(userScope(B)).n,0);
   }finally{db.close();}
 });
@@ -378,6 +382,7 @@ test("choices content is used and empty content with reasoning falls back to the
     });
     assert.equal(calls,1);
     assert.equal(empty.summary.status,"template");
+    assert.equal(empty.summary.fallback_reason,"model_error");
     assert.equal(empty.summary.model,null);
     assert.equal(JSON.stringify(empty).includes("REASONING_ONLY"),false);
     assert.equal(JSON.stringify(empty).includes(leak),false);
@@ -393,6 +398,90 @@ test("choices content is used and empty content with reasoning falls back to the
     assert.equal(calls,2);
     assert.equal(blank.summary.status,"template");
     assert.equal(JSON.stringify(blank).includes("REASONING_ONLY"),false);
+  }finally{db.close();}
+});
+
+test("fallback reasons are fixed labels and the log is only that label",async()=>{
+  const source=readFileSync(new URL("../src/ai-summary.mjs",import.meta.url),"utf8");
+  assert.match(source,/const TIMEOUT_MS=8000/);
+  const db=openDb();
+  const now=Date.parse("2026-10-13T00:00:00Z");
+  const secret="synthetic-analytics-token";
+  try{
+    const account=await quiet(()=>attachSummary(pageA,{
+      db,userId:A,tool:"get_recovery",now,
+      env:{AI_SUMMARY_ENABLED:"true",AI:{async run(){throw Error("should not run");}}}
+    }));
+    assert.equal(account.result.summary.status,"template");
+    assert.equal(account.result.summary.fallback_reason,"account_check_failed");
+    assert.deepEqual(account.lines,["account_check_failed"]);
+    const day="2026-10-13";
+    db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES(?,?,2500,2500)").run(userScope(A),day);
+    db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES('global',?,0,7500)").run(day);
+    const quota=await quiet(()=>attachSummary(pageA,{
+      db,userId:A,tool:"get_recovery",now,
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(){throw Error("bearer "+secret+" score 40");}}})
+    }));
+    assert.equal(quota.result.summary.fallback_reason,"quota");
+    assert.deepEqual(quota.lines,["quota"]);
+    db.sqlite.prepare("UPDATE ai_usage SET used=0").run();
+    const timeout=await quiet(()=>attachSummary(pageA,{
+      db,userId:A,tool:"get_recovery",now,
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI_SUMMARY_TIMEOUT_MS:"80",AI:{
+        async run(){return new Promise(()=>{});}
+      }})
+    }));
+    assert.equal(timeout.result.summary.fallback_reason,"timeout");
+    assert.deepEqual(timeout.lines,["timeout"]);
+    const broken=await quiet(()=>attachSummary(pageA,{
+      db,userId:B,tool:"get_recovery",now,
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{
+        async run(){throw Error("bearer "+secret+" recovery score 40");}
+      }})
+    }));
+    assert.equal(broken.result.summary.fallback_reason,"model_error");
+    assert.deepEqual(broken.lines,["model_error"]);
+    assert.equal(JSON.stringify(broken.lines).includes(secret),false);
+    assert.equal(JSON.stringify(broken.lines).includes("40"),false);
+    const filtered=await quiet(()=>attachSummary(pageA,{
+      db,userId:B,tool:"get_recovery",now:Date.parse("2026-10-14T00:00:00Z"),
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{
+        async run(){return {response:"You should see a doctor about the recovery score of 40."};}
+      }})
+    }));
+    assert.equal(filtered.result.summary.fallback_reason,"filter");
+    assert.deepEqual(filtered.lines,["filter"]);
+    assert.equal(filtered.lines.join("\n").includes("doctor"),false);
+    const original=JSON.stringify;
+    let copies=0;
+    JSON.stringify=function(value,...rest){
+      const text=original.call(JSON,value,...rest);
+      if(value&&value.stats&&value.coverage){
+        copies++;
+        if(copies>1)return text+" diagnos";
+      }
+      return text;
+    };
+    let injected;
+    try{
+      injected=await quiet(()=>attachSummary(pageA,{
+        db,userId:B,tool:"get_recovery",now:Date.parse("2026-10-15T00:00:00Z"),
+        env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(){throw Error("model ran");}}})
+      }));
+    }finally{JSON.stringify=original;}
+    assert.equal(injected.result.summary.fallback_reason,"injection");
+    assert.deepEqual(injected.lines,["injection"]);
+    assert.equal(injected.lines.join("\n").includes("diagnos"),false);
+    assert.equal(Object.hasOwn(filtered.result.summary,"fallback_reason"),true);
+    const modeled=await quiet(()=>attachSummary(pageA,{
+      db,userId:B,tool:"get_recovery",now:Date.parse("2026-10-16T00:00:00Z"),
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{
+        async run(){return {response:"There are 2 records from 2026-10-01 to 2026-10-03. The latest recovery score is 60 and the mean is 50. The missing-date count is 1."};}
+      }})
+    }));
+    assert.equal(modeled.result.summary.status,"model");
+    assert.equal(Object.hasOwn(modeled.result.summary,"fallback_reason"),false);
+    assert.deepEqual(modeled.lines,[]);
   }finally{db.close();}
 });
 

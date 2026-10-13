@@ -236,7 +236,7 @@ export function createWhoopMcp({
   async function fetchWhoop(resource, token) {
     return withSingleRetry(() => fetchImpl(resource, {
       headers: { authorization: "Bearer " + token },
-      redirect: "error",
+      redirect: "manual",
     }));
   }
 
@@ -330,7 +330,7 @@ export function createWhoopMcp({
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: form,
-      redirect: "error",
+      redirect: "manual",
     }));
     if (response.status === 429) {
       metric(log, { event: "token_refresh", outcome: "rate_limited", user_id: uid });
@@ -653,7 +653,7 @@ export function createWhoopMcp({
           method: "POST",
           headers: { "content-type": "application/x-www-form-urlencoded" },
           body: form,
-          redirect: "error",
+          redirect: "manual",
         }));
         if (!response.ok) {
           metric(log, { event: "oauth_callback", outcome: "error", user_id: userId });

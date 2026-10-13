@@ -13,7 +13,7 @@ const MODEL_RATES=Object.freeze({
   "@cf/zai-org/glm-4.7-flash":{in:5500,out:36400}
 });
 const MAX_OUTPUT_TOKENS=600;
-const TIMEOUT_MS=3000;
+const TIMEOUT_MS=8000;
 // Chat-template tokens are not in the message text. This margin is part of the
 // input cap, and the reservation uses that whole cap.
 const FRAMING_TOKENS=256;
@@ -766,6 +766,14 @@ export function templateText(stats){
 function summaryObject({text,stats,model,generated_at,coverage,status,chart_data,insights}){
   return {text,stats,model,generated_at,coverage,status,chart_data,insights};
 }
+function notedFallback(data,facts,generatedAt,env,reason){
+  const summary=templateSummary(facts,generatedAt,env);
+  if(reason){
+    summary.fallback_reason=reason;
+    console.log(reason);
+  }
+  return {...data,summary};
+}
 function templateSummary(facts,generatedAt,env){
   const text=outputAcceptable(templateText(facts.stats),facts.stats)
     ?templateText(facts.stats)
@@ -870,32 +878,37 @@ export async function attachSummary(data,ctx){
     const now=typeof ctx.now==="number"?ctx.now:Date.now();
     const generatedAt=new Date(now).toISOString();
     const day=utcDay(Date.parse(generatedAt));
-    const fallback={...data,summary:templateSummary(facts,generatedAt,ctx.env)};
-    if(!Object.keys(facts.stats.metrics).length)return fallback;
+    const give=(reason)=>notedFallback(data,facts,generatedAt,ctx.env,reason);
+    if(!Object.keys(facts.stats.metrics).length)return give(null);
     const model=selectModel(ctx.env);
     const payload=modelPayload(facts);
-    if(!model||!payload||!day)return fallback;
+    if(!model||!day)return give("model_error");
+    if(!payload)return give("filter");
     const json=JSON.stringify(payload);
-    if(inputTokenEstimate(SYSTEM_PROMPT,json)>MAX_INPUT_TOKENS)return fallback;
-    if(/ignore previous|system prompt|diagnos|bearer|<\s*script/i.test(json))return fallback;
+    if(inputTokenEstimate(SYSTEM_PROMPT,json)>MAX_INPUT_TOKENS)return give("filter");
+    if(/ignore previous|system prompt|diagnos|bearer|<\s*script/i.test(json))return give("injection");
     const ai=ctx.env?.AI;
-    if(!ai||typeof ai.run!=="function")return fallback;
+    if(!ai||typeof ai.run!=="function")return give("model_error");
     const estimate=reservationEstimate(model);
-    if(!Number.isSafeInteger(estimate)||estimate<1)return fallback;
+    if(!Number.isSafeInteger(estimate)||estimate<1)return give("model_error");
     const budget=await loadAccountBudget(ctx.db,ctx.env,{day,now});
-    if(!budget.ok)return fallback;
+    if(!budget.ok)return give("account_check_failed");
     const reserved=await reserveQuota(ctx.db,{
       userId:ctx.userId,day,estimate,
       snapshotLocal:budget.snapshotLocal,accountCap:budget.accountCap
     });
-    if(!reserved.ok)return fallback;
-    let actual=null,text=null;
+    if(!reserved.ok)return give("quota");
+    let actual=null,text=null,failed=null;
     try{
       const result=await runOnce(ai,model,payload,timeoutMs(ctx.env));
       text=modelText(result);
       const usage=tokenUsage(result);
       if(usage)actual=neuronsFor(model,usage.input,usage.output);
-    }catch{text=null;actual=null;}
+    }catch(error){
+      text=null;
+      actual=null;
+      failed=error?.message==="summary-timeout"?"timeout":"model_error";
+    }
     try{await reconcileQuota(ctx.db,{userId:ctx.userId,day,reserved:estimate,actual});}catch{/* keep the reservation */}
     if(text&&outputAcceptable(text,facts.stats)){
       return {...data,summary:summaryObject({
@@ -903,6 +916,6 @@ export async function attachSummary(data,ctx){
         chart_data:chartBundle(facts,ctx.env),insights:buildInsights(facts.stats,facts.sleep_recovery?.pairs||[])
       })};
     }
-    return fallback;
+    return give(failed||(text?"filter":"model_error"));
   }catch{return data;}
 }
