@@ -1,6 +1,6 @@
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
 import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
-import {buildWeeklyDigest,parseDigestEnd,weeklyDigestEnabled} from './ai-digest.mjs';
+import {buildWeeklyDigest,parseWeekEnding,weeklyDigestEnabled} from './ai-digest.mjs';
 import {readOwnUsage,utcDay} from './ai-quota.mjs';
 import {revokeWhoopConnection} from './whoop-oauth.mjs';
 import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
@@ -60,9 +60,9 @@ const aiUsageTool=Object.freeze({
 });
 const weeklyDigestTool=Object.freeze({
   name:"get_weekly_digest",
-  description:"Build this account's descriptive weekly measurement digest. The result is returned to the caller and is not sent anywhere.",
+  description:"Pull this account's weekly measurement digest. Call it with no arguments. Optional week_ending (YYYY-MM-DD) selects the last day of the window; the default is the most recent complete Monday-Sunday week. The result has text, chart_data, and insights. A repeat for the same week returns the cached digest and does not spend more quota. The digest is not sent.",
   inputSchema:{type:"object",properties:{
-    end:{type:"string",description:"UTC end date YYYY-MM-DD. Defaults to today."}
+    week_ending:{type:"string",description:"Last day of the seven-day window, YYYY-MM-DD. Defaults to the most recent complete Monday-Sunday week."}
   },additionalProperties:false},
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
 });
@@ -108,9 +108,10 @@ function checkArguments(name,args,env) {
   }
   if(name==="get_weekly_digest"){
     if(!weeklyDigestEnabled(env))return null;
-    if(Object.keys(args).some(key=>key!=="end"))return null;
-    const end=parseDigestEnd(args.end);
-    return end?{end}:null;
+    if(Object.keys(args).some(key=>key!=="week_ending"))return null;
+    if(!own(args,"week_ending"))return {};
+    const weekEnding=parseWeekEnding(args.week_ending);
+    return weekEnding?{week_ending:weekEnding}:null;
   }
   const summaryOn=aiSummaryEnabled(env)&&summaryTools.has(name);
   if(extraTools.some(t=>t.name===name)){
@@ -236,10 +237,11 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       data={day:usage.day,used:usage.used,cap:usage.cap,remaining:usage.remaining};
       if(usage.global)data.global=usage.global;
     }else if(name==="get_weekly_digest"){
-      const digest=await buildWeeklyDigest({db,userId,env,whoopRequest,end:args.end});
+      const digest=await buildWeeklyDigest({db,userId,env,whoopRequest,weekEnding:args.week_ending});
       if(!digest.ok)throw Error("digest");
-      data={kind:digest.kind,period:digest.period,recovery_count:digest.recovery_count,
-        sleep_count:digest.sleep_count,summary:digest.summary};
+      data={kind:digest.kind,week_ending:digest.week_ending,period:digest.period,
+        text:digest.text,chart_data:digest.chart_data,insights:digest.insights,
+        cached:digest.cached===true};
     }else if(extraTools.some(t=>t.name===name)){
       data=await readExtraTool(db,userId,name,queryArgs(args));
     }else if(!historyTools.has(name)||!args.auto_page){

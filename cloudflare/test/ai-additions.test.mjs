@@ -6,6 +6,7 @@ import {handleMcpRpc,mcpTools} from "../src/mcp.mjs";
 import {d1Database} from "./d1-sqlite.mjs";
 import {userScope} from "../src/ai-quota.mjs";
 import {attachSummary,outputAcceptable} from "../src/ai-summary.mjs";
+import {mostRecentCompleteWeekEnding} from "../src/ai-digest.mjs";
 
 const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -15,6 +16,7 @@ function openDb(){
   const sqlite=new DatabaseSync(":memory:");
   sqlite.exec(readFileSync(new URL("../migrations/0009_ai_usage.sql",import.meta.url),"utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0010_ai_account_snapshot.sql",import.meta.url),"utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0011_ai_weekly_digest.sql",import.meta.url),"utf8"));
   return {sqlite,...d1Database(sqlite),close(){sqlite.close();}};
 }
 function recovery(score,day,extra={}){
@@ -95,7 +97,12 @@ test("sleep is paired only with the next morning's recovery",async()=>{
   assert.doesNotMatch(JSON.stringify(pairing),/Ignore previous|99999/);
 });
 
-test("weekly digest is opt-in, per user, and does not send",async()=>{
+test("weekly digest defaults to the last complete week and does not send",async()=>{
+  const sql=readFileSync(new URL("../migrations/0011_ai_weekly_digest.sql",import.meta.url),"utf8");
+  const create=sql.slice(sql.indexOf("CREATE TABLE"));
+  assert.doesNotMatch(create,/prompt|output|health|token/i);
+  assert.equal(mostRecentCompleteWeekEnding(Date.parse("2026-10-12T08:00:00Z")),"2026-10-11");
+  assert.equal(mostRecentCompleteWeekEnding(Date.parse("2026-10-11T08:00:00Z")),"2026-10-04");
   const db=openDb();
   const originalFetch=globalThis.fetch;
   let fetches=0;
@@ -120,51 +127,199 @@ test("weekly digest is opt-in, per user, and does not send",async()=>{
       if(resource==="recovery")return {records:[recovery(64,"2026-10-02",{user_id:B})],next_token:null};
       throw Error("unexpected resource");
     };
-    const digest=await handleMcpRpc(rpc("get_weekly_digest",{end:"2026-10-02"}),{
-      db,userId:A,env:{WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"false",AI:{async run(){calls++;}}},
-      whoopRequest
+    const digestEnv={
+      WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"false",
+      WEEKLY_DIGEST_NOW:Date.parse("2026-10-12T08:00:00Z"),
+      AI:{async run(){calls++;}}
+    };
+    const pulled=await handleMcpRpc(rpc("get_weekly_digest"),{
+      db,userId:A,env:digestEnv,whoopRequest
+    },modern);
+    const pulledBody=JSON.parse(pulled.result.content[0].text);
+    assert.equal(pulledBody.week_ending,"2026-10-11");
+    assert.deepEqual(pulledBody.period,{start:"2026-10-05",end:"2026-10-11"});
+    assert.equal(pulledBody.cached,false);
+    const digest=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-02"}),{
+      db,userId:A,env:digestEnv,whoopRequest
     },modern);
     const body=JSON.parse(digest.result.content[0].text);
     assert.equal(calls,0);
     assert.equal(fetches,0);
     assert.equal(body.kind,"weekly_digest");
+    assert.equal(body.week_ending,"2026-10-02");
     assert.deepEqual(body.period,{start:"2026-09-26",end:"2026-10-02"});
-    assert.equal(body.summary.status,"template");
-    assert.equal(body.summary.chart_data.sleep_recovery.available,true);
-    assert.deepEqual(seen.map(row=>row.userId),[A,A]);
-    assert.deepEqual(seen.map(row=>row.resource),["recovery","sleep"]);
+    assert.equal(body.cached,false);
+    assert.equal(typeof body.text,"string");
+    assert.equal(body.chart_data.sleep_recovery.available,true);
+    assert.ok(body.insights.length>0);
+    assert.match(body.text,/records were returned/);
+    assert.deepEqual(seen.map(row=>row.userId),[A,A,A,A]);
     assert.equal(Object.hasOwn(body,"recipients"),false);
+    assert.equal(Object.hasOwn(body,"summary"),false);
     assert.doesNotMatch(JSON.stringify(body),/99999|Ignore previous|cron|@/);
     assert.doesNotMatch(JSON.stringify(body),new RegExp(B));
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM ai_usage").get().n,0);
-    const rejected=await handleMcpRpc(rpc("get_weekly_digest",{end:"2026-10-02",user_id:B}),{
+    const again=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-02"}),{
+      db,userId:A,env:digestEnv,whoopRequest
+    },modern);
+    const cached=JSON.parse(again.result.content[0].text);
+    assert.equal(cached.cached,true);
+    assert.equal(cached.text,body.text);
+    assert.deepEqual(cached.chart_data,body.chart_data);
+    assert.deepEqual(cached.insights,body.insights);
+    assert.equal(seen.length,4);
+    assert.equal(calls,0);
+    const stored=db.sqlite.prepare("SELECT body FROM ai_weekly_digest WHERE scope=? AND week_ending=?").get(userScope(A),"2026-10-02").body;
+    assert.doesNotMatch(stored,/99999|Ignore previous/);
+    assert.doesNotMatch(stored,new RegExp(B));
+    const rejected=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-02",user_id:B}),{
       db,userId:A,env:{WEEKLY_DIGEST_ENABLED:"true"},whoopRequest
     },modern);
     assert.equal(rejected.error?.code,-32602);
-    const badDay=await handleMcpRpc(rpc("get_weekly_digest",{end:"2026-02-31"}),{
+    const oldArg=await handleMcpRpc(rpc("get_weekly_digest",{end:"2026-10-02"}),{
+      db,userId:A,env:{WEEKLY_DIGEST_ENABLED:"true"},whoopRequest
+    },modern);
+    assert.equal(oldArg.error?.code,-32602);
+    const badDay=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-02-31"}),{
       db,userId:A,env:{WEEKLY_DIGEST_ENABLED:"true"},whoopRequest
     },modern);
     assert.equal(badDay.error?.code,-32602);
-    const modeled=await handleMcpRpc(rpc("get_weekly_digest",{end:"2026-10-02"}),{
-      db,userId:A,env:withAnalytics({
-        WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"true",
-        AI:{async run(){
-          calls++;
-          return {response:"Sleep performance of 80 on 2026-10-01 was followed by a recovery score of 64 on 2026-10-02.",
-            usage:{prompt_tokens:30,completion_tokens:12}};
-        }}
-      }),whoopRequest
+    const listed=await handleMcpRpc({jsonrpc:"2.0",id:3,method:"tools/list",params:{}},{
+      db,userId:A,env:{WEEKLY_DIGEST_ENABLED:"true"},whoopRequest:async()=>null
     },modern);
-    const modelBody=JSON.parse(modeled.result.content[0].text);
-    assert.equal(calls,1);
-    assert.equal(modelBody.summary.status,"model");
-    assert.equal(fetches,0);
-    const day=new Date().toISOString().slice(0,10);
-    assert.ok(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=? AND day=?").get(userScope(A),day).used>0);
+    const tool=listed.result.tools.find(item=>item.name==="get_weekly_digest");
+    assert.deepEqual(Object.keys(tool.inputSchema.properties),["week_ending"]);
+    assert.equal(tool.inputSchema.additionalProperties,false);
+    const readme=readFileSync(new URL("../../README.md",import.meta.url),"utf8");
+    assert.match(readme,/Every Monday 8 AM, call WHOOP Lens get_weekly_digest and chart it/);
   }finally{
     globalThis.fetch=originalFetch;
     db.close();
   }
+});
+
+test("a repeated weekly digest is cached per user and does not spend quota again",async()=>{
+  const db=openDb();
+  const day=new Date().toISOString().slice(0,10);
+  let calls=0;
+  let recoveryScore=64;
+  const seen=[];
+  const whoopRequest=async(_db,userId,resource)=>{
+    seen.push({userId,resource});
+    if(resource==="sleep")return {records:[{
+      created_at:"2026-10-01T23:00:00Z",score:{sleep_performance_percentage:80}
+    }],next_token:null};
+    return {records:[recovery(userId===A?recoveryScore:12,"2026-10-02")],next_token:null};
+  };
+  const modelText="Sleep performance of 80 on 2026-10-01 was followed by a recovery score of 64 on 2026-10-02.";
+  const env=withAnalytics({
+    WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"true",
+    AI:{async run(){
+      calls++;
+      return {response:modelText,usage:{prompt_tokens:30,completion_tokens:12}};
+    }}
+  });
+  try{
+    const first=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
+      db,userId:A,env,whoopRequest
+    },modern);
+    const firstBody=JSON.parse(first.result.content[0].text);
+    assert.equal(firstBody.cached,false);
+    assert.equal(firstBody.text,modelText);
+    assert.equal(firstBody.chart_data.sleep_recovery.pairs[0].recovery.value,64);
+    assert.equal(calls,1);
+    const used=db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=? AND day=?").get(userScope(A),day).used;
+    assert.ok(used>0);
+    recoveryScore=12;
+    const second=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
+      db,userId:A,env,whoopRequest
+    },modern);
+    const secondBody=JSON.parse(second.result.content[0].text);
+    assert.equal(secondBody.cached,true);
+    assert.equal(secondBody.text,firstBody.text);
+    assert.deepEqual(secondBody.chart_data,firstBody.chart_data);
+    assert.deepEqual(secondBody.insights,firstBody.insights);
+    assert.equal(calls,1);
+    assert.equal(seen.filter(row=>row.userId===A).length,2);
+    assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope=? AND day=?").get(userScope(A),day).used,used);
+    const other=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
+      db,userId:B,env,whoopRequest
+    },modern);
+    const otherBody=JSON.parse(other.result.content[0].text);
+    assert.equal(otherBody.cached,false);
+    assert.equal(otherBody.chart_data.series[0].stats.last,12);
+    assert.doesNotMatch(other.result.content[0].text,new RegExp(A));
+    assert.notEqual(otherBody.text,firstBody.text);
+    const down=await handleMcpRpc(rpc("get_weekly_digest"),{
+      db:{prepare(){throw Error("SELECT secret FROM ai_weekly_digest");}},userId:A,
+      env:{WEEKLY_DIGEST_ENABLED:"true"},whoopRequest:async()=>{throw Error("no");}
+    },modern);
+    assert.equal(down.result.isError,true);
+    assert.doesNotMatch(down.result.content[0].text,/SELECT|secret|ai_weekly_digest/);
+  }finally{db.close();}
+});
+
+test("a weekly digest claim is single flight and a failed pull can be retried",async()=>{
+  const db=openDb();
+  let calls=0;
+  let gate;
+  const wait=new Promise(resolve=>{gate=resolve;});
+  let fetches=0;
+  const whoopRequest=async()=>{
+    fetches++;
+    if(fetches===1)await wait;
+    return {records:[recovery(64,"2026-10-02")],next_token:null};
+  };
+  const env=withAnalytics({
+    WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"true",
+    AI:{async run(){
+      calls++;
+      return {response:"Recovery score has minimum 64, maximum 64, mean 64, and median 64.",
+        usage:{prompt_tokens:20,completion_tokens:12}};
+    }}
+  });
+  try{
+    const first=handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
+      db,userId:A,env,whoopRequest
+    },modern);
+    const second=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
+      db,userId:A,env,whoopRequest
+    },modern);
+    assert.equal(second.result.isError,true);
+    gate();
+    const done=await first;
+    assert.equal(JSON.parse(done.result.content[0].text).cached,false);
+    assert.equal(calls,1);
+    assert.equal(fetches,2);
+    const third=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
+      db,userId:A,env,whoopRequest
+    },modern);
+    assert.equal(JSON.parse(third.result.content[0].text).cached,true);
+    assert.equal(calls,1);
+    assert.equal(fetches,2);
+    db.sqlite.prepare("INSERT INTO ai_weekly_digest(scope,week_ending,state,body,created_at) VALUES(?,?, 'pending', NULL, ?)").run(userScope(A),"2026-09-27",Date.now()-60000);
+    const reclaimed=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-09-27"}),{
+      db,userId:A,env,whoopRequest
+    },modern);
+    assert.equal(JSON.parse(reclaimed.result.content[0].text).cached,false);
+    assert.equal(db.sqlite.prepare("SELECT state FROM ai_weekly_digest WHERE scope=? AND week_ending=?").get(userScope(A),"2026-09-27").state,"ready");
+    let failed=true;
+    const failing=async()=>{
+      if(failed)throw Error("upstream");
+      return {records:[recovery(64,"2026-10-02")],next_token:null};
+    };
+    const broken=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-09-20"}),{
+      db,userId:A,env,whoopRequest:failing
+    },modern);
+    assert.equal(broken.result.isError,true);
+    assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM ai_weekly_digest WHERE week_ending='2026-09-20'").get().n,0);
+    failed=false;
+    const retried=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-09-20"}),{
+      db,userId:A,env,whoopRequest:failing
+    },modern);
+    assert.equal(JSON.parse(retried.result.content[0].text).week_ending,"2026-09-20");
+    assert.equal(JSON.parse(retried.result.content[0].text).cached,false);
+  }finally{db.close();}
 });
 
 test("usage shows only the caller, and the global total only to the owner",async()=>{
