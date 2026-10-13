@@ -912,3 +912,15 @@ test("outputRejection names the rule without echoing text",async()=>{
   assert.equal(r3.rule,"vocabulary");
   assert.ok(!JSON.stringify([r1,r2,r3]).match(/zebra|rest|77/));
 });
+
+test("vocabulary accepts plurals and -ing forms of allowed words only",async()=>{
+  const {outputRejection}=await import("../src/ai-summary.mjs");
+  const stats={count:2,metrics:{"score.recovery_score":{min:40,max:60,mean:50,median:50}}};
+  assert.equal(outputRejection("Recovery scores ranged from 40 to 60, with levels within that range.",stats),null);
+  assert.equal(outputRejection("Recovery score averaged 50, ranging from 40 to 60.",stats),null);
+  assert.equal(outputRejection("Recovery score ranged from 40 to 60 amid zebras.",stats).rule,"vocabulary");
+  assert.equal(outputRejection("Recovery score ranged from 40 to 60 while worsening.",stats).rule,"vocabulary");
+  assert.equal(outputRejection("Recovery scores ranged from 40 to 60, advising rest.",stats).rule,"advice");
+  assert.equal(outputRejection("Recovery scores ranged from 40 to 60 with diagnoses.",stats).rule,"advice");
+  assert.equal(outputRejection("Recovery score ranged from 40 to 77.",stats).rule,"number");
+});

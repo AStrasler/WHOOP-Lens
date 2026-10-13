@@ -22,6 +22,7 @@ const textEncoder=new TextEncoder();
 function byteLength(text){return textEncoder.encode(text).length;}
 const SYSTEM_PROMPT=[
   "Write at most three sentences describing the aggregated measurements in the user JSON.",
+  "Use plain descriptive wording: metric names, numbers, and words such as ranged, averaged, between, minimum, maximum, mean, median, and latest.",
   "Use only numbers that appear in that JSON. Do not invent measurements.",
   "If the JSON marks coverage as incomplete, say that the data is incomplete.",
   "Do not advise, diagnose, prescribe, recommend care, or tell anyone to see a doctor.",
@@ -55,12 +56,14 @@ const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
   "source sources label per across during no not only also than point points "+
   "ranged averaged rose fell increased decreased reduced stayed peaked lowest highest "+
   "steady steadily compared climbed over start end up down higher lower dipped near "+
-  "while then same remained measured recorded logged tracked about around above below baseline typical followed").split(" "));
+  "while then same remained measured recorded logged tracked about around above below baseline typical followed "+
+  "level levels reading readings period total overall each both respectively varied spanned spanning "+
+  "percent percentage degrees celsius beats minute minutes milliseconds ms within").split(" "));
 const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps respiratory "+
   "spo spo2 skin temperature performance score bpm").split(" "));
 const VERBS=new Set(("is are was were be been has have had returned summarize summarized "+
   "ranged averaged rose fell increased decreased reduced stayed peaked climbed compared "+
-  "remained measured dipped followed").split(" "));
+  "remained measured dipped followed varied spanned").split(" "));
 const SMALL_WORDS={zero:0,one:1,two:2,three:3,four:4,five:5,six:6,seven:7,eight:8,nine:9,ten:10,
   eleven:11,twelve:12,thirteen:13,fourteen:14,fifteen:15,sixteen:16,seventeen:17,eighteen:18,nineteen:19};
 const TENS_WORDS={twenty:20,thirty:30,forty:40,fifty:50,sixty:60,seventy:70,eighty:80,ninety:90};
@@ -734,6 +737,19 @@ export function outputRejection(text,stats){
     return {rule:"spelled_number",category:"value"};
   return vocabularyRejection(cleaned,stats,spelled);
 }
+// A plural or -ing form is accepted only when its singular is already an allowed word
+// ("scores" for "score"), so this cannot admit a new term.
+function knownWord(word,allowed){
+  const ok=w=>DESCRIPTIVE.has(w)||allowed.has(w);
+  if(ok(word))return true;
+  if(word.length>3&&word.endsWith("s")&&!word.endsWith("ss")&&ok(word.slice(0,-1)))return true;
+  // "ranging" for "range", "averaging" for "average": the base must already be allowed.
+  if(word.length>5&&word.endsWith("ing")){
+    const base=word.slice(0,-3);
+    return ok(base)||ok(base+"e");
+  }
+  return false;
+}
 function vocabularyRejection(text,stats,skip){
   const allowed=contextWords(stats);
   for(const word of METRIC_WORDS)allowed.add(word);
@@ -746,7 +762,7 @@ function vocabularyRejection(text,stats,skip){
     const start=match.index,end=start+match[0].length;
     if(skip.some(span=>start>=span.start&&end<=span.end))continue;
     const word=match[0].toLowerCase();
-    if(!DESCRIPTIVE.has(word)&&!allowed.has(word))unknown++;
+    if(!knownWord(word,allowed))unknown++;
   }
   if(unknown)return {rule:"vocabulary",unknown_words:unknown};
   const noVerb=sentences.filter(sentence=>!(sentence.toLowerCase().match(/[a-z]+/g)||[]).some(w=>VERBS.has(w))).length;
