@@ -42,9 +42,17 @@ export async function createWhoopAuthorization(db,userId,env,{now=NOW}={}){
   if(!await activeMembership(db,id))throw Error("Membership required");
   const state=tokenString(),expires_at=new Date(now()+10*60_000).toISOString();
   const hash=await sha256(state);
-  const saved=await db.prepare(
-    "INSERT INTO whoop_oauth_states(state_hash,user_id,expires_at) VALUES(?1,?2,?3)"
-  ).bind(hash,id,expires_at).run();
+  // Bounded per member: drop expired states, and keep at most five pending
+  // (the newest), so repeated connect calls cannot grow the table without limit.
+  const [,saved]=await db.batch([
+    db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1 AND expires_at<=?2")
+      .bind(id,new Date(now()).toISOString()),
+    db.prepare("INSERT INTO whoop_oauth_states(state_hash,user_id,expires_at) VALUES(?1,?2,?3)")
+      .bind(hash,id,expires_at),
+    db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1 AND state_hash NOT IN "+
+      "(SELECT state_hash FROM whoop_oauth_states WHERE user_id=?1 ORDER BY expires_at DESC, rowid DESC LIMIT 5)")
+      .bind(id)
+  ]);
   if(!saved?.success||saved.meta?.changes!==1)throw Error("WHOOP authorization state unavailable");
   const params=new URLSearchParams({
     client_id:env.WHOOP_CLIENT_ID,redirect_uri:REDIRECT,response_type:"code",

@@ -202,3 +202,21 @@ test("disconnect is atomic: a failed connection delete keeps pending states", as
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM whoop_oauth_states").get().n, 0);
   } finally { db.close(); }
 });
+test("pending WHOOP states are pruned and capped per member", async () => {
+  const { createWhoopAuthorization } = await import("../src/whoop-oauth.mjs");
+  const db = fixture();
+  try {
+    const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    db.sqlite.prepare("INSERT INTO whoop_oauth_states(state_hash,user_id,expires_at) VALUES(?,?,?)")
+      .run("e".repeat(64), A, "2000-01-01T00:00:00.000Z");
+    let t = Date.parse("2026-10-11T12:00:00Z");
+    const latest = [];
+    for (let i = 0; i < 8; i++) {
+      const r = await createWhoopAuthorization(db, A, env, { now: () => t + i * 1000 });
+      latest.push(new URL(r.authorization_url).searchParams.get("state"));
+    }
+    const rows = db.sqlite.prepare("SELECT state_hash FROM whoop_oauth_states WHERE user_id=?").all(A);
+    assert.equal(rows.length, 5);
+    assert.ok(!rows.some(r => r.state_hash === "e".repeat(64)));
+  } finally { db.close(); }
+});
