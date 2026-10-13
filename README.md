@@ -66,6 +66,10 @@ The Pages site includes a browser workspace at [https://astrasler.github.io/WHOO
 
 Connected clients can call **get_capabilities**. The deployed catalog is the source of truth. See [the capability directory](docs/CAPABILITIES.md).
 
+## AI summaries (off)
+
+Read tools can take an optional `summary: true` argument. The Worker then adds a `summary` object computed from that response only. `AI_SUMMARY_ENABLED` is `"false"` in every checked-in Wrangler file, and only the exact string `"true"` turns it on. While it is off, tool responses stay the same as they are today. A summary is not a diagnosis, not medical advice, and not a stress score. This does not add a derived stress estimate. Migration `cloudflare/migrations/0009_ai_usage.sql` creates daily neuron counters only. It is not applied to production by this change.
+
 WHOOP Lens reads profile, body measurements, recovery, sleep, workouts, and cycles. Charts and outside research depend on the connected AI host.
 
 ## Seats

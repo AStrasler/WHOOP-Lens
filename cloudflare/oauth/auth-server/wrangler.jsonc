@@ -6,7 +6,7 @@
   "compatibility_flags": ["global_fetch_strictly_public"],
   "workers_dev": false,
   "preview_urls": false,
-  "vars": {"OAUTH_SERVER_ENABLED": "false", "OAUTH_CONSENT_ENABLED": "false", "ACCESS_ISSUER": "https://whoop-lens.cloudflareaccess.com", "ACCESS_AUD": "5abe3a021f030e2c9669e201a565e4ce55c495f8b6fec75231e74f9ff1c545ab"},
+  "vars": {"OAUTH_SERVER_ENABLED": "false", "OAUTH_CONSENT_ENABLED": "false", "AI_SUMMARY_ENABLED": "false", "ACCESS_ISSUER": "https://whoop-lens.cloudflareaccess.com", "ACCESS_AUD": "5abe3a021f030e2c9669e201a565e4ce55c495f8b6fec75231e74f9ff1c545ab"},
   "kv_namespaces": [{"binding": "OAUTH_KV", "id": "a21d9ddb65c34aa89f65194670e9e56e"}],
   "d1_databases": [{"binding":"DB","database_name":"whoop-lens-migration",
     "database_id":"58250de2-cad7-4a8a-a061-d9b41c7b24d2"}]

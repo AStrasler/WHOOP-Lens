@@ -1,4 +1,5 @@
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
+import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
 import {revokeWhoopConnection} from './whoop-oauth.mjs';
 import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
@@ -49,6 +50,19 @@ export const mcpTools=Object.freeze([...Object.keys(toolToResource).map(name=>({
 const toolsByName=new Map(mcpTools.map(x=>[x.name,x]));
 const own=(x,p)=>Object.prototype.hasOwnProperty.call(x,p);
 function isObject(x){return x!==null&&typeof x==="object"&&!Array.isArray(x);}
+function listedTools(env){
+  if(!aiSummaryEnabled(env))return mcpTools;
+  return mcpTools.map(tool=>summaryTools.has(tool.name)?{...tool,inputSchema:{
+    ...tool.inputSchema,
+    properties:{...tool.inputSchema.properties,summary:{type:"boolean",description:"Add a summary of these results. Ignored unless true."}}
+  }}:tool);
+}
+function queryArgs(args){
+  if(!isObject(args)||args.summary!==true)return args;
+  const copy={...args};
+  delete copy.summary;
+  return copy;
+}
 function fail(code,message,id){return {jsonrpc:"2.0",id,error:{code,message}};}
 function ok(id,result){return {jsonrpc:"2.0",id,result};}
 function toolError(id,message,modern) {
@@ -56,12 +70,28 @@ function toolError(id,message,modern) {
   if(modern)result.resultType="complete";
   return ok(id,result);
 }
-function checkArguments(name,args) {
+function checkArguments(name,args,env) {
   if(!isObject(args))return null;
-  if(extraTools.some(t=>t.name===name))return extraArguments(name,args);
+  const summaryOn=aiSummaryEnabled(env)&&summaryTools.has(name);
+  if(extraTools.some(t=>t.name===name)){
+    if(!summaryOn||!own(args,"summary"))return extraArguments(name,args);
+    if(typeof args.summary!=="boolean")return null;
+    const rest={...args};
+    delete rest.summary;
+    const parsed=extraArguments(name,rest);
+    if(!parsed)return null;
+    return args.summary?{...parsed,summary:true}:parsed;
+  }
   const history=historyTools.has(name);
-  if(Object.keys(args).some(k=>!(history&&["limit","next_token","auto_page"].includes(k))))return null;
-  if(!history)return Object.keys(args).length===0?{}:null;
+  const allowed=history?["limit","next_token","auto_page"]:[];
+  if(summaryOn)allowed.push("summary");
+  if(Object.keys(args).some(k=>!allowed.includes(k)))return null;
+  if(!history){
+    if(!summaryOn||!own(args,"summary"))return Object.keys(args).length===0?{}:null;
+    if(typeof args.summary!=="boolean")return null;
+    return args.summary?{summary:true}:{};
+  }
+  if(summaryOn&&own(args,"summary")&&typeof args.summary!=="boolean")return null;
   const limit=args.limit??10;
   if(!Number.isSafeInteger(limit)||limit<1||limit>25)return null;
   if(args.auto_page!=null&&typeof args.auto_page!=="boolean")return null;
@@ -70,7 +100,9 @@ function checkArguments(name,args) {
      !/^[A-Za-z0-9._~+/-]+$/.test(args.next_token)||
      args.next_token.includes("..")))return null;
   if(args.auto_page===true&&args.next_token!=null)return null;
-  return {limit,next_token:args.next_token??null,auto_page:args.auto_page??false};
+  const out={limit,next_token:args.next_token??null,auto_page:args.auto_page??false};
+  if(summaryOn&&args.summary===true)out.summary=true;
+  return out;
 }
 export function validateMcpTransport(request,message){
   if(!isObject(message))return {status:400,error:"Invalid MCP request"};
@@ -120,15 +152,16 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }
   if(message.method==="ping")return ok(id,{});
   if(message.method==="tools/list"){
+    const tools=listedTools(env);
     return ok(id,modern?
-      {resultType:"complete",tools:mcpTools,ttlMs:300000,cacheScope:"private"}:
-      {tools:mcpTools});
+      {resultType:"complete",tools,ttlMs:300000,cacheScope:"private"}:
+      {tools});
   }
   if(message.method!=="tools/call")return fail(-32601,"Method not found",id);
   const name=params.name;
   if(typeof name!=="string"||!toolsByName.has(name))
     return fail(-32602,"Unknown tool",id);
-  const args=checkArguments(name,params.arguments??{});
+  const args=checkArguments(name,params.arguments??{},env);
   if(args===null)return fail(-32602,"Invalid tool arguments",id);
   try {
     const resource=toolToResource[name];
@@ -156,9 +189,9 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       if(env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')throw Error('Connection disabled');
       data=await revokeIngestTokens(db,userId,args.confirm);
     }else if(extraTools.some(t=>t.name===name)){
-      data=await readExtraTool(db,userId,name,args);
+      data=await readExtraTool(db,userId,name,queryArgs(args));
     }else if(!historyTools.has(name)||!args.auto_page){
-      data=await whoopRequest(db,userId,resource,env,args);
+      data=await whoopRequest(db,userId,resource,env,queryArgs(args));
     }else{
       const records=[];
       let cursor=null,pages=0;
@@ -175,6 +208,10 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
         if(cursor===null)break;
       }
       data={records,next_token:cursor,complete:cursor===null,pages_fetched:pages};
+    }
+    if(args.summary===true&&aiSummaryEnabled(env)){
+      try{data=await attachSummary(data,{db,userId,env,tool:name});}
+      catch{/* Authorized records stay available when a summary fails. */}
     }
     const result={content:[{type:"text",text:JSON.stringify(data)}]};
     if(modern){result.resultType="complete";result.structuredContent=data;}

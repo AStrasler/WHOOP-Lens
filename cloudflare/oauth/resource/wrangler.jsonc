@@ -13,8 +13,10 @@
     "MCP_ENABLED": "false",
     "WEB_HEALTH_IMPORT_ENABLED": "false",
     "HEALTH_CONNECT_WEBHOOK_ENABLED": "false",
+    "AI_SUMMARY_ENABLED": "false",
     "WHOOP_REDIRECT_URI": "https://whooplens.tech/api/whoop/callback"
   },
+  "ai": { "binding": "AI" },
   "services": [{"binding":"AUTH_SERVER","service":"whoop-lens-auth"}],
   "d1_databases": [{
     "binding":"DB","database_name":"whoop-lens-migration",
