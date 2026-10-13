@@ -95,7 +95,53 @@ for(const metric of ALLOWED_METRICS){
 }
 const DATE_FIELDS=["local_date","date","observed_at","start","start_time","created_at","exported_at","source_date","ended_at","end","updated_at","reviewed_at","inserted_at"];
 const PRIORITY=["score.recovery_score","recovery_score","score.resting_heart_rate","resting_heart_rate","score.hrv_rmssd_milli","hrv_rmssd_milli","score.spo2_percentage","score.skin_temp_celsius","score.strain","strain","score.average_heart_rate","score.max_heart_rate","score.kilojoule","score.sleep_performance_percentage","score.sleep_consistency_percentage","score.sleep_efficiency_percentage","score.respiratory_rate","payload.count","payload.steps","count","steps","heart_rate"];
+const METRIC_META={
+  height_meter:{name:"Height",unit:"meter"},
+  weight_kilogram:{name:"Weight",unit:"kilogram"},
+  max_heart_rate:{name:"Max heart rate",unit:"bpm"},
+  "score.recovery_score":{name:"Recovery score",unit:"score"},
+  "score.resting_heart_rate":{name:"Resting heart rate",unit:"bpm"},
+  "score.hrv_rmssd_milli":{name:"HRV",unit:"millisecond"},
+  "score.spo2_percentage":{name:"SpO2",unit:"percent"},
+  "score.skin_temp_celsius":{name:"Skin temperature",unit:"celsius"},
+  "score.strain":{name:"Strain",unit:"score"},
+  "score.kilojoule":{name:"Kilojoule",unit:"kilojoule"},
+  "score.average_heart_rate":{name:"Average heart rate",unit:"bpm"},
+  "score.max_heart_rate":{name:"Max heart rate",unit:"bpm"},
+  "score.distance_meter":{name:"Distance",unit:"meter"},
+  "score.altitude_gain_meter":{name:"Altitude gain",unit:"meter"},
+  "score.altitude_change_meter":{name:"Altitude change",unit:"meter"},
+  "score.percent_recorded":{name:"Percent recorded",unit:"percent"},
+  "score.sleep_performance_percentage":{name:"Sleep performance",unit:"percent"},
+  "score.sleep_consistency_percentage":{name:"Sleep consistency",unit:"percent"},
+  "score.sleep_efficiency_percentage":{name:"Sleep efficiency",unit:"percent"},
+  "score.respiratory_rate":{name:"Respiratory rate",unit:"breaths_per_minute"},
+  "score.stage_summary.total_in_bed_time_milli":{name:"In bed time",unit:"millisecond"},
+  "score.stage_summary.total_awake_time_milli":{name:"Awake time",unit:"millisecond"},
+  "score.stage_summary.total_no_data_time_milli":{name:"No data time",unit:"millisecond"},
+  "score.stage_summary.total_light_sleep_time_milli":{name:"Light sleep time",unit:"millisecond"},
+  "score.stage_summary.total_slow_wave_sleep_time_milli":{name:"Slow wave sleep time",unit:"millisecond"},
+  "score.stage_summary.total_rem_sleep_time_milli":{name:"Rem sleep time",unit:"millisecond"},
+  "score.stage_summary.sleep_cycle_count":{name:"Sleep cycle count",unit:"count"},
+  "score.stage_summary.disturbance_count":{name:"Disturbance count",unit:"count"},
+  "score.sleep_needed.baseline_milli":{name:"Sleep needed baseline",unit:"millisecond"},
+  "score.sleep_needed.need_from_sleep_debt_milli":{name:"Sleep debt",unit:"millisecond"},
+  "score.sleep_needed.need_from_recent_strain_milli":{name:"Sleep needed from strain",unit:"millisecond"},
+  "score.sleep_needed.need_from_recent_nap_milli":{name:"Sleep needed from nap",unit:"millisecond"},
+  "score.zone_durations.zone_zero_milli":{name:"Zone zero",unit:"millisecond"},
+  "score.zone_durations.zone_one_milli":{name:"Zone one",unit:"millisecond"},
+  "score.zone_durations.zone_two_milli":{name:"Zone two",unit:"millisecond"},
+  "score.zone_durations.zone_three_milli":{name:"Zone three",unit:"millisecond"},
+  "score.zone_durations.zone_four_milli":{name:"Zone four",unit:"millisecond"},
+  "score.zone_durations.zone_five_milli":{name:"Zone five",unit:"millisecond"},
+  "payload.count":{name:"Count",unit:"count"},
+  "payload.duration_seconds":{name:"Duration",unit:"second"},
+  "payload.bpm":{name:"Heart rate",unit:"bpm"},
+  "payload.min":{name:"Minimum heart rate",unit:"bpm"},
+  "payload.max":{name:"Maximum heart rate",unit:"bpm"}
+};
 export function aiSummaryEnabled(env){return env?.AI_SUMMARY_ENABLED==="true";}
+export function stressEstimateEnabled(env){return env?.STRESS_ESTIMATE_ENABLED==="true";}
 export function selectModel(env){
   const requested=env?.AI_SUMMARY_MODEL;
   if(requested==null||requested==="")return DEFAULT_MODEL;
@@ -233,10 +279,12 @@ export function buildSummaryFacts(data,tool){
     sort((a,b)=>rank(a[0])-rank(b[0])||b[1].length-a[1].length||(a[0]<b[0]?-1:1)).slice(0,8);
   const metrics={};
   const evidence=[];
+  const series=[];
   for(const [path,points] of chosen){
     const stats=metricStats(points);
     metrics[path]={n:stats.n,min:stats.min,max:stats.max,mean:stats.mean,median:stats.median,
       latest:stats.latest,first:stats.first,change:stats.change,latest_date:stats.latestDate};
+    series.push(chartSeries(path,points,stats));
     for(const point of [stats.firstPoint,stats.lastPoint,stats.minPoint,stats.maxPoint]){
       const row={source,metric:path,value:point.value};
       if(point.date)row.date=point.date;
@@ -272,7 +320,80 @@ export function buildSummaryFacts(data,tool){
     sources:[source],
     incomplete:stats.incomplete
   };
-  return {stats,coverage};
+  return {stats,coverage,series};
+}
+function metricMeta(path){
+  if(Object.hasOwn(METRIC_META,path))return METRIC_META[path];
+  const leaf=path.split(".").pop();
+  const name=leaf.replace(/_/g," ");
+  let unit="number";
+  if(/percentage$|percent/.test(leaf))unit="percent";
+  else if(/_milli$/.test(leaf))unit="millisecond";
+  else if(/heart_rate$|bpm$/.test(leaf))unit="bpm";
+  else if(/_meter$/.test(leaf))unit="meter";
+  else if(/kilogram/.test(leaf))unit="kilogram";
+  else if(/celsius/.test(leaf))unit="celsius";
+  else if(/kilojoule/.test(leaf))unit="kilojoule";
+  else if(/seconds$/.test(leaf))unit="second";
+  else if(/count$/.test(leaf))unit="count";
+  else if(leaf==="strain"||leaf==="recovery_score")unit="score";
+  return {name,unit};
+}
+function chartSeries(path,points,stats){
+  const meta=metricMeta(path);
+  const dated=points.filter(point=>point.date).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.index-b.index);
+  return {
+    metric:path,
+    name:meta.name,
+    unit:meta.unit,
+    date_range:dated.length?{start:dated[0].date,end:dated[dated.length-1].date}:null,
+    record_count:points.length,
+    stats:{min:stats.min,max:stats.max,mean:stats.mean,first:stats.first,last:stats.latest,change:stats.change},
+    points:dated.map(point=>({date:point.date,value:quantize(point.value)}))
+  };
+}
+function stressEstimatePlaceholder(env){
+  if(!stressEstimateEnabled(env))return null;
+  return {
+    metric:"stress_estimate",name:"Stress estimate",unit:null,available:false,
+    date_range:null,record_count:0,stats:null,points:[]
+  };
+}
+function chartBundle(facts,env){
+  return {
+    date_range:facts.stats.date_range,
+    record_count:facts.stats.count,
+    series:facts.series,
+    stress_estimate:stressEstimatePlaceholder(env)
+  };
+}
+function insightNumber(value){
+  if(typeof value!=="number"||!Number.isFinite(value))return null;
+  return Object.is(value,-0)?"0":String(value);
+}
+function insightLine(name,metric){
+  const min=insightNumber(metric.min),max=insightNumber(metric.max),mean=insightNumber(metric.mean);
+  const first=insightNumber(metric.first),last=insightNumber(metric.latest),count=insightNumber(metric.n);
+  if(min==null||max==null||mean==null||count==null)return null;
+  if(metric.n>=2&&first!=null&&last!=null&&typeof metric.change==="number"){
+    if(metric.change===0)
+      return `${name} stayed at ${first} across ${count} records, with a minimum of ${min}, a maximum of ${max}, and a mean of ${mean}.`;
+    const verb=metric.change>0?"rose":"fell";
+    return `${name} ${verb} from ${first} to ${last} across ${count} records, with a minimum of ${min}, a maximum of ${max}, and a mean of ${mean}.`;
+  }
+  if(last!=null&&metric.latest_date)return `The ${name} was ${last} on ${metric.latest_date}.`;
+  if(last!=null)return `The ${name} was ${last}.`;
+  return `${name} ranged from ${min} to ${max} with a mean of ${mean}.`;
+}
+export function buildInsights(stats){
+  const insights=[];
+  for(const [path,metric] of Object.entries(stats?.metrics||{})){
+    const line=insightLine(metricMeta(path).name,metric);
+    if(!line)continue;
+    const text=line.replace(/\s+/g," ").trim();
+    if(outputAcceptable(text,stats))insights.push(text);
+  }
+  return insights;
 }
 function numberTokens(text){
   const out=[];
@@ -421,14 +542,17 @@ export function templateText(stats){
   }
   return text.replace(/\s+/g," ").trim();
 }
-function summaryObject({text,stats,model,generated_at,coverage,status}){
-  return {text,stats,model,generated_at,coverage,status};
+function summaryObject({text,stats,model,generated_at,coverage,status,chart_data,insights}){
+  return {text,stats,model,generated_at,coverage,status,chart_data,insights};
 }
-function templateSummary(facts,generatedAt){
+function templateSummary(facts,generatedAt,env){
   const text=outputAcceptable(templateText(facts.stats),facts.stats)
     ?templateText(facts.stats)
     :`${facts.stats.count} records were returned.`;
-  return summaryObject({text,stats:facts.stats,model:null,generated_at:generatedAt,coverage:facts.coverage,status:"template"});
+  return summaryObject({
+    text,stats:facts.stats,model:null,generated_at:generatedAt,coverage:facts.coverage,status:"template",
+    chart_data:chartBundle(facts,env),insights:buildInsights(facts.stats)
+  });
 }
 function withinInputCap(payload){
   const json=JSON.stringify(payload);
@@ -506,7 +630,7 @@ export async function attachSummary(data,ctx){
     const now=typeof ctx.now==="number"?ctx.now:Date.now();
     const generatedAt=new Date(now).toISOString();
     const day=utcDay(Date.parse(generatedAt));
-    const fallback={...data,summary:templateSummary(facts,generatedAt)};
+    const fallback={...data,summary:templateSummary(facts,generatedAt,ctx.env)};
     if(!Object.keys(facts.stats.metrics).length)return fallback;
     const model=selectModel(ctx.env);
     const payload=modelPayload(facts);
@@ -535,7 +659,8 @@ export async function attachSummary(data,ctx){
     try{await reconcileQuota(ctx.db,{userId:ctx.userId,day,reserved:estimate,actual});}catch{/* keep the reservation */}
     if(text&&outputAcceptable(text,facts.stats)){
       return {...data,summary:summaryObject({
-        text:text.trim(),stats:facts.stats,model,generated_at:generatedAt,coverage:facts.coverage,status:"model"
+        text:text.trim(),stats:facts.stats,model,generated_at:generatedAt,coverage:facts.coverage,status:"model",
+        chart_data:chartBundle(facts,ctx.env),insights:buildInsights(facts.stats)
       })};
     }
     return fallback;

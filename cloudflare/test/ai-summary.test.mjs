@@ -109,6 +109,7 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
   for(const [path,binding] of configs){
     const text=readFileSync(new URL(path,import.meta.url),"utf8");
     assert.match(text,/"AI_SUMMARY_ENABLED"\s*:\s*"false"/);
+    assert.match(text,/"STRESS_ESTIMATE_ENABLED"\s*:\s*"false"/);
     if(binding)assert.match(text,/"ai"\s*:\s*\{\s*"binding"\s*:\s*"AI"\s*\}/);
     assert.doesNotMatch(text,/AI_ACCOUNT_ANALYTICS_TOKEN|AI_ANALYTICS_ACCOUNT_ID|synthetic-analytics-token/);
   }
@@ -138,7 +139,12 @@ test("summary is additive, isolated, and the model never receives record text",a
     assert.equal(summary.model,DEFAULT_MODEL);
     assert.equal(calls,1);
     assert.equal(seen.model,DEFAULT_MODEL);
-    assert.deepEqual(Object.keys(summary),["text","stats","model","generated_at","coverage","status"]);
+    assert.deepEqual(Object.keys(summary),["text","stats","model","generated_at","coverage","status","chart_data","insights"]);
+    assert.equal(summary.chart_data.stress_estimate,null);
+    assert.equal(summary.chart_data.series[0].metric,"score.recovery_score");
+    assert.deepEqual(summary.chart_data.series[0].points,[
+      {date:"2026-10-01",value:40},{date:"2026-10-03",value:60}
+    ]);
     assert.equal(summary.stats.count,2);
     assert.deepEqual(summary.stats.date_range,{start:"2026-10-01",end:"2026-10-03"});
     assert.deepEqual(summary.stats.missing_dates,["2026-10-02"]);
@@ -587,5 +593,131 @@ test("the reserved input cap covers the call and over-cap usage is kept",async()
     const otherAfter=await reserveQuota(db,{userId:B,day,estimate:1});
     assert.equal(otherAfter.ok,false);
     assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope='global'").get().used,100001);
+  }finally{db.close();}
+});
+
+test("chart series and insights are factual on both the model and template paths",async()=>{
+  const hidden={records:[
+    recovery(40,"2026-10-01",{resting_heart_rate:50,hrv_rmssd_milli:30}),
+    recovery(55,"2026-10-02",{resting_heart_rate:49,hrv_rmssd_milli:33,spo2_percentage:97}),
+    recovery(44,"2026-10-03",{resting_heart_rate:48}),
+    {...recovery(60,"2026-10-04"),user_id:A,note:injection,custom_metric:9}
+  ],next_token:null};
+  const db=openDb();
+  try{
+    let prompt="",calls=0;
+    const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
+      calls++;
+      prompt=input.messages[1].content;
+      return {response:"The recovery score rose from 40 to 60 across 4 records.",
+        usage:{prompt_tokens:40,completion_tokens:16}};
+    }}});
+    const modeled=await attachSummary(hidden,{
+      db,userId:A,tool:"get_recovery",now:Date.parse("2026-10-13T00:00:00Z"),env
+    });
+    assert.equal(calls,1);
+    assert.equal(modeled.summary.status,"model");
+    const chart=modeled.summary.chart_data;
+    assert.deepEqual(Object.keys(chart),["date_range","record_count","series","stress_estimate"]);
+    assert.equal(chart.stress_estimate,null);
+    assert.equal(chart.record_count,4);
+    assert.deepEqual(chart.date_range,{start:"2026-10-01",end:"2026-10-04"});
+    const recoverySeries=chart.series.find(series=>series.metric==="score.recovery_score");
+    assert.deepEqual(Object.keys(recoverySeries),["metric","name","unit","date_range","record_count","stats","points"]);
+    assert.equal(recoverySeries.name,"Recovery score");
+    assert.equal(recoverySeries.unit,"score");
+    assert.equal(recoverySeries.record_count,4);
+    assert.deepEqual(recoverySeries.date_range,{start:"2026-10-01",end:"2026-10-04"});
+    assert.deepEqual(recoverySeries.points,[
+      {date:"2026-10-01",value:40},
+      {date:"2026-10-02",value:55},
+      {date:"2026-10-03",value:44},
+      {date:"2026-10-04",value:60}
+    ]);
+    assert.deepEqual(recoverySeries.stats,{
+      min:40,max:60,mean:modeled.summary.stats.metrics["score.recovery_score"].mean,
+      first:40,last:60,change:20
+    });
+    assert.notEqual(recoverySeries.stats.mean,55);
+    const heart=chart.series.find(series=>series.metric==="score.resting_heart_rate");
+    assert.equal(heart.name,"Resting heart rate");
+    assert.equal(heart.unit,"bpm");
+    assert.deepEqual(heart.points.map(point=>point.value),[50,49,48]);
+    assert.equal(heart.stats.first,50);
+    assert.equal(heart.stats.last,48);
+    assert.equal(heart.stats.change,-2);
+    assert.ok(modeled.summary.insights.length>=2);
+    for(const line of modeled.summary.insights){
+      assert.equal(outputAcceptable(line,modeled.summary.stats),true,line);
+      assert.doesNotMatch(line,/you|should|diagnos|stress|recommend|burnout|overtrain/i);
+    }
+    assert.match(modeled.summary.insights.join("\n"),/Recovery score rose from 40 to 60 across 4 records/);
+    assert.match(modeled.summary.insights.join("\n"),/Resting heart rate fell from 50 to 48/);
+    assert.doesNotMatch(prompt,/chart_data|"points"|99999|custom_metric|Ignore previous/);
+    assert.doesNotMatch(prompt,new RegExp(A));
+    assert.equal(prompt.includes("55"),false);
+    assert.equal(prompt.includes("44"),false);
+    const packed=JSON.stringify(modeled.summary.chart_data)+modeled.summary.insights.join("\n");
+    assert.doesNotMatch(packed,/99999|custom_metric|Ignore previous/);
+    assert.doesNotMatch(packed,new RegExp(A));
+    const templated=await attachSummary(hidden,{
+      db,userId:A,tool:"get_recovery",now:Date.parse("2026-10-13T00:00:00Z"),
+      env:{AI_SUMMARY_ENABLED:"true",AI:{async run(){calls++;throw Error("should not run");}}}
+    });
+    assert.equal(calls,1);
+    assert.equal(templated.summary.status,"template");
+    assert.equal(templated.summary.model,null);
+    assert.deepEqual(templated.summary.chart_data,modeled.summary.chart_data);
+    assert.deepEqual(templated.summary.insights,modeled.summary.insights);
+    const reserved=await attachSummary(hidden,{
+      db,userId:A,tool:"get_recovery",now:Date.parse("2026-10-13T00:00:00Z"),
+      env:{AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true",AI:{async run(){calls++;}}}
+    });
+    const slot=reserved.summary.chart_data.stress_estimate;
+    assert.equal(slot.metric,"stress_estimate");
+    assert.equal(slot.available,false);
+    assert.equal(slot.unit,null);
+    assert.equal(slot.stats,null);
+    assert.deepEqual(slot.points,[]);
+    assert.equal(Object.hasOwn(slot,"value"),false);
+    assert.equal(calls,1);
+    assert.deepEqual(reserved.summary.chart_data.series,modeled.summary.chart_data.series);
+    for(const flag of [undefined,"false","FALSE","true "]){
+      const offEnv={AI_SUMMARY_ENABLED:"true",AI:{async run(){calls++;}}};
+      if(flag!==undefined)offEnv.STRESS_ESTIMATE_ENABLED=flag;
+      const off=await attachSummary(pageA,{db,userId:A,tool:"get_recovery",env:offEnv});
+      assert.equal(off.summary.chart_data.stress_estimate,null,String(flag));
+      assert.equal(off.summary.status,"template");
+    }
+    assert.equal(calls,1);
+    const connected=await attachSummary({
+      records:[{observed_at:"2026-10-04T00:00:00Z",record_key:"synthetic",origin_package:"com.example.synthetic",
+        payload:{count:100,note:injection}}],
+      next_offset:null,source:"health_connect"
+    },{db,userId:A,tool:"get_health_connect",env:{AI_SUMMARY_ENABLED:"true",AI:{async run(){calls++;}}}});
+    const countSeries=connected.summary.chart_data.series.find(series=>series.metric==="payload.count");
+    assert.equal(countSeries.unit,"count");
+    assert.equal(countSeries.record_count,1);
+    assert.deepEqual(countSeries.points,[{date:"2026-10-04",value:100}]);
+    assert.match(connected.summary.insights[0],/The Count was 100 on 2026-10-04/);
+    assert.doesNotMatch(JSON.stringify(connected.summary.chart_data)+connected.summary.insights.join("\n"),
+      /Ignore previous|com\.example|synthetic|99999/);
+    const ordered=buildSummaryFacts({records:[
+      recovery(12,"2026-10-01"),
+      recovery(10,"2026-10-01")
+    ]},"get_recovery");
+    assert.deepEqual(ordered.series[0].points,[
+      {date:"2026-10-01",value:12},
+      {date:"2026-10-01",value:10}
+    ]);
+    const undated=buildSummaryFacts({records:[
+      {score:{recovery_score:7}},
+      recovery(9,"2026-10-02")
+    ]},"get_recovery");
+    assert.equal(undated.series[0].record_count,2);
+    assert.deepEqual(undated.series[0].points,[{date:"2026-10-02",value:9}]);
+    assert.equal(undated.series[0].stats.min,7);
+    assert.equal(undated.series[0].stats.max,9);
+    assert.equal(calls,1);
   }finally{db.close();}
 });
