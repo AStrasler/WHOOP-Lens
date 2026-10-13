@@ -32,6 +32,15 @@ const fakeIdentity=async()=>A;
 const enabled=(database)=>({DB:database,MIGRATION_API_ENABLED:"true",WHOOP_READS_ENABLED:"true",MCP_ENABLED:"true"});
 function router(args={}){return createStagingRouter({verifyIdentity:fakeIdentity,whoopRequest:async()=>data,...args});}
 
+test("MCP body limit stays small except for a Health Connect file import",async()=>{
+  const route=router();
+  const padded=payload("tools/list",1,{pad:"x".repeat(17000)});
+  assert.equal((await route(req(padded),enabled(db()))).status,413);
+  const importing=payload("tools/call",2,{name:"import_health_connect_file",arguments:{
+    consent:"store-health-connect-file",file_json:"y".repeat(20000)}});
+  assert.notEqual((await route(req(importing,{version:legacy}),enabled(db()))).status,413);
+});
+
 test("MCP is entirely inert until its third switch is enabled",async()=>{
   const database=db();let checked=0,called=0;
   const route=router({verifyIdentity:async()=>{checked++;return A;},whoopRequest:async()=>{called++;return data;}});

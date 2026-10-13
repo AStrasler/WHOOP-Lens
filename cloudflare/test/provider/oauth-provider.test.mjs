@@ -201,6 +201,8 @@ test('a client that never requests offline_access still receives a usable refres
     const tokens=await issued.json();
     assert.equal(tokens.scope,'mcp:read');
     assert.equal(typeof tokens.refresh_token,'string');
+    const validated=await f.server.validateToken(RESOURCE,tokens.access_token,f.env);
+    assert.deepEqual(validated.props,{userId:USER});
     const refreshed=await send({grant_type:'refresh_token',refresh_token:tokens.refresh_token});
     assert.equal(refreshed.status,200);
     assert.equal((await refreshed.json()).scope,'mcp:read');

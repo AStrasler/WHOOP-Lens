@@ -43,13 +43,17 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       const accept=request.headers.get("accept")||"";
       if(!accept.includes("application/json")||!accept.includes("text/event-stream"))
         return json({error:"Unsupported MCP Accept header"},406);
-      if(Number(request.headers.get("content-length"))>16384)
+      const declared=Number(request.headers.get("content-length"));
+      if(Number.isFinite(declared)&&declared>512000)
         return json({error:"MCP request too large"},413);
       let raw;
       try{raw=await request.text();}catch{return json({error:"Unreadable request"},400);}
-      if(raw.length>16384)return json({error:"MCP request too large"},413);
+      if(raw.length>512000)return json({error:"MCP request too large"},413);
       let message;
       try{message=JSON.parse(raw);}catch{return json({error:"Invalid JSON"},400);}
+      const importing=message?.method==="tools/call"&&
+        message?.params?.name==="import_health_connect_file";
+      if(!importing&&raw.length>16384)return json({error:"MCP request too large"},413);
       const transport=validateMcpTransport(request,message);
       if(transport.error)return json({error:transport.error},transport.status);
       try {

@@ -21,10 +21,11 @@ const env={
 };
 const sql=readFileSync(new URL("../migrations/0001_initial.sql",import.meta.url),"utf8");
 const cap=readFileSync(new URL("../migrations/0002_enforce_seat_limits.sql",import.meta.url),"utf8");
+const revocations=readFileSync(new URL("../migrations/0007_whoop_credential_revocations.sql",import.meta.url),"utf8");
 const json=value=>new Response(JSON.stringify(value),{status:200,headers:{"content-type":"application/json"}});
 function fixture(){
   const sqlite=new DatabaseSync(":memory:");
-  sqlite.exec(sql);sqlite.exec(cap);
+  sqlite.exec(sql);sqlite.exec(cap);sqlite.exec(revocations);
   for(const id of [A,B]){
     sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
     sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(id);
@@ -201,6 +202,28 @@ test("disconnect is atomic: a failed connection delete keeps pending states", as
     assert.deepEqual(await revokeWhoopConnection(db, A), { disconnected: true, removed: true });
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM whoop_oauth_states").get().n, 0);
   } finally { db.close(); }
+});
+test("an in-flight WHOOP callback cannot store credentials after disconnect",async()=>{
+  const d=fixture();try{
+    const start=await createWhoopAuthorization(d,A,env,{now:()=>base});
+    const created=d.sqlite.prepare("SELECT created_at FROM whoop_oauth_states").get().created_at;
+    const createdMs=Date.parse(String(created).replace(" ","T")+"Z");
+    await assert.rejects(acceptWhoopCallback(d,callbackUrl(start),env,{
+      now:()=>base,
+      fetcher:async()=>{
+        await revokeWhoopConnection(d,A,{now:()=>createdMs});
+        return json({access_token:"should-not-save",refresh_token:"should-not-save",expires_in:3600});
+      }
+    }),/WHOOP authorization was revoked/);
+    assert.equal(d.sqlite.prepare("SELECT COUNT(*) c FROM whoop_connections WHERE user_id=?").get(A).c,0);
+    d.sqlite.prepare("UPDATE whoop_credential_revocations SET revoked_at='2020-01-01 00:00:00' WHERE user_id=?").run(A);
+    const again=await createWhoopAuthorization(d,A,env,{now:()=>base+60000});
+    const saved=await acceptWhoopCallback(d,callbackUrl(again),env,{
+      now:()=>base+60000,
+      fetcher:async()=>json({access_token:"synthetic-access",refresh_token:"synthetic-refresh",expires_in:3600})
+    });
+    assert.equal(saved.connected,true);
+  }finally{d.close();}
 });
 test("pending WHOOP states are pruned and capped per member", async () => {
   const { createWhoopAuthorization } = await import("../src/whoop-oauth.mjs");

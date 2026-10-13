@@ -4,7 +4,7 @@ Status as of 2026-10-12: **Supabase stays live. The private MCP is also live on 
 
 - Private server: `https://whooplens.tech/mcp` on Worker `whoop-lens`.
 - Authorization server: `https://auth.whooplens.tech` on Worker `whoop-lens-auth`.
-- Scope: `mcp:read`. Resource name: WHOOP Lens (private read-only MCP).
+- Scope: `mcp:read`. Resource name: WHOOP Lens (private MCP). WHOOP API calls stay read-only. Account tools can disconnect stored WHOOP credentials and import a consented Health Connect file.
 - `workers.dev` and preview URLs are disabled.
 - WHOOP OAuth on Cloudflare is on. The Worker has `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET`. A connection is stored only after a separate WHOOP authorization, and the WHOOP app must allow `https://whooplens.tech/api/whoop/callback`.
 - D1 has one membership and zero WHOOP connections. Refresh tokens are not copied from Supabase.

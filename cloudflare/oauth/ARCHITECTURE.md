@@ -278,7 +278,11 @@ from resource scopes before publishing metadata. The member therefore never
 sees the stay-connected checkbox.
 
 Grants for that request set `connectorRefresh` and receive a refresh token.
-A client that requested `offline_access`, and a member who left it unchecked,
-still receives no refresh token, and a later refresh of that grant is
-`invalid_grant`. Reconnect the ChatGPT app after this issuer change so the
-new grant is the one ChatGPT stores.
+`approveConsent` replaces the stored request scope, so the original request
+is recorded before that replacement. A client that requested `offline_access`,
+and a member who left it unchecked, still receives no refresh token, and a
+later refresh of that grant is `invalid_grant`. Access tokens carry only
+`userId`; `connectorRefresh` stays on the grant. Reconnect the ChatGPT app
+after this issuer change so the new grant is the one ChatGPT stores. Auth
+worker version 8 already issues the ChatGPT refresh token. The decline-path
+correction is source-only until the next approved auth deploy.
