@@ -30,7 +30,13 @@ export function d1Prepare(sqlite) {
         return statement().get(...bound()) ?? null;
       },
       async all() {
-        return { success: true, results: statement().all(...bound()) };
+        const query = expandD1(sql, args);
+        const results = sqlite.prepare(query.sql).all(...query.args);
+        // changes() is the last INSERT/UPDATE/DELETE on this connection.
+        // A SELECT must not report the previous write's count.
+        const writing = /^\s*(?:insert|update|delete)\b/i.test(query.sql);
+        const changes = writing ? sqlite.prepare("SELECT changes() AS changes").get().changes : 0;
+        return { success: true, results, meta: { changes } };
       },
       _exec() {
         const info = statement().run(...bound());
