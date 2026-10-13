@@ -69,8 +69,8 @@ test("migration 0010 stores only the account neuron snapshot",()=>{
     assert.equal(neuronsFromAnalyticsBody({errors:[{message:"denied"}],data:{viewer:{accounts:[{aiInferenceAdaptiveGroups:[]}]}}}),null);
     assert.equal(neuronsFromAnalyticsBody({data:{viewer:{accounts:[{aiInferenceAdaptiveGroups:[]}]}}}),0);
     assert.equal(neuronsFromAnalyticsBody({data:{viewer:{accounts:[
-      {aiInferenceAdaptiveGroups:[{sum:{neurons:100.2}}]},
-      {aiInferenceAdaptiveGroups:[{sum:{neurons:25.1}}]}
+      {aiInferenceAdaptiveGroups:[{sum:{totalNeurons:100.2}}]},
+      {aiInferenceAdaptiveGroups:[{sum:{totalNeurons:25.1}}]}
     ]}}}),126);
   }finally{db.close();}
 });
@@ -261,7 +261,7 @@ test("the GraphQL analytics query sums neurons and fail closed on a bad response
           ok:true,
           async json(){
             return {data:{viewer:{accounts:[{
-              aiInferenceAdaptiveGroups:[{sum:{neurons:100.2}},{sum:{neurons:25.1}}]
+              aiInferenceAdaptiveGroups:[{sum:{totalNeurons:100.2}},{sum:{totalNeurons:25.1}}]
             }]}}};
           }
         };
@@ -280,7 +280,8 @@ test("the GraphQL analytics query sums neurons and fail closed on a bad response
     assert.equal(seen.init.headers.authorization,"Bearer "+TOKEN);
     const body=JSON.parse(seen.init.body);
     assert.match(body.query,/aiInferenceAdaptiveGroups/);
-    assert.match(body.query,/sum \{ neurons \}/);
+    assert.match(body.query,/totalNeurons/);
+    assert.match(body.query,/sum \{ totalNeurons \}/);
     assert.equal(body.variables.accountTag,ACCOUNT);
     assert.equal(body.variables.start,DAY+"T00:00:00Z");
     assert.equal(body.variables.end,"2026-10-14T00:00:00Z");
@@ -342,7 +343,7 @@ test("analytics lag counts local reservations since the last counted call",async
     assert.equal(localWins.recentLocal,0);
     assert.equal(localWins.accountCap,ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN);
     const dated=analyticsSample({data:{viewer:{accounts:[{aiInferenceAdaptiveGroups:[{
-      dimensions:{datetime:end},sum:{neurons:10}
+      dimensions:{datetime:end},sum:{totalNeurons:10}
     }]}]}}});
     assert.equal(dated.neurons,10);
     assert.equal(dated.endMs,Date.parse(end));
