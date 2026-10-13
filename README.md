@@ -4,25 +4,38 @@ Private, read-only MCP for a person's own WHOOP data. It can also read Samsung H
 
 ## Private connector
 
-Use this connector in ChatGPT or Codex:
+Add WHOOP Lens in ChatGPT as a custom MCP connector:
 
-- Name: **WHOOP Lens**
-- Server URL: `https://whooplens.tech/mcp`
-- Authentication: OAuth
-- Authorization server: `https://auth.whooplens.tech`
-- Scope: `mcp:read`
-- Protected resource metadata: `https://whooplens.tech/.well-known/oauth-protected-resource/mcp`
+1. Name it **WHOOP Lens**. Server URL: `https://whooplens.tech/mcp`.
+2. Choose OAuth and leave client ID and client secret empty. ChatGPT registers itself with `https://auth.whooplens.tech`. The issuer accepts dynamic registration at `/oauth/register` and client-metadata documents. Scope is `mcp:read`. Protected resource metadata is `https://whooplens.tech/.well-known/oauth-protected-resource/mcp`.
+3. Sign in with the Cloudflare Access email one-time code. The Worker accepts that Access identity only when it is already linked to an active member.
+4. Approve the consent screen.
 
-Sign-in is a Cloudflare Access email one-time PIN. The password form on the GitHub Pages site belongs to the existing Supabase connector.
+ChatGPT keeps a connector's discovery result until that connector is removed. After a server discovery change, remove WHOOP Lens and add it again at the same URL.
 
-The private server answers an unauthenticated request with an OAuth challenge. It does not return WHOOP measurements yet:
+An unauthenticated request receives an OAuth challenge. `https://whoop-lens.whoop-lens.workers.dev` stays disabled. WHOOP refresh tokens on this connector stay separate from the Supabase connector. The password form on the GitHub Pages site belongs to the Supabase connector.
 
-- The WHOOP client id and secret are saved on the Worker, and WHOOP connect is on.
-- The WHOOP app must allow the redirect `https://whooplens.tech/api/whoop/callback`.
-- The Cloudflare database has one membership and zero WHOOP connections. A connection is stored only after a separate WHOOP authorization.
-- `https://whoop-lens.whoop-lens.workers.dev` is disabled.
+### Link WHOOP
 
-A signed-in tool call still needs the owner to finish Access sign-in and complete that WHOOP authorization. WHOOP refresh tokens stay separate from the Supabase connector.
+The WHOOP client id and secret are saved on the Worker, and WHOOP connect is on. In ChatGPT, call `connect_whoop` and open the authorization URL it returns. Approve read access on WHOOP's page. WHOOP redirects the browser to `https://whooplens.tech/api/whoop/callback`. The WHOOP app must allow that redirect. The callback stores the connection for the member who started `connect_whoop`. A connection exists only after that approval.
+
+### Health Connect file
+
+`import_health_connect_file` stores one WHOOP Lens Health Connect v2 JSON file for the signed-in account. The consent argument is `store-health-connect-file`. The Worker stores the file when `WEB_HEALTH_IMPORT_ENABLED` is true. That variable is `false` in the checked-in Wrangler file, so confirm the live Worker before relying on the tool. `get_health_connect` reads rows already stored for the account. `withdraw_health_connect_import` with confirm `delete-my-health-connect-records` deletes those rows, records the withdrawal, and revokes phone ingest tokens.
+
+### Phone sync
+
+Automatic delivery from the Health Connect Webhook app is in this repository and is not deployed. `HEALTH_CONNECT_WEBHOOK_ENABLED` is `false` in Wrangler, and `cloudflare/migrations/0007_health_connect_ingest.sql` is not applied to the production D1 database `whoop-lens-migration`. The Worker accepts phone posts only after that migration is applied and the flag is true. This change does not apply the migration or deploy the Worker.
+
+When that gate is open, the phone setup is:
+
+1. Install the free FOSS app with Obtainium from [github.com/mcnaveen/health-connect-webhook](https://github.com/mcnaveen/health-connect-webhook). The release file is `app-foss-release.apk`. Package name: `com.hcwebhook.app`. This ingest was checked against v1.9.22.
+2. Grant every Health Connect permission the app requests, including background sync. Leave battery optimization as the phone already has it.
+3. Set the sync interval to 15 minutes.
+4. In ChatGPT, call `issue_health_connect_ingest_token` with consent `enable-health-connect-webhook`. The tool returns the `Authorization` value once. Issuing again replaces the previous token.
+5. Add exactly one webhook URL, `https://whooplens.tech/api/health-connect/webhook`, with one custom header: name `Authorization`, value `Bearer` plus the token from that tool.
+
+The server stores steps, sleep, heart rate, and exercise. Every other enabled type is counted and omitted so the app can advance its sync marker. Details are in [HC Webhook setup](docs/HC_WEBHOOK_SETUP.md).
 
 WHOOP Stress Monitor history is not in the official WHOOP developer API. There is no measurement of low, medium, or high stress-zone duration, non-activity high stress, or a Stress Monitor timeline. Do not estimate those durations from cycle strain, average heart rate, HRV, resting heart rate, or workouts. If someone pastes their own Stress Trends summary, label it user-provided, keep it separate from synced WHOOP measurements, and do not store it.
 
@@ -103,7 +116,7 @@ GitHub Actions runs that command on every push and every pull request. The tests
 Where the Cloudflare sources are present, also run:
 
 ```bash
-node --test cloudflare/test/mcp.test.mjs cloudflare/test/extra-tools.test.mjs
+node --test cloudflare/test/*.test.mjs cloudflare/test/provider/*.test.mjs
 ```
 
 ## WHOOP access

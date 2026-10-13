@@ -1,0 +1,277 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync} from 'node:fs';
+import {
+  checkUpstreamConfig,createVerifier,createChallenge,upstreamAuthorizationUrl,
+  verifyUpstreamCode,UpstreamSignInDenied,CALLBACK_URI
+} from './fixtures/legacy-supabase-upstream.mjs';
+import {makeConsentFlow as baseConsentFlow} from '../oauth/auth-server/src/consent-flow.mjs';
+import {refreshGrantResult} from '../oauth/auth-server/src/refresh-grant.mjs';
+import {consentPage} from '../oauth/consent.mjs';
+import {d1Prepare} from './d1-sqlite.mjs';
+const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const env=db=>({
+  DB:db,OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true',
+  SUPABASE_UPSTREAM_CLIENT_ID:'synthetic-registered-client',
+  SUPABASE_PUBLIC_KEY:'synthetic-publishable'
+});
+function fixture(){
+  const sqlite=new DatabaseSync(':memory:');
+  sqlite.exec(readFileSync(new URL('../migrations/0001_initial.sql',import.meta.url),'utf8'));
+  for(const id of [A,B])
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+  sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(A);
+  sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,0)').run(B);
+  return {sqlite,close:()=>sqlite.close(),prepare:d1Prepare(sqlite)};
+}
+const state='S'.repeat(43),handle='H'.repeat(43);
+const req=(path,method='GET',form,headers={})=>new Request('https://auth.whooplens.tech'+path,{
+  method,headers:{...(method==='POST'?{'content-type':'application/x-www-form-urlencoded'}:{}),...headers},
+  body:method==='POST'?new URLSearchParams(form):undefined
+});
+const response=value=>new Response(JSON.stringify(value),{status:200,headers:{'content-type':'application/json'}});
+function stub(scope=['mcp:read','offline_access']){
+  const calls={begin:0,approve:0,deny:0,upstream:0,finish:0,complete:0};
+  const request={scope};
+  const oauth={
+    async parseAuthRequest(){return request;},
+    async describeConsent(){return {clientName:'<script>alert(1)</script>',
+      redirectHost:'chatgpt.com',clientDomain:'chatgpt.com',
+      scope:request.scope,redirectIsLoopback:false};},
+    async beginConsent(){calls.begin++;return {handle,headers:new Headers({
+      'set-cookie':'__Host-oauth-consent=private; Secure; HttpOnly; SameSite=Lax'})};},
+    async approveConsent(_,h,options={}){
+      // The real provider replaces request.scope when options.scope is given.
+      assert.equal(h,handle);assert.equal(options.scope,undefined);
+      calls.approve++;return {request,headers:new Headers({'set-cookie':'__Host-oauth-consent=; Max-Age=0'})};
+    },
+    async denyConsent(_,h){assert.equal(h,handle);calls.deny++;
+      return {headers:new Headers({location:'https://chatgpt.com/denied'})};},
+    async beginUpstream(r,{data,headers}){
+      assert.deepEqual(r.scope,['mcp:read']);assert.deepEqual(data.grantedScopes,['mcp:read']);
+      assert.equal(data.offlineOffered,request.scope.includes('offline_access'));
+      assert.match(data.verifier,/^[A-Za-z0-9_-]{43,128}$/);
+      assert.ok(headers);
+      calls.upstream++;calls.data=data;
+      return {state,headers:new Headers({'set-cookie':'__Host-oauth-upstream=private; Secure; HttpOnly'})};
+    },
+    async finishUpstream(requestForCallback){
+      assert.match(requestForCallback.headers.get('cookie')||'',/__Host-oauth-upstream=private/);
+      calls.finish++;
+      if(calls.finish>1)throw Error('state replay');
+      return {request:{...request,scope:calls.data.grantedScopes},data:calls.data,headers:new Headers({'set-cookie':'__Host-oauth-upstream=; Max-Age=0'})};
+    },
+    async completeAuthorization({request:r,userId,scope:granted,props}){
+      assert.deepEqual(r.scope,['mcp:read']);assert.equal(userId,A);assert.deepEqual(granted,['mcp:read']);
+      const expected={userId:A};
+      if(!request.scope.includes('offline_access'))expected.connectorRefresh=true;
+      assert.deepEqual(props,expected);calls.complete++;
+      return {redirectTo:'https://chatgpt.com/callback?code=synthetic-cloudflare-code'};
+    }
+  };
+  return {oauth,calls};
+}
+test('PKCE S256 and state redirect are generated without receiving a password',async()=>{
+  const db=fixture();try{
+    const verifier=createVerifier();
+    assert.match(verifier,/^[A-Za-z0-9_-]{43}$/);
+    assert.match(await createChallenge(verifier),/^[A-Za-z0-9_-]{43}$/);
+    const destination=new URL(await upstreamAuthorizationUrl({state,verifier,env:env(db)}));
+    assert.equal(destination.origin,'https://evoiwauqplbcecumiwqn.supabase.co');
+    assert.equal(destination.pathname,'/auth/v1/oauth/authorize');
+    assert.equal(destination.searchParams.get('client_id'),'synthetic-registered-client');
+    assert.equal(destination.searchParams.get('code_challenge_method'),'S256');
+    assert.equal(destination.searchParams.get('redirect_uri'),CALLBACK_URI);
+    assert.equal(destination.searchParams.get('scope'),'openid');
+    assert.equal(destination.searchParams.get('state'),state);
+    assert.equal(destination.searchParams.get('code_challenge'),await createChallenge(verifier));
+    assert.equal(destination.searchParams.has('password'),false);
+    await assert.rejects(upstreamAuthorizationUrl({state,verifier,env:{...env(db),
+      SUPABASE_UPSTREAM_CLIENT_ID:''}}),UpstreamSignInDenied);
+  }finally{db.close();}
+});
+test('explicit browser consent issues only an upstream redirect and no token',async()=>{
+  const db=fixture();try{
+    const {oauth,calls}=stub();
+    const flow=makeConsentFlow({getOAuth:()=>oauth});
+    const inactive=await flow.authorize(req('/authorize'),{...env(db),OAUTH_CONSENT_ENABLED:'false'});
+    assert.equal(inactive.status,503);
+    const start=await flow.authorize(req('/authorize'),env(db));
+    assert.equal(start.status,200);
+    assert.match(start.headers.get('set-cookie'),/__Host-oauth-consent/);
+    const html=await start.text();
+    assert.match(html,/Continue to secure sign-in/);
+    assert.match(html,/&#60;script&#62;/);
+    assert.doesNotMatch(html,/type="password"|name="email"|name="password"/);
+    const redirect=await flow.authorize(req('/authorize','POST',
+      {handle,decision:'approve',scope:'mcp:read'},
+      {origin:'https://auth.whooplens.tech','sec-fetch-site':'same-origin'}),env(db));
+    assert.equal(redirect.status,302);
+    assert.match(redirect.headers.get('set-cookie'),/__Host-oauth-upstream/);
+    assert.equal(new URL(redirect.headers.get('location')).origin,
+      'https://evoiwauqplbcecumiwqn.supabase.co');
+    assert.equal(calls.complete,0);
+    assert.equal(calls.upstream,1);
+  }finally{db.close();}
+});
+test('callback validates browser-bound state, member identity and selected scopes',async()=>{
+  const db=fixture();try{
+    const {oauth,calls}=stub();let validations=0;
+    const flow=makeConsentFlow({getOAuth:()=>oauth,
+      verifyIdentity:async({code,verifier})=>{
+        validations++;assert.equal(code,'code-123');
+        assert.equal(verifier,calls.data.verifier);return A;
+      }});
+    await flow.authorize(req('/authorize','POST',{handle,decision:'approve',scope:'mcp:read'}),env(db));
+    const url='/oauth/upstream/callback?code=code-123&state='+state;
+    const request=req(url,'GET',null,{cookie:'__Host-oauth-upstream=private'});
+    const approved=await flow.callback(request,env(db));
+    assert.equal(approved.status,302);
+    assert.equal(approved.headers.get('location'),
+      'https://chatgpt.com/callback?code=synthetic-cloudflare-code');
+    assert.equal(calls.complete,1);
+    assert.equal(validations,1);
+    const replay=await flow.callback(request,env(db));
+    assert.equal(replay.status,401);
+    assert.equal(calls.complete,1);
+    const other=req('/oauth/upstream/callback?code=code-123','GET',null,{});
+    assert.equal((await flow.callback(other,{...env(db),OAUTH_CONSENT_ENABLED:'false'})).status,503);
+  }finally{db.close();}
+});
+test('denial and cross-origin submissions cannot initiate sign-in',async()=>{
+  const db=fixture();try{
+    const {oauth,calls}=stub();const flow=makeConsentFlow({getOAuth:()=>oauth});
+    const denied=await flow.authorize(req('/authorize','POST',{handle,decision:'deny'}),env(db));
+    assert.equal(denied.status,302);
+    assert.equal(calls.deny,1);
+    for(const headers of [{origin:'https://evil.invalid'},{'sec-fetch-site':'cross-site'}]){
+      assert.equal((await flow.authorize(req('/authorize','POST',
+        {handle,decision:'approve',scope:'mcp:read'},headers),env(db))).status,403);
+    }
+    assert.equal((await flow.authorize(req('/authorize','POST',
+      {handle,decision:'approve',scope:'mcp:read',password:'not-allowed'}),env(db))).status,400);
+    assert.equal((await flow.authorize(req('/authorize','POST',
+      {handle,decision:'deny',scope:'mcp:read'}),env(db))).status,400);
+    assert.equal(calls.upstream,0);
+    const errorFlow=makeConsentFlow({getOAuth:()=>oauth,errorRedirect:()=> 'https://chatgpt.com/callback?error=access_denied'});
+    calls.data={verifier:createVerifier(),grantedScopes:['mcp:read']};
+    const er=await errorFlow.callback(req('/oauth/upstream/callback?error=access_denied&state='+state,
+      'GET',null,{cookie:'__Host-oauth-upstream=private'}),env(db));
+    assert.equal(er.status,302);
+    assert.match(er.headers.get('location'),/access_denied/);
+    assert.equal(calls.complete,0);
+  }finally{db.close();}
+});
+test('Supabase code exchange checks explicit membership and logs out before granting',async()=>{
+  const db=fixture();try{
+    const verifier=createVerifier();
+    const attempt=async(user,logoutStatus=204)=>{
+      const urls=[];const headers=[];
+      const result=verifyUpstreamCode({code:'synthetic-auth-code',verifier,env:env(db),
+        fetcher:async(url,opts)=>{
+          urls.push(url);headers.push(opts);
+          if(url.endsWith('/oauth/token'))return response({
+            access_token:'t'.repeat(32),refresh_token:'should-never-be-saved'
+          });
+          if(url.endsWith('/auth/v1/user'))return response({id:user});
+          if(url.endsWith('/logout?scope=local'))return new Response(null,{status:logoutStatus});
+          throw Error('Unknown host');
+        }});
+      return {result,urls,headers};
+    };
+    const good=await attempt(A);
+    assert.equal(await good.result,A);
+    assert.deepEqual(good.urls.map(s=>new URL(s).pathname),
+      ['/auth/v1/oauth/token','/auth/v1/user','/auth/v1/logout']);
+    assert.equal(good.headers[0].body.get('grant_type'),'authorization_code');
+    assert.equal(good.headers[0].body.get('redirect_uri'),CALLBACK_URI);
+    assert.equal(good.headers[0].body.get('code_verifier'),verifier);
+    const disabled=await attempt(B);
+    await assert.rejects(disabled.result,UpstreamSignInDenied);
+    assert.equal(disabled.urls.length,3);
+    const notRevoked=await attempt(A,503);
+    await assert.rejects(notRevoked.result,UpstreamSignInDenied);
+    const malformed=await attempt('not-a-uuid');
+    await assert.rejects(malformed.result,UpstreamSignInDenied);
+    assert.equal(malformed.urls.length,3);
+  }finally{db.close();}
+});
+test('chatgpt-sized scope still marks the grant for a connector refresh token',async()=>{
+  const db=fixture();try{
+    const {oauth,calls}=stub(['mcp:read']);
+    const flow=makeConsentFlow({getOAuth:()=>oauth,verifyIdentity:async()=>A});
+    await flow.authorize(req('/authorize','POST',{handle,decision:'approve',scope:'mcp:read'}),env(db));
+    const approved=await flow.callback(req('/oauth/upstream/callback?code=code-123&state='+state,
+      'GET',null,{cookie:'__Host-oauth-upstream=private'}),env(db));
+    assert.equal(approved.status,302);
+    assert.equal(calls.complete,1);
+    assert.equal(refreshGrantResult({grantType:'authorization_code',scope:['mcp:read'],
+      props:{userId:A,connectorRefresh:true}}),undefined);
+    assert.equal(refreshGrantResult({grantType:'refresh_token',scope:['mcp:read'],
+      props:{connectorRefresh:true}}),undefined);
+    assert.deepEqual(refreshGrantResult({grantType:'authorization_code',scope:['mcp:read'],
+      props:{userId:A}}),{refreshTokenTTL:0});
+    assert.deepEqual(refreshGrantResult({grantType:'refresh_token',scope:['mcp:read'],
+      props:{userId:A}}),{reject:true});
+    assert.equal(refreshGrantResult({grantType:'authorization_code',
+      scope:['mcp:read','offline_access'],props:{userId:A}}),undefined);
+    assert.deepEqual(refreshGrantResult({grantType:'authorization_code',scope:['mcp:read'],
+      props:{connectorRefresh:false}}),{refreshTokenTTL:0});
+  }finally{db.close();}
+});
+test('upstream callback cannot be tricked into issuing other scopes',async()=>{
+  const db=fixture();try{
+    const {oauth,calls}=stub();calls.data={verifier:createVerifier(),
+      grantedScopes:['mcp:read','mcp:write']};
+    const flow=makeConsentFlow({getOAuth:()=>oauth,
+      verifyIdentity:async()=>{throw Error('should not run');}});
+    const response=await flow.callback(req('/oauth/upstream/callback?code=code-123&state='+state,
+      'GET',null,{cookie:'__Host-oauth-upstream=private'}),env(db));
+    assert.equal(response.status,400);
+    assert.equal(calls.complete,0);
+  }finally{db.close();}
+});
+test('ambiguous callbacks are rejected before state consumption or code exchange',async()=>{
+  const db=fixture();try{
+    const {oauth,calls}=stub();
+    const flow=makeConsentFlow({getOAuth:()=>oauth,
+      verifyIdentity:async()=>{throw Error('must not exchange');}});
+    for(const query of [
+      `state=${state}&code=first&code=second`,
+      `state=${state}&state=${state}&code=first`,
+      `state=${state}&error=denied&code=first`,
+      `state=${state}&error=denied&error=other`,
+      `state=${state}&error=denied&error_description=a&error_description=b`,
+      `state=${state}&code=first&iss=a&iss=b`,
+      `state=${state}&code=`, `state=${state}`, 'code=first'
+    ]){
+      const response=await flow.callback(req('/oauth/upstream/callback?'+query),env(db));
+      assert.equal(response.status,400,query);
+      assert.equal(response.headers.get('referrer-policy'),'no-referrer');
+    }
+    assert.equal(calls.finish,0);assert.equal(calls.complete,0);
+  }finally{db.close();}
+});
+test('all post-consumption failures clear the cookie without leaking upstream errors',async()=>{
+  const db=fixture();try{
+    for(const kind of ['identity','completion','scope','denial']){
+      const {oauth,calls}=stub();
+      calls.data={verifier:createVerifier(),grantedScopes:kind==='scope'?['mcp:write']:['mcp:read']};
+      if(kind==='completion')oauth.completeAuthorization=async()=>{throw Error('private-token');};
+      const flow=makeConsentFlow({getOAuth:()=>oauth,verifyIdentity:async()=>{
+        if(kind==='identity')throw Error('private-token');return A;
+      }});
+      const query=kind==='denial'?'error=denied':'code=code-123';
+      const response=await flow.callback(req('/oauth/upstream/callback?'+query+'&state='+state,
+        'GET',null,{cookie:'__Host-oauth-upstream=private'}),env(db));
+      assert.ok(response.status>=400);
+      assert.match(response.headers.get('set-cookie'),/Max-Age=0/);
+      assert.equal(response.headers.get('cache-control'),'no-store');
+      assert.doesNotMatch(await response.text(),/private-token/);
+    }
+  }finally{db.close();}
+});
+
+function makeConsentFlow(options){return baseConsentFlow({checkConfig:checkUpstreamConfig,startUrl:upstreamAuthorizationUrl,verifyIdentity:verifyUpstreamCode,...options});}

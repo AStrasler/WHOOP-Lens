@@ -1,0 +1,32 @@
+name: Cloudflare staging isolation
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'cloudflare/**'
+      - '.github/workflows/cloudflare-staging.yml'
+  pull_request:
+    paths:
+      - 'cloudflare/**'
+      - '.github/workflows/cloudflare-staging.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  stage-safety:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+      - name: Test staged authentication and tenant isolation (in-memory SQLite)
+        run: node --test cloudflare/test/*.test.mjs
+      - name: Verify staged Worker source parses
+        run: |
+          node --check cloudflare/src/index.js
+          node --check cloudflare/src/router.mjs
+          node --check cloudflare/src/identity.mjs
+          node --check cloudflare/src/storage.mjs
