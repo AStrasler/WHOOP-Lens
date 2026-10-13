@@ -935,7 +935,7 @@ export async function attachSummary(data,ctx){
       })};
     }
     if(text&&!failed){
-      try{console.log(JSON.stringify({event:"summary_filter",model,...outputRejection(text,facts.stats)}));}catch{/* diagnostics only */}
+      try{console.log(JSON.stringify({event:"summary_filter",rule:outputRejection(text,facts.stats)?.rule??"unknown"}));}catch{/* diagnostics only */}
     }
     return give(failed||(text?"filter":"model_error"));
   }catch{return data;}

@@ -452,7 +452,7 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
       }})
     }));
     assert.equal(filtered.result.summary.fallback_reason,"filter");
-    assert.deepEqual(filtered.lines,[JSON.stringify({event:"summary_filter",model:"@cf/google/gemma-4-26b-a4b-it",rule:"advice",category:"diagnostic"}),"filter"]);
+    assert.deepEqual(filtered.lines,[JSON.stringify({event:"summary_filter",rule:"advice"}),"filter"]);
     assert.equal(filtered.lines.join("\n").includes("doctor"),false);
     const original=JSON.stringify;
     let copies=0;
