@@ -315,8 +315,11 @@ test("successful usage is reconciled and an unknown model is not called",async()
     assert.equal(db.sqlite.prepare("SELECT used FROM ai_usage WHERE scope='global' AND day=?").get(day).used,actual);
     assert.equal(db.sqlite.prepare("SELECT cap FROM ai_usage WHERE scope=?").get(userScope(A)).cap,2500);
     assert.equal(db.sqlite.prepare("SELECT cap FROM ai_usage WHERE scope='global'").get().cap,7500);
+    assert.equal(DEFAULT_MODEL,"@cf/google/gemma-4-26b-a4b-it");
+    assert.equal(MAX_OUTPUT_TOKENS,600);
     assert.equal(selectModel({}),DEFAULT_MODEL);
     assert.equal(selectModel({AI_SUMMARY_MODEL:"@cf/zai-org/glm-4.7-flash"}),"@cf/zai-org/glm-4.7-flash");
+    assert.equal(selectModel({AI_SUMMARY_MODEL:"@cf/meta/llama-3.1-8b-instruct-fp8-fast"}),null);
     assert.equal(selectModel({AI_SUMMARY_MODEL:"@cf/meta/llama-3.3-70b-instruct-fp8-fast"}),null);
     let calls=0;
     const skipped=await attachSummary(pageA,{
@@ -326,6 +329,70 @@ test("successful usage is reconciled and an unknown model is not called",async()
     assert.equal(calls,0);
     assert.equal(skipped.summary.status,"template");
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) AS n FROM ai_usage WHERE scope=?").get(userScope(B)).n,0);
+  }finally{db.close();}
+});
+
+test("choices content is used and empty content with reasoning falls back to the template",async()=>{
+  const answer="There are 2 records from 2026-10-01 to 2026-10-03. The latest recovery score is 60 and the mean is 50. The missing-date count is 1.";
+  const reasoning="Hidden reasoning: the user should see a doctor. Secret score 99999.";
+  const db=openDb();
+  try{
+    for(const model of ["@cf/google/gemma-4-26b-a4b-it","@cf/zai-org/glm-4.7-flash"]){
+      let input=null;
+      const summary=await attachSummary(pageA,{
+        db,userId:A,tool:"get_recovery",now:Date.parse("2026-10-13T00:00:00Z"),
+        env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI_SUMMARY_MODEL:model,AI:{
+          async run(called,request){
+            assert.equal(called,model);
+            input=request;
+            return {choices:[{message:{
+              role:"assistant",content:answer,reasoning,reasoning_content:reasoning
+            }}],usage:{prompt_tokens:100,completion_tokens:40}};
+          }
+        }})
+      });
+      assert.equal(summary.summary.status,"model");
+      assert.equal(summary.summary.text,answer);
+      assert.equal(summary.summary.model,model);
+      assert.equal(JSON.stringify(summary).includes(reasoning),false);
+      assert.equal(JSON.stringify(summary).includes("see a doctor"),false);
+      assert.equal(input.max_tokens,MAX_OUTPUT_TOKENS);
+      assert.deepEqual(input.chat_template_kwargs,{enable_thinking:false});
+    }
+    const leak="REASONING_ONLY the hidden chain says see a doctor and score 99999.";
+    let calls=0;
+    const empty=await attachSummary(pageA,{
+      db,userId:B,tool:"get_recovery",now:Date.parse("2026-10-13T00:00:00Z"),
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{
+        async run(_model,request){
+          calls++;
+          assert.deepEqual(request.chat_template_kwargs,{enable_thinking:false});
+          assert.equal(request.max_tokens,600);
+          return {
+            choices:[{message:{content:"",reasoning:leak,reasoning_content:leak}}],
+            reasoning:leak,reasoning_content:leak,response:leak,
+            usage:{prompt_tokens:80,completion_tokens:180}
+          };
+        }
+      }})
+    });
+    assert.equal(calls,1);
+    assert.equal(empty.summary.status,"template");
+    assert.equal(empty.summary.model,null);
+    assert.equal(JSON.stringify(empty).includes("REASONING_ONLY"),false);
+    assert.equal(JSON.stringify(empty).includes(leak),false);
+    const blank=await attachSummary(pageA,{
+      db,userId:B,tool:"get_recovery",now:Date.parse("2026-10-14T00:00:00Z"),
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{
+        async run(){
+          calls++;
+          return {result:{choices:[{message:{content:null,reasoning:leak,reasoning_content:leak}}]}};
+        }
+      }})
+    });
+    assert.equal(calls,2);
+    assert.equal(blank.summary.status,"template");
+    assert.equal(JSON.stringify(blank).includes("REASONING_ONLY"),false);
   }finally{db.close();}
 });
 
@@ -568,7 +635,7 @@ test("the reserved input cap covers the call and over-cap usage is kept",async()
     assert.ok(inputTokenEstimate(request.messages[0].content,userJson)<=MAX_INPUT_TOKENS);
     assert.ok(JSON.parse(userJson).stats.missing_dates.length<=8);
     assert.equal(reservationEstimate(DEFAULT_MODEL),neuronsFor(DEFAULT_MODEL,MAX_INPUT_TOKENS,MAX_OUTPUT_TOKENS));
-    for(const model of [DEFAULT_MODEL,"@cf/google/gemma-4-26b-a4b-it","@cf/zai-org/glm-4.7-flash"]){
+    for(const model of ["@cf/google/gemma-4-26b-a4b-it","@cf/zai-org/glm-4.7-flash"]){
       const worst=reservationEstimate(model);
       assert.equal(worst,neuronsFor(model,MAX_INPUT_TOKENS,MAX_OUTPUT_TOKENS));
       assert.ok(worst<2500);
