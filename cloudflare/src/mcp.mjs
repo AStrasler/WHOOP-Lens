@@ -115,8 +115,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }
   if(message.method==="server/discover"){
     if(!modern)return fail(-32601,"Method not found",id);
-    return ok(id,{resultType:"complete",capabilities:{tools:{}},ttlMs:0,cacheScope:"private",
-      serverInfo,instructions:hostInstructions});
+    return ok(id,{resultType:"complete",supportedVersions:[PROTOCOL_CURRENT],capabilities:{tools:{}},ttlMs:0,cacheScope:"private",serverInfo,_meta:{"io.modelcontextprotocol/serverInfo":serverInfo},instructions:hostInstructions});
   }
   if(message.method==="ping")return ok(id,{});
   if(message.method==="tools/list"){
