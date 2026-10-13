@@ -99,6 +99,11 @@ function accountPredicate(snapshotLocal,accountCap){
   return {snapshotLocal,accountCap};
 }
 const READ_SCOPE=`SELECT used, cap FROM ai_usage WHERE day = ?1 AND scope = ?2`;
+const LOG_RESERVE=`INSERT INTO ai_usage_event(day, at_ms, amount) VALUES (?1, ?2, ?3)`;
+async function noteReserve(db,day,amount){
+  if(!Number.isSafeInteger(amount)||amount<1)return;
+  try{await db.prepare(LOG_RESERVE).bind(day,Date.now(),amount).run();}catch{/* the next ceiling still has the counter */}
+}
 function usageNumbers(row,fallbackCap){
   if(!row)return {used:0,cap:fallbackCap,remaining:fallbackCap};
   if(!Number.isSafeInteger(row.used)||row.used<0)return null;
@@ -135,7 +140,10 @@ export async function reserveQuota(db,{userId,day,estimate,snapshotLocal,account
         ?await readUpdate(db,RESERVE_ACCOUNT,[estimate,day,scope,account.snapshotLocal,account.accountCap])
         :await readUpdate(db,RESERVE,[estimate,day,scope]);
     }catch{return {ok:false};}
-    if(accepted(update,scope))return {ok:true,estimate,scope,day};
+    if(accepted(update,scope)){
+      await noteReserve(db,day,estimate);
+      return {ok:true,estimate,scope,day};
+    }
     await undo(db,{day,estimate,scope,rows:update.rows,changes:update.changes});
     return {ok:false};
   }catch{return {ok:false};}
@@ -160,12 +168,15 @@ export async function reconcileQuota(db,{userId,day,reserved,actual}){
       try{update=await readUpdate(db,ADD_BOTH,[extra,day,scope]);}
       catch{return {ok:false,action:"kept"};}
       const scopes=scopesOf(update.rows);
-      if((scopes.has(scope)&&scopes.has(GLOBAL_SCOPE))||(update.changes===2&&scopes.size===0))
+      if((scopes.has(scope)&&scopes.has(GLOBAL_SCOPE))||(update.changes===2&&scopes.size===0)){
+        await noteReserve(db,day,extra);
         return {ok:true,action:"increased"};
+      }
       for(const target of [scope,GLOBAL_SCOPE]){
         if(scopes.has(target))continue;
         try{await db.prepare(ADD_ONE).bind(extra,day,target).run();}catch{/* keep the rows already increased */}
       }
+      await noteReserve(db,day,extra);
       return {ok:true,action:"increased"};
     }
     const refund=reserved-actual;

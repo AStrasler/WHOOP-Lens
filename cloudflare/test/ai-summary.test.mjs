@@ -32,6 +32,7 @@ function openDb(){
   const sqlite=new DatabaseSync(":memory:");
   sqlite.exec(readFileSync(new URL("../migrations/0009_ai_usage.sql",import.meta.url),"utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0010_ai_account_snapshot.sql",import.meta.url),"utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0012_ai_usage_event.sql",import.meta.url),"utf8"));
   return {sqlite,...d1Database(sqlite),close(){sqlite.close();}};
 }
 function withAnalytics(env={},neurons=0){
@@ -108,11 +109,16 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
   ];
   for(const [path,binding] of configs){
     const text=readFileSync(new URL(path,import.meta.url),"utf8");
-    assert.match(text,/"AI_SUMMARY_ENABLED"\s*:\s*"false"/);
-    assert.match(text,/"STRESS_ESTIMATE_ENABLED"\s*:\s*"false"/);
-    assert.match(text,/"WEEKLY_DIGEST_ENABLED"\s*:\s*"false"/);
     assert.doesNotMatch(text,/"crons"|"triggers"/);
-    if(binding)assert.match(text,/"ai"\s*:\s*\{\s*"binding"\s*:\s*"AI"\s*\}/);
+    if(path.includes("auth-server")){
+      assert.doesNotMatch(text,/AI_SUMMARY_ENABLED|STRESS_ESTIMATE_ENABLED|WEEKLY_DIGEST_ENABLED/);
+      assert.doesNotMatch(text,/"binding"\s*:\s*"AI"/);
+    }else{
+      assert.match(text,/"AI_SUMMARY_ENABLED"\s*:\s*"false"/);
+      assert.match(text,/"STRESS_ESTIMATE_ENABLED"\s*:\s*"false"/);
+      assert.match(text,/"WEEKLY_DIGEST_ENABLED"\s*:\s*"false"/);
+      if(binding)assert.match(text,/"ai"\s*:\s*\{\s*"binding"\s*:\s*"AI"\s*\}/);
+    }
     assert.doesNotMatch(text,/AI_ACCOUNT_ANALYTICS_TOKEN|AI_ANALYTICS_ACCOUNT_ID|synthetic-analytics-token/);
   }
   }finally{globalThis.fetch=originalFetch;}

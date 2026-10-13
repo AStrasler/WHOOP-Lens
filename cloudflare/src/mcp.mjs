@@ -264,7 +264,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       data={records,next_token:cursor,complete:cursor===null,pages_fetched:pages};
     }
     if(args.summary===true&&aiSummaryEnabled(env)){
-      try{data=await attachSummary(data,{db,userId,env,tool:name});}
+      try{data=await attachSummary(data,{db,userId,env,tool:name,whoopRequest});}
       catch{/* Authorized records stay available when a summary fails. */}
     }
     const result={content:[{type:"text",text:JSON.stringify(data)}]};

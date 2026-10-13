@@ -7,7 +7,7 @@ import {d1Database} from "./d1-sqlite.mjs";
 import {reconcileQuota,reserveQuota,userScope} from "../src/ai-quota.mjs";
 import {
   ACCOUNT_NEURON_LIMIT,ACCOUNT_SAFETY_MARGIN,ANALYTICS_CACHE_MS,ANALYTICS_STALE_MS,
-  ANALYTICS_ACCOUNT_ID,ANALYTICS_TOKEN_SECRET,accountCeiling,loadAccountBudget,
+  ANALYTICS_ACCOUNT_ID,ANALYTICS_TOKEN_SECRET,accountCeiling,analyticsSample,loadAccountBudget,
   neuronsFromAnalyticsBody
 } from "../src/ai-account.mjs";
 import {attachSummary} from "../src/ai-summary.mjs";
@@ -22,6 +22,7 @@ function openDb(){
   const sqlite=new DatabaseSync(":memory:");
   sqlite.exec(readFileSync(new URL("../migrations/0009_ai_usage.sql",import.meta.url),"utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0010_ai_account_snapshot.sql",import.meta.url),"utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0012_ai_usage_event.sql",import.meta.url),"utf8"));
   return {sqlite,...d1Database(sqlite),close(){sqlite.close();}};
 }
 function page(){
@@ -56,7 +57,9 @@ test("migration 0010 stores only the account neuron snapshot",()=>{
   const db=openDb();
   try{
     const columns=db.sqlite.prepare("PRAGMA table_info(ai_account_snapshot)").all().map(row=>row.name);
-    assert.deepEqual(columns,["day","neurons","local_used","fetched_at"]);
+    assert.deepEqual(columns,["day","neurons","local_used","fetched_at","recent_local"]);
+    assert.equal(accountCeiling(8000,200,100),ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN-8100+200);
+    assert.equal(accountCeiling(100,500),ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN);
     assert.equal(accountCeiling(8000,200),ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN-8000+200);
     assert.equal(accountCeiling(9600,0),-100);
     assert.equal(accountCeiling(-1,0),null);
@@ -179,13 +182,19 @@ test("outside account usage near the limit skips the model",async()=>{
     assert.equal(used(db,"global"),0);
     assert.equal(snapshot(db).neurons,9600);
     let upstreamCalls=0;
+    const seen=[];
     const body=await handleMcpRpc({jsonrpc:"2.0",id:1,method:"tools/call",params:{
       name:"get_recovery",arguments:{summary:true}
     }},{
-      db,userId:A,env,whoopRequest:async()=>{upstreamCalls++;return page();}
+      db,userId:A,env,whoopRequest:async(_db,user,resource)=>{
+        upstreamCalls++;
+        seen.push([user,resource]);
+        return page();
+      }
     },modern);
     const parsed=JSON.parse(body.result.content[0].text);
-    assert.equal(upstreamCalls,1);
+    assert.equal(upstreamCalls,2);
+    assert.deepEqual(seen,[[A,"recovery"],[A,"recovery"]]);
     assert.equal(parsed.records.length,1);
     assert.equal(parsed.summary.status,"template");
     assert.equal(calls,0);
@@ -301,6 +310,48 @@ test("the GraphQL analytics query sums neurons and fail closed on a bad response
       assert.equal(fetches,1);
     }
     assert.equal(calls,1);
+  }finally{db.close();}
+});
+
+test("analytics lag counts local reservations since the sample, and a stale sample fails closed",async()=>{
+  const db=openDb();
+  try{
+    seed(db,0,200);
+    db.sqlite.prepare("INSERT INTO ai_usage_event(day,at_ms,amount) VALUES(?,?,?)").run(DAY,NOW-60*1000,100);
+    const end=new Date(NOW-5*60*1000).toISOString();
+    const budget=await loadAccountBudget(db,analyticsEnv(async()=>({neurons:8000,end})),{day:DAY,now:NOW});
+    assert.equal(budget.ok,true);
+    assert.equal(budget.recentLocal,100);
+    assert.equal(budget.accountCap,ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN-8100+200);
+    const over=await reserveQuota(db,{
+      userId:A,day:DAY,estimate:1401,snapshotLocal:budget.snapshotLocal,accountCap:budget.accountCap
+    });
+    assert.equal(over.ok,false);
+    const fits=await reserveQuota(db,{
+      userId:A,day:DAY,estimate:1400,snapshotLocal:budget.snapshotLocal,accountCap:budget.accountCap
+    });
+    assert.equal(fits.ok,true);
+    assert.ok(db.sqlite.prepare("SELECT COUNT(*) AS n FROM ai_usage_event WHERE amount=1400").get().n>=1);
+    db.sqlite.exec("DELETE FROM ai_usage");
+    db.sqlite.prepare("DELETE FROM ai_account_snapshot").run();
+    seed(db,0,500);
+    const localWins=await loadAccountBudget(db,analyticsEnv(async()=>({neurons:100})),{day:DAY,now:NOW});
+    assert.equal(localWins.ok,true);
+    assert.equal(localWins.recentLocal,0);
+    assert.equal(localWins.accountCap,ACCOUNT_NEURON_LIMIT-ACCOUNT_SAFETY_MARGIN);
+    const staleEnd=new Date(NOW-ANALYTICS_STALE_MS-1000).toISOString();
+    let calls=0;
+    const stale=await attachSummary(page(),{
+      db,userId:A,tool:"get_recovery",now:NOW+ANALYTICS_CACHE_MS+1,
+      env:analyticsEnv(async()=>({neurons:0,end:staleEnd}),{AI:{async run(){calls++;return {response:accepted};}}})
+    });
+    assert.equal(stale.summary.status,"template");
+    assert.equal(calls,0);
+    const dated=analyticsSample({data:{viewer:{accounts:[{aiInferenceAdaptiveGroups:[{
+      dimensions:{datetime:end},sum:{neurons:10}
+    }]}]}}});
+    assert.equal(dated.neurons,10);
+    assert.equal(dated.endMs,Date.parse(end));
   }finally{db.close();}
 });
 

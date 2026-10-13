@@ -1,6 +1,6 @@
 // Pulled weekly digest for the signed-in user. No send, no schedule.
 // One cached digest per account per week. A repeat does not call the model again.
-import {aiSummaryEnabled,attachSummary,observationDate} from "./ai-summary.mjs";
+import {aiSummaryEnabled,attachSummary,collectHistoryPages} from "./ai-summary.mjs";
 import {userScope,utcDay} from "./ai-quota.mjs";
 
 const PENDING_MS=30000;
@@ -47,10 +47,6 @@ function validUser(userId){
   return typeof userId==="string"&&userId.length>0&&userId.length<=80&&
     userId!=="global"&&!/[\u0000-\u001f]/.test(userId);
 }
-function inRange(record,start,end){
-  const date=observationDate(record);
-  return !!date&&date>=start&&date<=end;
-}
 function changesOf(result){
   const changes=result?.meta?.changes;
   return typeof changes==="number"?changes:-1;
@@ -91,24 +87,24 @@ async function claimWeek(db,scope,weekEnding){
   }
   return {status:"busy"};
 }
-async function onePage(whoopRequest,db,userId,env,resource){
-  const page=await whoopRequest(db,userId,resource,env,{limit:25,next_token:null,auto_page:false});
-  const records=Array.isArray(page?.records)?page.records:[];
-  return records.filter(row=>row&&typeof row==="object"&&!Array.isArray(row)).slice(0,25);
-}
 async function generateDigest({db,userId,env,whoopRequest,now,period,weekEnding}){
+  // A morning recovery can belong to a sleep whose start is the previous UTC
+  // day. Late-evening US starts are often already on the recovery's UTC day;
+  // the extra day is only so that sleep is still fetched. Pairing uses ids.
   const sleepStart=shiftDay(period.start,-1);
-  let recovery=[],sleep=[];
-  if(typeof whoopRequest==="function"){
-    recovery=await onePage(whoopRequest,db,userId,env,"recovery");
-    sleep=await onePage(whoopRequest,db,userId,env,"sleep");
-  }
-  const recoveryRecords=recovery.filter(row=>inRange(row,period.start,period.end));
-  const sleepRecords=sleep.filter(row=>inRange(row,sleepStart,period.end));
-  const data={records:[...sleepRecords,...recoveryRecords],next_token:null};
+  const ctx={db,userId,env,whoopRequest};
+  const recovery=typeof whoopRequest==="function"
+    ?await collectHistoryPages(whoopRequest,ctx,"recovery",{start:period.start,end:period.end})
+    :{records:[],complete:false};
+  const sleep=typeof whoopRequest==="function"
+    ?await collectHistoryPages(whoopRequest,ctx,"sleep",{start:sleepStart,end:period.end})
+    :{records:[],complete:false};
+  const cacheable=recovery.complete&&sleep.complete&&recovery.records.length+sleep.records.length>0;
+  const data={records:[...sleep.records,...recovery.records],next_token:null};
   const modelEnv=aiSummaryEnabled(env)?env:{...env,AI:undefined};
-  const summarized=await attachSummary(data,{db,userId,env:modelEnv,tool:"get_recovery",now});
-  return digestView(summarized?.summary,period,weekEnding);
+  const summarized=await attachSummary(data,{db,userId,env:modelEnv,tool:"get_recovery",now,whoopRequest});
+  const view=digestView(summarized?.summary,period,weekEnding);
+  return view?{view,cacheable}:null;
 }
 export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEnding}){
   const day=weekEnding==null?mostRecentCompleteWeekEnding(weekClock(now,env)):parseWeekEnding(weekEnding);
@@ -121,14 +117,16 @@ export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEndi
     if(claim.status==="ready")return {ok:true,...claim.cached,cached:true};
     if(claim.status!=="owner")return {ok:false};
     owned=true;
-    const view=await generateDigest({db,userId,env,whoopRequest,now:weekClock(now,env),period,weekEnding:day});
-    if(!view)return {ok:false};
-    const body=JSON.stringify(view);
-    if(body.length>MAX_BODY)return {ok:false};
-    const written=await db.prepare(SAVE).bind(body,scope,day).run();
-    if(changesOf(written)!==1)return {ok:false};
-    saved=true;
-    return {ok:true,...view,cached:false};
+    const generated=await generateDigest({db,userId,env,whoopRequest,now:weekClock(now,env),period,weekEnding:day});
+    if(!generated)return {ok:false};
+    if(generated.cacheable){
+      const body=JSON.stringify(generated.view);
+      if(body.length>MAX_BODY)return {ok:false};
+      const written=await db.prepare(SAVE).bind(body,scope,day).run();
+      if(changesOf(written)!==1)return {ok:false};
+      saved=true;
+    }
+    return {ok:true,...generated.view,cached:false};
   }catch{
     return {ok:false};
   }finally{

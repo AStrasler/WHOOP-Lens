@@ -175,6 +175,69 @@ function utcDate(value){
   return new Date(parsed).toISOString().slice(0,10);
 }
 export function observationDate(record){return recordDate(record);}
+const HISTORY_RESOURCE=Object.freeze({
+  get_recovery:"recovery",get_sleep:"sleep",get_workouts:"workouts",get_cycles:"cycles"
+});
+const HISTORY_PAGE=25;
+export const HISTORY_MAX_PAGES=16;
+function validCursor(token,previous){
+  return typeof token==="string"&&token.length>=1&&token.length<=512&&
+    /^[A-Za-z0-9._~+/-]+$/.test(token)&&!token.includes("..")&&token!==previous;
+}
+export async function collectHistoryPages(whoopRequest,ctx,resource,{start=null,end=null,maxPages=HISTORY_MAX_PAGES}={}){
+  if(typeof whoopRequest!=="function")return {records:[],complete:false};
+  const records=[];
+  let token=null,pages=0,complete=false;
+  while(pages<maxPages){
+    const page=await whoopRequest(ctx.db,ctx.userId,resource,ctx.env,{
+      limit:HISTORY_PAGE,next_token:token,auto_page:false
+    });
+    pages++;
+    const batch=Array.isArray(page?.records)?page.records.filter(row=>row&&typeof row==="object"&&!Array.isArray(row)).slice(0,HISTORY_PAGE):[];
+    records.push(...batch);
+    const dates=batch.map(row=>recordDate(row)).filter(Boolean).sort();
+    const oldest=dates[0]??null;
+    const next=page?.next_token??null;
+    if(next==null){complete=true;break;}
+    if(!validCursor(next,token))break;
+    if(start&&oldest&&oldest<start){complete=true;break;}
+    token=next;
+  }
+  const kept=records.filter(row=>{
+    const date=recordDate(row);
+    if(!date)return false;
+    if(start&&date<start)return false;
+    if(end&&date>end)return false;
+    return true;
+  });
+  return {records:kept,complete};
+}
+async function loadBaselineHistory(ctx,records){
+  try{
+    const resource=HISTORY_RESOURCE[ctx?.tool];
+    if(!resource||typeof ctx?.whoopRequest!=="function")return null;
+    let latest=null;
+    for(const record of records){
+      const date=recordDate(record);
+      if(date&&(!latest||date>latest))latest=date;
+    }
+    if(!latest)return null;
+    const start=shiftUtcDay(latest,-30),end=shiftUtcDay(latest,-1);
+    const collected=await collectHistoryPages(ctx.whoopRequest,ctx,resource,{start,end,maxPages:6});
+    const points=new Map();
+    collected.records.forEach((record,index)=>{
+      const date=recordDate(record);
+      if(!date)return;
+      const found=[];
+      walkNumbers(record,"",found,0);
+      for(const item of found){
+        if(!points.has(item.path))points.set(item.path,[]);
+        points.get(item.path).push({date,value:item.value,index});
+      }
+    });
+    return {points,complete:collected.complete};
+  }catch{return null;}
+}
 function recordDate(record){
   for(const key of DATE_FIELDS){
     if(!Object.hasOwn(record,key))continue;
@@ -260,7 +323,7 @@ function metricStats(points){
     maxPoint:{...maxPoint,value:quantize(maxPoint.value)}
   };
 }
-export function buildSummaryFacts(data,tool){
+export function buildSummaryFacts(data,tool,history=null){
   const records=recordsOf(data);
   const source=sourceLabel(tool);
   const grouped=new Map();
@@ -283,7 +346,10 @@ export function buildSummaryFacts(data,tool){
   const series=[];
   for(const [path,points] of chosen){
     const stats=metricStats(points);
-    const baseline=baselineFor(points,stats.latestDate);
+    const historyPoints=history?.points?.get(path);
+    const baseline=baselineFor(historyPoints||points,stats.latestDate,{
+      complete:!!(history?.complete&&historyPoints)
+    });
     metrics[path]={n:stats.n,min:stats.min,max:stats.max,mean:stats.mean,median:stats.median,
       latest:stats.latest,first:stats.first,change:stats.change,latest_date:stats.latestDate,baseline};
     series.push(chartSeries(path,points,stats,baseline));
@@ -351,15 +417,25 @@ function percentile(sorted,p){
   if(low===high)return sorted[low];
   return sorted[low]*(high-rank)+sorted[high]*(rank-low);
 }
-function baselineFor(points,lastDate){
+function baselineFor(points,lastDate,opts={}){
   if(!lastDate)return null;
   const end=shiftUtcDay(lastDate,-1);
   const start=shiftUtcDay(lastDate,-30);
-  const samples=points.filter(point=>point.date&&point.date>=start&&point.date<=end).map(point=>point.value);
+  const samples=points.filter(point=>point.date&&point.date>=start&&point.date<=end);
   if(!samples.length)return null;
-  const sorted=samples.slice().sort((a,b)=>a-b);
+  const dates=samples.map(point=>point.date).sort();
+  const full=opts.complete===true||dates[0]<=start;
+  const windowStart=full?start:dates[0];
+  const windowEnd=full?end:dates[dates.length-1];
+  const span=Math.round((Date.parse(windowEnd+"T00:00:00Z")-Date.parse(windowStart+"T00:00:00Z"))/86400000)+1;
+  const sorted=samples.map(point=>point.value).sort((a,b)=>a-b);
   const baseline={
-    window:{start,end},days:30,sample_count:samples.length,median:quantize(median(sorted)),typical_range:null
+    window:{start:windowStart,end:windowEnd},
+    days:full?30:span,
+    sample_count:samples.length,
+    median:quantize(median(sorted)),
+    typical_range:null,
+    complete:full
   };
   if(samples.length>=4)baseline.typical_range={
     low:quantize(percentile(sorted,0.25)),high:quantize(percentile(sorted,0.75))
@@ -403,35 +479,62 @@ function chartSeries(path,points,stats,baseline){
   };
 }
 const SLEEP_PAIR_METRICS=["score.sleep_performance_percentage","score.sleep_efficiency_percentage","score.sleep_consistency_percentage","score.respiratory_rate"];
+function stableId(value){
+  if(typeof value==="string"&&/^[A-Za-z0-9-]{1,80}$/.test(value))return value;
+  if(Number.isSafeInteger(value)&&value>=0)return String(value);
+  return null;
+}
 function pairSleepRecovery(records){
-  const sleepByDate=new Map(),recoveryByDate=new Map();
+  const sleeps=[],recoveries=[];
   for(const record of records){
     const date=recordDate(record);
     if(!date)continue;
     const found=[];
     walkNumbers(record,"",found,0);
-    if(!sleepByDate.has(date)){
-      const sleep=SLEEP_PAIR_METRICS.filter(path=>found.some(item=>item.path===path)).map(path=>{
-        const item=found.find(entry=>entry.path===path);
-        const meta=metricMeta(path);
-        return {metric:path,name:meta.name,unit:meta.unit,value:quantize(item.value)};
+    const sleep=SLEEP_PAIR_METRICS.filter(path=>found.some(item=>item.path===path)).map(path=>{
+      const item=found.find(entry=>entry.path===path);
+      const meta=metricMeta(path);
+      return {metric:path,name:meta.name,unit:meta.unit,value:quantize(item.value)};
+    });
+    if(sleep.length)sleeps.push({id:stableId(record.id),date,sleep});
+    const score=found.find(item=>item.path==="score.recovery_score");
+    if(score){
+      const meta=metricMeta("score.recovery_score");
+      recoveries.push({
+        sleepId:stableId(record.sleep_id),date,
+        recovery:{metric:"score.recovery_score",name:meta.name,unit:meta.unit,value:quantize(score.value)}
       });
-      if(sleep.length)sleepByDate.set(date,sleep);
-    }
-    if(!recoveryByDate.has(date)){
-      const score=found.find(item=>item.path==="score.recovery_score");
-      if(score){
-        const meta=metricMeta("score.recovery_score");
-        recoveryByDate.set(date,{metric:"score.recovery_score",name:meta.name,unit:meta.unit,value:quantize(score.value)});
-      }
     }
   }
+  const sleepById=new Map();
+  for(const sleep of sleeps){
+    if(sleep.id&&!sleepById.has(sleep.id))sleepById.set(sleep.id,sleep);
+  }
+  const usedSleep=new Set(),usedRecovery=new Set();
   const pairs=[];
+  recoveries.forEach((recovery,index)=>{
+    if(!recovery.sleepId)return;
+    const sleep=sleepById.get(recovery.sleepId);
+    if(!sleep)return;
+    usedSleep.add(sleep);
+    usedRecovery.add(index);
+    pairs.push({sleep_date:sleep.date,recovery_date:recovery.date,sleep:sleep.sleep,recovery:recovery.recovery});
+  });
+  // Date pairing is only for records that have no id to join on.
+  const sleepByDate=new Map();
+  for(const sleep of sleeps){
+    if(sleep.id||usedSleep.has(sleep)||sleepByDate.has(sleep.date))continue;
+    sleepByDate.set(sleep.date,sleep);
+  }
+  const recoveryByDate=new Map();
+  recoveries.forEach((recovery,index)=>{
+    if(recovery.sleepId||usedRecovery.has(index)||recoveryByDate.has(recovery.date))return;
+    recoveryByDate.set(recovery.date,recovery);
+  });
   for(const [date,sleep] of sleepByDate){
-    const morning=addUtcDay(date);
-    const recovery=recoveryByDate.get(morning);
+    const recovery=recoveryByDate.get(addUtcDay(date));
     if(!recovery)continue;
-    pairs.push({sleep_date:date,recovery_date:morning,sleep,recovery});
+    pairs.push({sleep_date:date,recovery_date:addUtcDay(date),sleep:sleep.sleep,recovery:recovery.recovery});
   }
   pairs.sort((a,b)=>a.sleep_date<b.sleep_date?-1:a.sleep_date>b.sleep_date?1:0);
   const kept=pairs.slice(0,14);
@@ -542,6 +645,11 @@ function spelledNumbers(text){
   while((match=re.exec(text)))matches.push({word:match[0].toLowerCase(),start:match.index,end:match.index+match[0].length});
   const spans=[];
   for(let i=0;i<matches.length;){
+    // "Zone zero" is a metric name. A spelled zero still has to match a value of 0.
+    if(matches[i].word==="zero"&&/zone\s+$/i.test(text.slice(0,matches[i].start))){
+      i++;
+      continue;
+    }
     const parsed=parseSpelled(text,matches,i);
     if(parsed.span.value==null)return null;
     spans.push(parsed.span);
@@ -739,7 +847,8 @@ async function runOnce(ai,model,payload,ms){
 export async function attachSummary(data,ctx){
   try{
     if(!data||typeof data!=="object"||Array.isArray(data))return data;
-    const facts=buildSummaryFacts(data,ctx.tool);
+    const history=await loadBaselineHistory(ctx,recordsOf(data));
+    const facts=buildSummaryFacts(data,ctx.tool,history);
     const now=typeof ctx.now==="number"?ctx.now:Date.now();
     const generatedAt=new Date(now).toISOString();
     const day=utcDay(Date.parse(generatedAt));
