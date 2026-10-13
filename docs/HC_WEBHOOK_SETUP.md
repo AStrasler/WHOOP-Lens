@@ -2,7 +2,7 @@
 
 Phone delivery into WHOOP Lens uses the open-source Android app [HC Webhook](https://github.com/mcnaveen/health-connect-webhook) (`com.hcwebhook.app`). The ingest below was checked against v1.9.22 and its JSON webhook (`docs/webhook.md` in that repository).
 
-This path is in the repository and is not deployed. `HEALTH_CONNECT_WEBHOOK_ENABLED` is `false` in both Wrangler configs. Migration `cloudflare/migrations/0007_health_connect_ingest.sql` is not applied to production D1 `whoop-lens-migration`. Posts succeed only after that migration is applied and the flag is true on the `whoop-lens` Worker.
+This path is deployed. On Oct 12, 2026, migration `cloudflare/migrations/0007_health_connect_ingest.sql` was applied to production D1 `whoop-lens-migration`, and `whoop-lens` version `3ce33b05` went live with `HEALTH_CONNECT_WEBHOOK_ENABLED=true`. Both Wrangler configs still default the flag to `false`, so every deploy must pass `--var HEALTH_CONNECT_WEBHOOK_ENABLED:true` with the other production flags.
 
 ## Phone
 

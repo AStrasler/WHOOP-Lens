@@ -25,7 +25,7 @@ The WHOOP client id and secret are saved on the Worker, and WHOOP connect is on.
 
 ### Phone sync
 
-Automatic delivery from the Health Connect Webhook app is in this repository and is not deployed. `HEALTH_CONNECT_WEBHOOK_ENABLED` is `false` in Wrangler, and `cloudflare/migrations/0007_health_connect_ingest.sql` is not applied to the production D1 database `whoop-lens-migration`. The Worker accepts phone posts only after that migration is applied and the flag is true. This change does not apply the migration or deploy the Worker.
+Automatic delivery from the Health Connect Webhook app is deployed. On Oct 12, 2026, `cloudflare/migrations/0007_health_connect_ingest.sql` was applied to the production D1 database `whoop-lens-migration`, and `whoop-lens` version `3ce33b05` went live with `HEALTH_CONNECT_WEBHOOK_ENABLED=true`. The checked-in Wrangler config still defaults the flag to `false`, so every deploy must pass `--var HEALTH_CONNECT_WEBHOOK_ENABLED:true` with the other production flags.
 
 When that gate is open, the phone setup is:
 
