@@ -10,10 +10,21 @@ so the phased plan shipped AI summaries first and left `stressEstimatePlaceholde
 This change replaces the placeholder. It stays off until Aaron enables it.
 
 ## Data (one user, already authorized)
-- WHOOP recovery records for the returned dates, plus that user's own recovery history from 30 days before the earliest returned date.
-- That user's WHOOP sleep records for the same span. Only fetched when the flag is on; if sleep cannot be read, the estimate runs without it.
-- Everything goes through the caller's own `whoopRequest(db, userId, ...)`: no other user's data, no storage, no new scopes.
-- Excluded days: `score_state` not `SCORED`, `user_calibrating: true`, and naps. They count as missing.
+- **Target dates come only from recovery records** (`isRecoveryRecord`: has `cycle_id`, no `start`/`nap`), using the recovery's own
+  `created_at` day. Sleep records mixed into the same list (the weekly digest does this) never become target dates; they are only used as sleep data.
+- Recovery history: one bounded walk of WHOOP `/recovery` with `start` = earliest target - 31 days and `end` = latest target + 1 day
+  (WHOOP's own `start`/`end` query parameters), paginated until `next_token` is null. Page budget: ceil(span/25)+2, at most 20.
+  Old targets (for example 150+ records behind the newest) are reachable because the walk starts at the window, not at today.
+- Sleep: the same bounded walk of `/activity/sleep` (one extra day earlier, since a sleep can begin on the previous UTC date).
+- The summary's own baseline fetch is unchanged from main; the estimate does its own bounded fetch only when the flag is on.
+- **Incomplete history** (page budget exhausted, invalid cursor, or a non-rate-limit error) sets `history.complete=false`, adds a limitation,
+  and days short of baseline get status `incomplete_history` (reason `incomplete_history`), distinct from a genuine `insufficient_baseline`.
+- **Rate limit:** a WHOOP 429 on either fetch returns no estimate (`available:false`, `reason:"rate_limited"`, no points) and a limitation note.
+  The tool call and summary still succeed. `callWhoop` keeps its error message and now attaches `error.status`.
+- Everything goes through the caller's own `whoopRequest(db, userId, ...)` (the same OAuth refresh path): no other user's data, no storage, no new scopes.
+- Excluded days: `score_state` not `SCORED`, `user_calibrating: true`, and naps.
+- **Plausibility guard:** values outside these ranges are artifacts, never scored or used in any baseline, and reported as
+  `implausible_value`: HRV 5-300 ms, RHR 25-130 bpm, sleep performance/efficiency 0-100 %, sleep 0.5-16 h, respiratory rate 5-40 /min.
 
 ## Alignment
 - One row per recovery (cycle). Duplicates on a day keep the highest `cycle_id`, independent of page order.
@@ -54,23 +65,51 @@ This change replaces the placeholder. It stays off until Aaron enables it.
 - Bands: low < 35, typical 35-64, elevated 65-79, high 80-100.
 - Missing inputs renormalize over what is present, but that lowers `coverage` and `confidence` (below), so a value from fewer inputs is never presented as equally certain.
 
-## Confidence
-`confidence.score = coverage x min(1, baseline_days / 30) x max(0, 1 - 0.15 x capped inputs)`, with levels high >= 0.75, moderate >= 0.5, low otherwise.
-- `coverage` = sum of the available effective weights (1.0 when all six inputs are present).
-- A partial history, missing inputs, or capped (anomalous) inputs each lower confidence. Days with no value have confidence `none`.
+## Magnitude vs evidence
+- **Magnitude** is the value plus `deviation` = {points_from_typical, direction, largest_input}. It never affects confidence.
+- **Confidence** is evidence quality only:
+  `evidence = sum over scored inputs of effective weight x min(1, that input's own baseline values / 30)`;
+  `confidence.score = evidence x max(0, 1 - 0.15 x conflicts)`. Levels: high >= 0.75, moderate >= 0.5, low otherwise.
+  Six inputs with full 30-value baselines and no conflicts give 1.0. Each input's own baseline completeness counts, not just the
+  HRV/RHR day count. `confidence.components` shows input_coverage, baseline_completeness, conflicts and per-input counts.
+- An optional input with fewer than 14 baseline values is not scored at all (it lowers coverage).
+- **Capped inputs** (|raw z| >= 3) are classified against the weighted mean z of the other scored inputs (`m`):
+  - `agrees`: |m| >= 1, same sign. Not a conflict. Agreement adds nothing (confidence still equals evidence), so agreement is never proof.
+  - `disagrees`: opposite sign with |m| >= 1, or 0.5 <= |m| < 1. Conflict.
+  - `lone_outlier`: the others did not move with it and |raw z| < 8. Scored (clipped), conflict.
+  - `suspected_artifact`: unsupported and |raw z| >= 8. **Not scored**, conflict. If it is HRV or RHR, the day gets status `suspected_artifact` and no value.
+  - `implausible_value` (see Data): not scored, conflict.
+- Every case is reported in the point's `anomalies` with a note, repeated in `limitations`.
+- Example: the sample fixture's last five days shift all six inputs toward load and all are capped. The first version gave confidence 0.1;
+  they now all `agree`, so confidence is 1.0.
 
 ## Output (`summary.chart_data.stress_estimate`)
-Top level: `name`, `label`, `experimental: true`, `version`, `scale`, `available`, `reason`, `date_range`, `method` (all of the above),
-`excluded_days`, `points`, `latest`, `limitations`.
-Each point: `date`, `label`, `value`, `band`, `status` (`ok`, `insufficient_baseline`, `missing_required_inputs`), `baseline_days`,
-`coverage`, `confidence`, `anomalies`, `inputs_used`, `inputs_missing`, `contributions`, `measurements` (the measured values used, unchanged), `limitations`.
-No value is imputed or invented: missing inputs stay missing.
+Top level: `name`, `label`, `experimental: true`, `version`, `scale`, `available`, `reason` (`insufficient_baseline`, `incomplete_history`,
+`insufficient_data`, `rate_limited`, `requires_recovery_data`), `date_range`, `history.complete`, `method`, `excluded_days`, `points`,
+`requested_latest_date`, `latest_requested` (that day's status, value or null), `latest_valid` (most recent day with a value),
+`latest_valid_is_requested_latest`, `limitations`. There is no ambiguous `latest` field, so a past value is never presented as the newest
+day's; when they differ, the first limitation names both dates.
+Each point: `date`, `label`, `value`, `band`, `status` (`ok`, `insufficient_baseline`, `incomplete_history`, `missing_required_inputs`,
+`suspected_artifact`), `baseline_days`, `coverage`, `confidence` (+ `components`), `deviation`, `anomalies`, `inputs_used`, `inputs_missing`,
+`contributions`, `measurements`, `limitations`.
 
 ## AI summary
-Only when the flag is on and the latest point has a value, the model gets `stats.stress_estimate` with
-{name, experimental, date, value, band, confidence, baseline_days}. The output filter is unchanged except for neutral words
-(experimental, physiological, stress, estimate, lens, band, typical, elevated, low, high, confidence, moderate, index).
-Every number still has to match, and advice or diagnostic wording is still rejected.
+Only when the flag is on **and** a valid calculated estimate exists does the model get `stats.stress_estimate`:
+{name, experimental, estimate_date, requested_latest_date, is_latest_requested_date, value, band, confidence, baseline_days}. Only then:
+- the system prompt gains one line (name it as the experimental estimate, state the estimate_date, say when the requested latest date has
+  no estimate, never call it WHOOP's Stress Monitor, stress-zone time or a diagnosis);
+- the output filter accepts extra neutral words (experimental, physiological, stress, estimate, lens, band, elevated, low, high, confidence, moderate, index);
+- a `stress_claim` rule rejects unsupported claims (Stress Monitor, stress zones, non-activity, clinical, burnout, anxiety, cortisol, "stressed")
+  and a stress sentence that pins the value on `requested_latest_date` when the estimate is from an earlier day.
+Flag off, or on with no valid estimate: the prompt is byte-identical to main (`test/fixtures/system-prompt-main.txt`, from main d98346f) and
+the stress words fail the vocabulary check exactly as on main. Number/date grounding, advice and medical checks are unchanged in every case.
+
+## Host instructions and get_capabilities
+- Stress Monitor zone data stays unsupported in both, always.
+- Flag off: MCP initialize instructions are identical to main (`test/fixtures/host-instructions-main.txt`) and `get_capabilities` does not mention the estimate.
+- Flag on: `hostInstructionsFor(env)` appends one paragraph describing the experimental index and its labels; `get_capabilities` adds an
+  `experimental-stress-estimate` entry ("Not WHOOP's Stress Monitor. Not clinically validated.") and a global limitation. Without a WHOOP
+  connection the entry reports `requires_connection_or_data`, never `available`.
 
 ## Logging
 The module logs nothing. No health values are logged anywhere in this path (tested).
@@ -80,7 +119,10 @@ See `LIMITATIONS` in `src/stress-estimate.mjs`: daily resolution only (no intrad
 travel and noise move the same inputs; no cause is identified; there's no validation against self-reported stress yet.
 
 ## Review aids
-- `test/stress-estimate.test.mjs`: hand-computed values, the 14-day boundary, zero variance, clipping, missing data, sleep_id join, duplicates,
-  per-user isolation, flag off, and no values in logs.
-- `test/fixtures/stress-estimate-sample.json`: the full output for 45 synthetic days (the last 5 shifted toward load). Regenerate with
-  `node test/make-stress-fixture.mjs`; the test fails if the calculation drifts.
+- `test/stress-estimate.test.mjs`, grouped by finding (F1-F6) plus cross-cutting regressions: hand-computed values, recovery exclusion,
+  rolling 30-day baseline and the 14-day boundary, determinism, agreement / contradiction / isolated extreme / artifact, per-input baseline
+  completeness, requested vs latest valid dates, bounded window fetch (recent, 150+ records back, page boundaries 25/26/50, incomplete,
+  genuinely insufficient), 429, mixed digest and the real weekly digest with cache, sleep_id join, per-user isolation, no values or tokens in logs, flag off unchanged.
+- `test/extra-tools.test.mjs` and `test/mcp.test.mjs` (F7): discovery off / on / on without account data; initialize instructions off / on.
+- `test/whoop-api.test.mjs`: start/end sent only when given, validated; 429 keeps its status.
+- `test/fixtures/stress-estimate-sample.json`: full output for 45 synthetic days. Regenerate with `node test/make-stress-fixture.mjs`.

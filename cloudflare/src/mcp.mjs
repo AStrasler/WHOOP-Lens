@@ -5,7 +5,7 @@ import {readOwnUsage,utcDay} from './ai-quota.mjs';
 import {revokeWhoopConnection} from './whoop-oauth.mjs';
 import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
-import {hostInstructions,serverInfo} from './host-instructions.mjs';
+import {hostInstructionsFor,serverInfo} from './host-instructions.mjs';
 // Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
 // this module. Do not copy WHOOP refresh tokens from Supabase.
@@ -185,11 +185,11 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
        !initializeVersions.has(params.protocolVersion))
       return fail(-32602,"Unsupported or invalid initialize request",id);
     return ok(id,{protocolVersion:params.protocolVersion,capabilities:{tools:{}},
-      serverInfo,instructions:hostInstructions});
+      serverInfo,instructions:hostInstructionsFor(env)});
   }
   if(message.method==="server/discover"){
     if(!modern)return fail(-32601,"Method not found",id);
-    return ok(id,{resultType:"complete",supportedVersions:[PROTOCOL_CURRENT],capabilities:{tools:{}},ttlMs:0,cacheScope:"private",serverInfo,_meta:{"io.modelcontextprotocol/serverInfo":serverInfo},instructions:hostInstructions});
+    return ok(id,{resultType:"complete",supportedVersions:[PROTOCOL_CURRENT],capabilities:{tools:{}},ttlMs:0,cacheScope:"private",serverInfo,_meta:{"io.modelcontextprotocol/serverInfo":serverInfo},instructions:hostInstructionsFor(env)});
   }
   if(message.method==="ping")return ok(id,{});
   if(message.method==="tools/list"){
@@ -243,7 +243,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
         text:digest.text,chart_data:digest.chart_data,insights:digest.insights,
         status:digest.status,cached:digest.cached===true};
     }else if(extraTools.some(t=>t.name===name)){
-      data=await readExtraTool(db,userId,name,queryArgs(args));
+      data=await readExtraTool(db,userId,name,queryArgs(args),env);
     }else if(!historyTools.has(name)||!args.auto_page){
       data=await whoopRequest(db,userId,resource,env,queryArgs(args));
     }else{

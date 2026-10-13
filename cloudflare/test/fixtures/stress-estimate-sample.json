@@ -16,12 +16,43 @@
     "start": "2026-10-06",
     "end": "2026-10-15"
   },
+  "history": {
+    "complete": true
+  },
   "method": {
     "baseline_days": 30,
     "min_baseline_days": 14,
     "center": "median",
     "spread": "MAD x 1.4826",
     "z_clip": 3,
+    "artifact_z": 8,
+    "plausible_ranges": {
+      "hrv_rmssd": [
+        5,
+        300
+      ],
+      "resting_heart_rate": [
+        25,
+        130
+      ],
+      "sleep_performance": [
+        0,
+        100
+      ],
+      "sleep_duration": [
+        0.5,
+        16
+      ],
+      "sleep_efficiency": [
+        0,
+        100
+      ],
+      "respiratory_rate": [
+        5,
+        40
+      ]
+    },
+    "confidence": "sum of scored effective weights x each input's baseline completeness (n/30), x (1 - 0.15 per conflict); conflicts are disagreeing or unsupported capped inputs, suspected artifacts and implausible values",
     "clusters": {
       "autonomic": 0.6,
       "sleep": 0.3,
@@ -108,7 +139,46 @@
       "coverage": 1,
       "confidence": {
         "score": 1,
-        "level": "high"
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": -5,
+        "direction": "toward_less_load",
+        "largest_input": {
+          "input": "resting_heart_rate",
+          "z": -0.67
+        }
       },
       "anomalies": [],
       "inputs_used": [
@@ -148,7 +218,46 @@
       "coverage": 1,
       "confidence": {
         "score": 1,
-        "level": "high"
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 3,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "respiratory_rate",
+          "z": 0.67
+        }
       },
       "anomalies": [],
       "inputs_used": [
@@ -188,7 +297,46 @@
       "coverage": 1,
       "confidence": {
         "score": 1,
-        "level": "high"
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 1,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "resting_heart_rate",
+          "z": 0.67
+        }
       },
       "anomalies": [],
       "inputs_used": [
@@ -228,7 +376,46 @@
       "coverage": 1,
       "confidence": {
         "score": 1,
-        "level": "high"
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": -3,
+        "direction": "toward_less_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": -0.69
+        }
       },
       "anomalies": [],
       "inputs_used": [
@@ -268,7 +455,46 @@
       "coverage": 1,
       "confidence": {
         "score": 1,
-        "level": "high"
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 0,
+        "direction": "none",
+        "largest_input": {
+          "input": "respiratory_rate",
+          "z": -0.67
+        }
       },
       "anomalies": [],
       "inputs_used": [
@@ -307,16 +533,103 @@
       "status": "ok",
       "coverage": 1,
       "confidence": {
-        "score": 0.1,
-        "level": "low"
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
       },
       "anomalies": [
-        "hrv_rmssd",
-        "resting_heart_rate",
-        "sleep_performance",
-        "sleep_duration",
-        "sleep_efficiency",
-        "respiratory_rate"
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
       ],
       "inputs_used": [
         "hrv_rmssd",
@@ -344,7 +657,12 @@
         "respiratory_rate": 16.7
       },
       "limitations": [
-        "At least one input was far outside the usual range and was capped."
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
       ]
     },
     {
@@ -356,16 +674,103 @@
       "status": "ok",
       "coverage": 1,
       "confidence": {
-        "score": 0.1,
-        "level": "low"
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
       },
       "anomalies": [
-        "hrv_rmssd",
-        "resting_heart_rate",
-        "sleep_performance",
-        "sleep_duration",
-        "sleep_efficiency",
-        "respiratory_rate"
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
       ],
       "inputs_used": [
         "hrv_rmssd",
@@ -393,7 +798,12 @@
         "respiratory_rate": 16.7
       },
       "limitations": [
-        "At least one input was far outside the usual range and was capped."
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
       ]
     },
     {
@@ -405,16 +815,103 @@
       "status": "ok",
       "coverage": 1,
       "confidence": {
-        "score": 0.1,
-        "level": "low"
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
       },
       "anomalies": [
-        "hrv_rmssd",
-        "resting_heart_rate",
-        "sleep_performance",
-        "sleep_duration",
-        "sleep_efficiency",
-        "respiratory_rate"
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
       ],
       "inputs_used": [
         "hrv_rmssd",
@@ -442,7 +939,12 @@
         "respiratory_rate": 16.7
       },
       "limitations": [
-        "At least one input was far outside the usual range and was capped."
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
       ]
     },
     {
@@ -454,16 +956,103 @@
       "status": "ok",
       "coverage": 1,
       "confidence": {
-        "score": 0.1,
-        "level": "low"
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
       },
       "anomalies": [
-        "hrv_rmssd",
-        "resting_heart_rate",
-        "sleep_performance",
-        "sleep_duration",
-        "sleep_efficiency",
-        "respiratory_rate"
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
       ],
       "inputs_used": [
         "hrv_rmssd",
@@ -491,7 +1080,12 @@
         "respiratory_rate": 16.6
       },
       "limitations": [
-        "At least one input was far outside the usual range and was capped."
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
       ]
     },
     {
@@ -503,16 +1097,103 @@
       "status": "ok",
       "coverage": 1,
       "confidence": {
-        "score": 0.1,
-        "level": "low"
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
       },
       "anomalies": [
-        "hrv_rmssd",
-        "resting_heart_rate",
-        "sleep_performance",
-        "sleep_duration",
-        "sleep_efficiency",
-        "respiratory_rate"
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
       ],
       "inputs_used": [
         "hrv_rmssd",
@@ -540,22 +1221,39 @@
         "respiratory_rate": 16.6
       },
       "limitations": [
-        "At least one input was far outside the usual range and was capped."
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
       ]
     }
   ],
-  "latest": {
+  "requested_latest_date": "2026-10-15",
+  "latest_requested": {
     "date": "2026-10-15",
+    "status": "ok",
     "value": 100,
     "band": "high",
-    "confidence": "low",
+    "confidence": "high",
     "baseline_days": 30
   },
+  "latest_valid": {
+    "date": "2026-10-15",
+    "status": "ok",
+    "value": 100,
+    "band": "high",
+    "confidence": "high",
+    "baseline_days": 30
+  },
+  "latest_valid_is_requested_latest": true,
   "limitations": [
     "This is the WHOOP Lens experimental physiological stress estimate, a derived daily index. It is not WHOOP's Stress Monitor and is not clinically validated.",
     "It compares each day with the same person's prior 30 days. 50 means typical for that person; higher values mean HRV, resting heart rate, sleep or respiratory rate moved in the direction usually linked with physiological load.",
     "WHOOP provides one value per day, with no intraday heart rate, so short events within a day are not visible.",
     "Training, illness, alcohol, travel and measurement noise can move the same inputs. The estimate does not identify a cause.",
-    "Days without enough history (at least 14 scored days in the prior 30) are reported as insufficient instead of estimated."
+    "Days without enough history (at least 14 scored days in the prior 30) are reported as insufficient instead of estimated.",
+    "Confidence describes how good the evidence is (input coverage, each input's own baseline completeness, conflicts and artifacts), not how large the change is. Inputs agreeing in direction are not penalized, but agreement is not treated as proof."
   ]
 }
