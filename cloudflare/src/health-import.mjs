@@ -59,15 +59,26 @@ export async function importHealthConnectFile(db,userId,file,consent,{now=Date.n
 export async function withdrawHealthConnectImport(db,userId,consent){
   const id=await requireMember(db,userId);
   if(consent!==WITHDRAW_CONSENT)throw Error('Consent required');
-  // Delete and withdrawal are atomic so records never outlive a withdrawal.
-  let removed,marked;
-  try{[removed,marked]=await db.batch([
-    db.prepare('DELETE FROM health_connect_records WHERE user_id=?1').bind(id),
-    db.prepare('UPDATE health_import_consent SET withdrawn_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND purpose=?2')
-      .bind(id,'health_connect_file')
-  ]);}catch{throw Error('Import unavailable');}
-  if(!removed?.success||!marked?.success)throw Error('Import unavailable');
-  return {deleted:removed.meta?.changes??0,consent:'withdrawn',source:'health_connect'};
+  // Delete, withdrawal, and ingest-token revocation land together so a phone
+  // token cannot keep writing after the member removes stored records.
+  let results;
+  try{
+    const tokenTable=await db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='health_connect_ingest_tokens'"
+    ).first();
+    const statements=[
+      db.prepare('DELETE FROM health_connect_records WHERE user_id=?1').bind(id),
+      db.prepare('UPDATE health_import_consent SET withdrawn_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND purpose=?2')
+        .bind(id,'health_connect_file')
+    ];
+    if(tokenTable?.name) statements.push(db.prepare(
+      'UPDATE health_connect_ingest_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND revoked_at IS NULL'
+    ).bind(id));
+    results=await db.batch(statements);
+  }catch{throw Error('Import unavailable');}
+  if(!Array.isArray(results)||results.some(r=>!r?.success))throw Error('Import unavailable');
+  return {deleted:results[0].meta?.changes??0,consent:'withdrawn',source:'health_connect',
+    ingest_tokens_revoked:results[2]?.meta?.changes??0};
 }
 
 export async function healthConnectStatus(db,userId){

@@ -12,6 +12,7 @@
     "WHOOP_OAUTH_ENABLED": "false",
     "MCP_ENABLED": "false",
     "WEB_HEALTH_IMPORT_ENABLED": "false",
+    "HEALTH_CONNECT_WEBHOOK_ENABLED": "false",
     "WHOOP_REDIRECT_URI": "https://whooplens.tech/api/whoop/callback"
   },
   "services": [{"binding":"AUTH_SERVER","service":"whoop-lens-auth"}],

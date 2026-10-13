@@ -2,13 +2,14 @@
 // by the router before dispatch; each SQL statement also binds the verified ID.
 import manifest from '../../supabase/functions/whoop-mcp/capabilities.json' with {type:'json'};
 import {activeMembership,connectionStatus} from './storage.mjs';
+import {ISSUE_CONSENT,REVOKE_CONFIRM} from './health-connect-webhook.mjs';
 export const SAMSUNG_METRICS=['sleep','heart_rate','spo2','steps','activity','exercise','body_composition','skin_temperature','energy_score','blood_pressure','profile'];
 export const HC_METRICS=['steps_daily','sleep_session','heart_rate','exercise_session'];
 const categories=['whoop','optional','explore','advocacy','planned','unsupported'];
 const paging={limit:{type:'integer',minimum:1,maximum:100},offset:{type:'integer',minimum:0,maximum:100000}};
 const definitions=[
   ['get_samsung_health','Read the signed-in account’s uploaded Samsung Health records, separately attributed from WHOOP.',{...paging,metric:{type:'string',enum:SAMSUNG_METRICS}}],
-  ['get_health_connect','Read the signed-in account’s imported Health Connect records. This tool does not sync a phone.',{...paging,metric:{type:'string',enum:HC_METRICS}}],
+  ['get_health_connect','Read the signed-in account’s stored Health Connect records from a file import or phone ingest. This tool does not sync a phone.',{...paging,metric:{type:'string',enum:HC_METRICS}}],
   ['get_medical_context','Read only explicitly reviewed, source-labeled medical context belonging to the signed-in account.',paging],
   ['get_capabilities','Describe registered tools, account data availability and limitations.',{
     category:{type:'string',enum:categories},limit:{type:'integer',minimum:1,maximum:25},
@@ -18,15 +19,19 @@ const definitions=[
   ['import_health_connect_file','Store a user-selected WHOOP Lens Health Connect v2 JSON file for the signed-in account. This is a file import, not a live Health Connect sync.',{
     consent:{type:'string',enum:['store-health-connect-file']},
     file_json:{type:'string',minLength:2,maxLength:12000}}],
-  ['withdraw_health_connect_import','Delete stored Health Connect file imports for the signed-in account and record consent withdrawal.',{
-    confirm:{type:'string',enum:['delete-my-health-connect-records']}}]
+  ['withdraw_health_connect_import','Delete stored Health Connect records for the signed-in account, record consent withdrawal, and revoke phone ingest tokens.',{
+    confirm:{type:'string',enum:['delete-my-health-connect-records']}}],
+  ['issue_health_connect_ingest_token','Issue this account’s Health Connect webhook token. Replaces any current token, grants storage consent, and shows the secret once.',{
+    consent:{type:'string',enum:[ISSUE_CONSENT]}}],
+  ['revoke_health_connect_ingest_token','Revoke this account’s Health Connect webhook tokens. Stored records remain until withdrawal.',{
+    confirm:{type:'string',enum:[REVOKE_CONFIRM]}}]
 ];
-const accountWrites=new Set(['connect_whoop','disconnect_whoop','import_health_connect_file','withdraw_health_connect_import']);
+const accountWrites=new Set(['connect_whoop','disconnect_whoop','import_health_connect_file','withdraw_health_connect_import','issue_health_connect_ingest_token','revoke_health_connect_ingest_token']);
 export const extraTools=definitions.map(([name,description,properties])=>({name,description,
   inputSchema:{type:'object',properties,additionalProperties:false},
   annotations:{
     readOnlyHint:!accountWrites.has(name),
-    destructiveHint:name==='disconnect_whoop'||name==='withdraw_health_connect_import',
+    destructiveHint:name==='disconnect_whoop'||name==='withdraw_health_connect_import'||name==='revoke_health_connect_ingest_token',
     openWorldHint:name==='connect_whoop'
   }}));
 export function extraArguments(name,args){
@@ -43,6 +48,10 @@ export function extraArguments(name,args){
   if(name==='connect_whoop'||name==='disconnect_whoop')return {};
   if(name==='withdraw_health_connect_import')
     return args.confirm==='delete-my-health-connect-records'?{confirm:args.confirm}:null;
+  if(name==='issue_health_connect_ingest_token')
+    return args.consent===ISSUE_CONSENT?{consent:args.consent}:null;
+  if(name==='revoke_health_connect_ingest_token')
+    return args.confirm===REVOKE_CONFIRM?{confirm:args.confirm}:null;
   if(name==='import_health_connect_file'){
     if(args.consent!=='store-health-connect-file'||typeof args.file_json!=='string'||
        args.file_json.length<2||args.file_json.length>12000)return null;
@@ -79,7 +88,7 @@ export async function readExtraTool(db,userId,name,args){
   const next_offset=data.length>limit?offset+limit:null;
   if(name==='get_medical_context')return {entries:records,next_offset,provenance:'user_approved_medical_context'};
   return {records,next_offset,source:name==='get_samsung_health'?'samsung_health':'health_connect',
-    transport:name==='get_samsung_health'?'samsung_health_data_sdk':'web_file_import'};
+    transport:name==='get_samsung_health'?'samsung_health_data_sdk':'stored_health_connect'};
 }
 async function catalog(db,userId,{category,limit=25,offset=0,include_planned=true}){
   const connected=(await connectionStatus(db,userId)).connected;
@@ -95,12 +104,12 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
     if(localTools[item.id]){
       const health=item.id==='health-connect';
       return {...value,category:'optional',delivery:'mcp_tool',
-        name:health?'Health Connect file import':value.name,
-        description:health?'Reads Health Connect v2 JSON stored for this account. This is not a live phone sync.':value.description,
+        name:health?'Health Connect records':value.name,
+        description:health?'Reads Health Connect records stored for this account from a file import or phone ingest.':value.description,
         tools:[localTools[item.id]],status:available[item.id]?'available':'requires_connection_or_data',
-        provides:health?'Reads a user-selected file import. It does not sync a phone or authorize native Health Connect.':'Reads existing authorized records; does not import or sync new data.',
-        data_requirements:health?['Separate consent and a WHOOP Lens Health Connect v2 JSON file.']:value.data_requirements,
-        limitations:['Records are source-labeled and account-scoped. No automatic phone sync or EHR import.'],
+        provides:health?'Reads stored Health Connect records. Phone ingest requires its own token and server flag.':'Reads existing authorized records; does not import or sync new data.',
+        data_requirements:health?['A stored file import, or an issued phone ingest token while that server flag is on.']:value.data_requirements,
+        limitations:['Records are source-labeled and account-scoped. Phone ingest stays off until a token is issued and the server flag is on.'],
         availability_reason:available[item.id]?'Authorized records exist.':'No authorized records are present for this account.'};
     }
     const needsWhoop=item.tools.some(t=>['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles'].includes(t));
@@ -111,8 +120,8 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
   }).filter(item=>(!category||item.category===category)&&(include_planned||!['planned','unsupported'].includes(item.status)));
   return {schema_version:manifest.schema_version,registry_version:'cloudflare-1.2',source:'bundled_cloudflare_catalog',
     global_limitations:[...manifest.global_limitations.filter(s=>!s.startsWith('Android Health Connect')),
-      'Local record tools read authorized imports only; automatic imports and sync are not enabled.',
-      'Health Connect data on this server is a user-selected file import, not a live Health Connect synchronization.'],
+      'Local record tools read stored records for the signed-in account.',
+      'Health Connect phone ingest stays off until an ingest token is issued and the server flag is on. File import is a separate consent.'],
     total:capabilities.length,next_offset:offset+limit<capabilities.length?offset+limit:null,
     capabilities:capabilities.slice(offset,offset+limit)};
 }
