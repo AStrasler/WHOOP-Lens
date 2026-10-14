@@ -845,7 +845,7 @@ const MISSING_TRIGGER=/\b(?:no\s+estimate|not\s+available|unavailable|insufficie
 const PRONOUN_ANY=/\b(?:it|its|this|that|they|these|those|which)\b/i;
 // A standalone follow-up inherits a stress measurement only when the immediately
 // preceding sentence explicitly named that measurement (not another metric).
-const STRESS_FOLLOWUP=/^\s*(?:it|its|this|that|they|these|those)\b/i;
+const STRESS_FOLLOWUP=/^\s*(?:(?:(?:on|for|as of|by)\s+\d{4}-\d{2}-\d{2}|(?:however|then|also|additionally|meanwhile)),?\s+)?(?:it|its|this|that|they|these|those)\b/i;
 const CLAUSE_SPLIT=/,|;|\b(?:and|but|while|whereas|although|though)\b/i;
 const INTRO_DATE=/^\s*(?:on|for|as of|by)\s+\d{4}-\d{2}-\d{2}\s*$/i;
 const DATE_FRAGMENT=/^\s*(?:(?:on|for|as of|by|or)\s+)?\d{4}-\d{2}-\d{2}(?:\s*(?:,|or)\s*\d{4}-\d{2}-\d{2})*\s*[.!?]?\s*$/i;
