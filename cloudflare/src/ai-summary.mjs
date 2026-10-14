@@ -843,6 +843,9 @@ const UNAVAILABLE=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient)\
 const DATE_RE=/\b\d{4}-\d{2}-\d{2}\b/g;
 const MISSING_TRIGGER=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient|missing)\b/i;
 const PRONOUN_ANY=/\b(?:it|its|this|that|they|these|those|which)\b/i;
+// A standalone follow-up inherits a stress measurement only when the immediately
+// preceding sentence explicitly named that measurement (not another metric).
+const STRESS_FOLLOWUP=/^\s*(?:it|its|this|that|they|these|those)\b/i;
 const CLAUSE_SPLIT=/,|;|\b(?:and|but|while|whereas|although|though)\b/i;
 const INTRO_DATE=/^\s*(?:on|for|as of|by)\s+\d{4}-\d{2}-\d{2}\s*$/i;
 const DATE_FRAGMENT=/^\s*(?:(?:on|for|as of|by|or)\s+)?\d{4}-\d{2}-\d{2}(?:\s*(?:,|or)\s*\d{4}-\d{2}-\d{2})*\s*[.!?]?\s*$/i;
@@ -903,10 +906,18 @@ function stressClaimRejection(text,stats){
     return !spelled.some(span=>!baseNumbers.some(stat=>stat===span.value||Math.round(stat)===span.value));
   };
   const words=part=>part.toLowerCase().match(/[a-z0-9]+/g)||[];
+  let precedingMetric=null;
   for(const sentence of text.split(/(?<=[.!?])\s+/)){
     const stressy=STRESS_CLAIM.test(sentence),missing=MISSING_TRIGGER.test(sentence);
     if(!stressy&&!missing){
+      const otherMetric=words(sentence).some(w=>METRIC_WORDS.has(w));
+      if(precedingMetric==="stress"&&STRESS_FOLLOWUP.test(sentence)&&!otherMetric){
+        const r=measurementRejection(sentence,est,needDate);
+        if(r)return r;
+        continue;
+      }
       if(!grounded(sentence))return {rule:"stress_claim",category:"estimate_value_reused"};
+      precedingMetric=otherMetric?"other":null;
       continue;
     }
     if(!missing){
@@ -914,6 +925,7 @@ function stressClaimRejection(text,stats){
       if(words(sentence).some(w=>METRIC_WORDS.has(w)))return {rule:"stress_claim",category:"other_metric"};
       const r=measurementRejection(sentence,est,needDate);
       if(r)return r;
+      precedingMetric="stress";
       continue;
     }
     // Missing-data wording: classify each clause on its own. A clause that is
@@ -968,6 +980,7 @@ function stressClaimRejection(text,stats){
       }
       last=kind;
     }
+    precedingMetric=last==="stress_value"||last==="stress_unavailable"?"stress":last==="metric"?"other":null;
   }
   return null;
 }

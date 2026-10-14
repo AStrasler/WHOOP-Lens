@@ -5,6 +5,7 @@ import {DatabaseSync} from "node:sqlite";
 import {computeStressEstimate,dailyInputs,confidenceFor,STRESS_LABEL,MIN_BASELINE_DAYS,PLAUSIBLE} from "../src/stress-estimate.mjs";
 import {attachSummary,systemPromptFor,outputRejection,stressTargetDates,fetchStressWindow,STRESS_RATE_LIMIT_NOTE,STRESS_HISTORY_NOTE} from "../src/ai-summary.mjs";
 import {handleMcpRpc} from "../src/mcp.mjs";
+import {buildWeeklyDigest,digestCacheScope} from "../src/ai-digest.mjs";
 import {d1Database} from "./d1-sqlite.mjs";
 import {syntheticUser,day} from "./stress-fixture-data.mjs";
 
@@ -790,4 +791,68 @@ test("Codex4 feature-off behavior matches main for date lists",()=>{
   // Expected values recorded from main d98346f with the same stats.
   assert.deepEqual(outputRejection("2026-10-12 and 2026-10-11 have no estimate.",off),MAIN_OFF["list"]);
   assert.deepEqual(outputRejection("Recovery score was missing on 2026-10-12 and 2026-10-11.",off),MAIN_OFF["metric"]);
+});
+
+
+
+// ---------- Codex review of 068ac98: measurement pronouns and cache flags ----------
+test("Codex5 a pronoun follow-up cannot assign recovery numbers to the stress estimate",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It was 40 on 2026-10-13.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It was 72 on 2026-10-15.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It was 72 on 2026-10-13.",r3),null);
+});
+test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
+  const off={...plain,missing_dates:["2026-10-12"]};
+  assert.equal(outputRejection("Recovery score median was 40. It was 40.",off),null);
+});
+
+test("Codex5 weekly digest caches never cross AI/stress feature states, including legacy cached results",async()=>{
+  const sqlite=new DatabaseSync(":memory:");
+  for(const f of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+    sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
+  const db={sqlite,...d1Database(sqlite)},week="2026-10-11";
+  const user=syntheticUser({prefix:"cache5"});
+  const whoopRequest=whoopFor({[A]:user},[]);
+  let modelCalls=0;
+  const AI={async run(_m,input){
+    modelCalls++;
+    const stats=JSON.parse(input.messages[1].content).stats;
+    return {response:`Recovery score median was ${stats.metrics["score.recovery_score"].median}.`};
+  }};
+  const base={WEEKLY_DIGEST_ENABLED:"true",AI,
+    AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    AI_ACCOUNT_ANALYTICS_TOKEN:"synthetic-analytics-token",
+    AI_ANALYTICS_QUERY:async()=>({neurons:0})};
+  const on={...base,AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true"};
+  const off={...base,AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"false"};
+  const noAi={...base,AI_SUMMARY_ENABLED:"false",STRESS_ESTIMATE_ENABLED:"true"};
+  const request=env=>buildWeeklyDigest({db,userId:A,env,whoopRequest,weekEnding:week,now:Date.parse("2026-10-12T08:00:00Z")});
+  // An old row created before feature-aware cache keys must never be read.
+  const legacy=JSON.stringify({kind:"weekly_digest",week_ending:week,period:{start:"2026-10-05",end:week},
+    text:"The stress estimate was 72 on 2026-10-11.",
+    chart_data:{stress_estimate:{available:true,value:72}},insights:[],status:"model"});
+  sqlite.prepare("INSERT INTO ai_weekly_digest(scope,week_ending,state,body,created_at) VALUES(?,?,'ready',?,?)")
+    .run("user:"+A,week,legacy,Date.now());
+  try{
+    assert.notEqual(digestCacheScope(A,on),digestCacheScope(A,off));
+    assert.notEqual(digestCacheScope(A,on),digestCacheScope(A,noAi));
+    const a=await request(on);
+    assert.equal(a.ok,true);assert.equal(a.cached,false);
+    assert.ok(a.chart_data.stress_estimate?.experimental);
+    assert.equal((await request(on)).cached,true);
+    const b=await request(off);
+    assert.equal(b.ok,true);assert.equal(b.cached,false);
+    assert.equal(b.chart_data.stress_estimate,null);
+    assert.doesNotMatch(b.text,/stress estimate/i);
+    assert.equal((await request(off)).cached,true);
+    const c=await request(noAi);
+    assert.equal(c.ok,true);assert.equal(c.cached,false);
+    assert.equal(c.chart_data.stress_estimate,null);
+    assert.doesNotMatch(c.text,/stress estimate/i);
+    assert.equal((await request(noAi)).cached,true);
+    assert.equal((await request(on)).cached,true);
+    assert.equal(modelCalls,2);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_weekly_digest").get().n,4);
+  }finally{sqlite.close();}
 });

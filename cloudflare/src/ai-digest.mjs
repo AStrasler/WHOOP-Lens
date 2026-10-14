@@ -1,6 +1,8 @@
 // Pulled weekly digest for the signed-in user. No send, no schedule.
-// One cached digest per account per week. A repeat does not call the model again.
-import {aiSummaryEnabled,attachSummary,collectHistoryPages} from "./ai-summary.mjs";
+// Cache keys are per account/week/output mode. Switching a feature off cannot
+// replay an earlier digest containing experimental stress results.
+// A repeat with unchanged output mode does not call the model again.
+import {aiSummaryEnabled,stressEstimateEnabled,attachSummary,collectHistoryPages} from "./ai-summary.mjs";
 import {userScope,utcDay} from "./ai-quota.mjs";
 
 const PENDING_MS=30000;
@@ -18,6 +20,12 @@ const RECLAIM=`UPDATE ai_weekly_digest SET created_at = ?1
 WHERE scope = ?2 AND week_ending = ?3 AND state = 'pending' AND created_at <= ?4`;
 
 export function weeklyDigestEnabled(env){return env?.WEEKLY_DIGEST_ENABLED==="true";}
+// Versioned scope leaves historical, flag-unaware cached rows unreachable. The
+// mode separates model/template output and experimental stress on/off without a
+// D1 migration or mutation of cached health data. Same user/week stays cached.
+export function digestCacheScope(userId,env){
+  return `${userScope(userId)}:weekly-v2:${aiSummaryEnabled(env)?"model":"template"}:${stressEstimateEnabled(env)?"stress":"no-stress"}`;
+}
 export function parseWeekEnding(value){
   if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
   const parsed=Date.parse(value+"T00:00:00Z");
@@ -117,7 +125,7 @@ export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEndi
   const day=weekEnding==null?mostRecentCompleteWeekEnding(weekClock(now,env)):parseWeekEnding(weekEnding);
   if(!day||!validUser(userId)||!db||typeof db.prepare!=="function")return {ok:false};
   const period=digestPeriod(day);
-  const scope=userScope(userId);
+  const scope=digestCacheScope(userId,env);
   let owned=false,saved=false;
   try{
     const claim=await claimWeek(db,scope,day);
