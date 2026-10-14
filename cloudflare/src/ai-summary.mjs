@@ -842,7 +842,9 @@ const LEVEL_WORDS=new Set(["low","typical","elevated","high","moderate"]);
 const UNAVAILABLE=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient)\b/i;
 const DATE_RE=/\b\d{4}-\d{2}-\d{2}\b/g;
 const MISSING_TRIGGER=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient|missing)\b/i;
-const PRONOUN_LEAD=/^\s*(?:it|its|this|that|they|these|those)\b/i;
+const PRONOUN_ANY=/\b(?:it|its|this|that|they|these|those|which)\b/i;
+const CLAUSE_SPLIT=/,|;|\b(?:and|but|while|whereas|although|though)\b/i;
+const INTRO_DATE=/^\s*(?:on|for|as of|by)?\s*\d{4}-\d{2}-\d{2}\s*$/i;
 function stressNumbers(text){
   const bare=text.replace(DATE_RE," ");
   const digits=(bare.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
@@ -888,71 +890,71 @@ function stressClaimRejection(text,stats){
   if(!est)return null;
   if(UNSUPPORTED_STRESS.test(text))return {rule:"stress_claim",category:"unsupported"};
   const needDate=est.is_latest_requested_date!==true;
-  // The estimate's own numbers ground only stress claims: every other sentence
+  // The estimate's own numbers ground only stress claims: every other clause
   // must be grounded by the summary stats without stress_estimate.
   const {stress_estimate:_omit,...others}=stats;
   const baseNumbers=[],baseDates=new Set();
   collectAllowed(others,baseNumbers,baseDates);
+  const grounded=part=>{
+    const tokens=numberTokens(part.replace(/spo2/ig,"spo"));
+    if(tokens.some(t=>t.kind==="number"&&!baseNumbers.some(stat=>roundedEqual(stat,t))))return false;
+    const spelled=spelledNumbers(part)||[];
+    return !spelled.some(span=>!baseNumbers.some(stat=>stat===span.value||Math.round(stat)===span.value));
+  };
+  const words=part=>part.toLowerCase().match(/[a-z0-9]+/g)||[];
   for(const sentence of text.split(/(?<=[.!?])\s+/)){
-    // Unavailability sentences without a stress word: one that names another
-    // metric follows the normal rules; a pronoun-led one ("It is unavailable
-    // for ...") or a bare tight-wording one is an unavailable-estimate claim.
-    if(!STRESS_CLAIM.test(sentence)&&MISSING_TRIGGER.test(sentence)&&
-       !(sentence.toLowerCase().match(/[a-z0-9]+/g)||[]).some(w=>METRIC_WORDS.has(w))){
-      const pronoun=PRONOUN_LEAD.test(sentence);
-      if(pronoun||UNAVAILABLE.test(sentence)){
-        if(!UNAVAILABLE.test(sentence))return {rule:"stress_claim",category:"unavailable_wording"};
-        const r=unavailableRejection(sentence,est);
-        if(r)return r;
-        continue;
-      }
-    }
-    if(!STRESS_CLAIM.test(sentence)){
-      const tokens=numberTokens(sentence.replace(/spo2/ig,"spo"));
-      if(tokens.some(t=>t.kind==="number"&&!baseNumbers.some(stat=>roundedEqual(stat,t))))
-        return {rule:"stress_claim",category:"estimate_value_reused"};
-      const spelled=spelledNumbers(sentence)||[];
-      if(spelled.some(span=>!baseNumbers.some(stat=>stat===span.value||Math.round(stat)===span.value)))
-        return {rule:"stress_claim",category:"estimate_value_reused"};
+    const stressy=STRESS_CLAIM.test(sentence),missing=MISSING_TRIGGER.test(sentence);
+    if(!stressy&&!missing){
+      if(!grounded(sentence))return {rule:"stress_claim",category:"estimate_value_reused"};
       continue;
     }
-    // A stress claim never also attributes a value to another metric.
-    if((sentence.toLowerCase().match(/[a-z0-9]+/g)||[]).some(w=>METRIC_WORDS.has(w)))
-      return {rule:"stress_claim",category:"other_metric"};
-    if(!UNAVAILABLE.test(sentence)){
+    if(!missing){
+      // A whole-sentence measurement claim (unchanged rules).
+      if(words(sentence).some(w=>METRIC_WORDS.has(w)))return {rule:"stress_claim",category:"other_metric"};
       const r=measurementRejection(sentence,est,needDate);
       if(r)return r;
       continue;
     }
-    const dates=sentence.match(DATE_RE)||[];
-    if(!dates.includes(est.estimate_date)){
-      const r=unavailableRejection(sentence,est);
-      if(r)return r;
-      continue;
+    // Missing-data wording: classify each clause on its own. A clause that is
+    // only an introductory date ("On 2026-10-15,") belongs to the next clause.
+    const raw=sentence.split(CLAUSE_SPLIT).filter(c=>c&&c.trim());
+    const clauses=[];
+    let carry="";
+    for(const c of raw){
+      if(INTRO_DATE.test(c)){carry+=c+" ";continue;}
+      clauses.push(carry+c);carry="";
     }
-    // Both kinds in one sentence: split into clauses and bind each one.
-    const clauses=sentence.split(/,|;|\b(?:and|but|while|whereas)\b/i).filter(c=>c.trim());
-    let reported=false,explained=false;
+    if(carry)clauses.push(carry);
+    let last=null;
     for(const clause of clauses){
-      const cd=clause.match(DATE_RE)||[];
-      const unavailable=UNAVAILABLE.test(clause);
-      if(cd.includes(est.estimate_date)){
-        if(unavailable)return {rule:"stress_claim",category:"mixed_clause"};
-        const r=measurementRejection(clause,est,true);
-        if(r)return r;
-        reported=true;
-      }else if(unavailable){
-        if(!cd.length)return {rule:"stress_claim",category:"unavailable_date"};
+      const w=words(clause);
+      const hasStress=STRESS_CLAIM.test(clause),hasPronoun=PRONOUN_ANY.test(clause);
+      const hasMetric=w.some(x=>METRIC_WORDS.has(x));
+      const kind=MISSING_TRIGGER.test(clause)
+        ?(hasStress||hasPronoun||!hasMetric?"stress_unavailable":"metric")
+        :hasStress?"stress_value":hasMetric?"metric":"other";
+      if(kind==="stress_unavailable"){
         const r=unavailableRejection(clause,est);
         if(r)return r;
-        explained=true;
+      }else if(kind==="stress_value"){
+        if(hasMetric)return {rule:"stress_claim",category:"other_metric"};
+        const r=measurementRejection(clause,est,needDate);
+        if(r)return r;
+      }else if(kind==="metric"){
+        if(!grounded(clause))return {rule:"stress_claim",category:"estimate_value_reused"};
       }else{
-        // No date and no unavailable wording: may hold words, never a number or another date.
-        const values=stressNumbers(clause);
-        if(values===null||values.length||cd.length)return {rule:"stress_claim",category:"unbound_value"};
+        // Continuation words ("in the elevated band") may follow a stress value
+        // clause only; otherwise no stress number or level word.
+        if(!grounded(clause))return {rule:"stress_claim",category:"unbound_value"};
+        if(last!=="stress_value"&&w.some(x=>LEVEL_WORDS.has(x)))return {rule:"stress_claim",category:"unbound_level"};
+        if(last==="stress_value"){
+          const allowedLevels=new Set([est.band,est.confidence].filter(Boolean).map(String));
+          if(w.some(x=>LEVEL_WORDS.has(x)&&!allowedLevels.has(x)))return {rule:"stress_claim",category:"level"};
+          continue;
+        }
       }
+      last=kind;
     }
-    if(!reported||!explained)return {rule:"stress_claim",category:"mixed_clause"};
   }
   return null;
 }

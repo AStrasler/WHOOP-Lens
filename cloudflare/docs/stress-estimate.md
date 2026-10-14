@@ -112,9 +112,13 @@ estimate, newest first, at most 7), value, band, confidence, baseline_days}. Onl
 - the output filter accepts extra neutral words (experimental, physiological, stress, estimate, lens, band, elevated, low, high, confidence, moderate, index);
 - a stress sentence may instead say an estimate is **unavailable**, using only: no estimate, not available, unavailable, insufficient.
   Such a statement must name at least one date, only dates in `unavailable_dates`, and contains no number or level word.
-  A sentence without a stress word that uses missing-data wording is also validated as an unavailable-estimate claim when it is
-  pronoun-led ("It is unavailable for 2026-10-15.") or uses the tight wording without naming another metric; a pronoun-led "missing"
-  sentence is rejected (wording outside the tight list). Sentences naming another metric ("HRV data was unavailable on ...") follow the normal rules. A sentence naming both the estimate
+  Sentences with missing-data wording (no estimate, not available, unavailable, insufficient, missing) are split into clauses
+  (`,` `;` and / but / while / whereas / although / though; a clause that is only an introductory date such as "On 2026-10-15," joins
+  the next clause) and each clause is classified: **stress-unavailable** (missing-data wording, and a stress word, a pronoun anywhere,
+  or no named metric) must name at least one date, only dates in `unavailable_dates`, with no number or level word; **stress-value**
+  keeps the measurement rules; **metric** (names a non-stress metric as subject) keeps normal grounding without the estimate's numbers;
+  **other** may carry no estimate number, and level words only right after a stress-value clause. Example accepted:
+  "Recovery score median was 40, and 2026-10-15 is unavailable."; rejected: the same with 2026-10-13 (which has an estimate). A sentence naming both the estimate
   date and an unavailable date is split into clauses (`,` `;` and / but / while / whereas): the clause with `estimate_date` carries
   exactly the value, the clause with the unavailable date carries the unavailable wording, and no other clause carries a number or date.
   Any value attached to an unavailable date is rejected. Example accepted: "The stress estimate was 72 on 2026-10-13. 2026-10-15 has no estimate."

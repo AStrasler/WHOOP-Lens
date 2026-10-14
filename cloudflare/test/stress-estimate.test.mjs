@@ -708,7 +708,8 @@ test("Codex2 P1-2 a pronoun pointing to a date with an estimate, or with no date
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It is unavailable for 2026-10-13.",r3)?.rule,"stress_claim");
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It is unavailable.",r3)?.rule,"stress_claim");
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. 2026-10-13 is unavailable.",r3)?.rule,"stress_claim");
-  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It was missing on 2026-10-15.",r3)?.rule,"stress_claim");
+  // Since Codex3, "missing" counts as missing-data wording, so the date decides.
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It was missing on 2026-10-13.",r3)?.rule,"stress_claim");
 });
 test("Codex2 P1-2 a non-stress unavailable sentence follows the normal rules, and feature-off is unchanged",()=>{
   const withDates={...r3,missing_dates:["2026-10-12"]};
@@ -721,4 +722,41 @@ test("Codex2 P1-2 a non-stress unavailable sentence follows the normal rules, an
   const off={...plain,missing_dates:["2026-10-12"]};
   assert.equal(outputRejection("It is unavailable for 2026-10-12.",off)?.rule,"vocabulary");
   assert.equal(outputRejection("Recovery score was missing on 2026-10-12.",off),null);
+});
+
+// ---------- Codex review of dbe32c1: clause classification ----------
+test("Codex3 a valid mixed sentence (true recovery value plus a true unavailable date) is accepted",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40, and 2026-10-15 is unavailable.",r3),null);
+});
+test("Codex3 a mixed sentence with a false unavailable date is rejected",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40, and 2026-10-13 is unavailable.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40, and it was unavailable on 2026-10-13.",r3)?.rule,"stress_claim");
+});
+test("Codex3 an introductory date plus a pronoun pointing to a real missing date is accepted",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. On 2026-10-15, it was unavailable.",r3),null);
+});
+test("Codex3 an introductory date plus a pronoun pointing to a date with an estimate is rejected",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. On 2026-10-13, it was unavailable.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. On 2026-10-15, it was unavailable at 72.",r3)?.rule,"stress_claim");
+});
+test("Codex3 'missing' with an introductory date is validated",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. On 2026-10-15, it was missing.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. On 2026-10-13, it was missing.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It was missing.",r3)?.rule,"stress_claim");
+});
+test("Codex3 an unrelated metric clause still follows the normal rules",()=>{
+  const withDates={...r3,missing_dates:["2026-10-12"]};
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. HRV data was unavailable on 2026-10-12.",withDates),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. HRV data was unavailable on 2026-10-11.",withDates)?.rule,"number");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score was missing on 2026-10-12.",withDates),null);
+});
+test("Codex3 feature-off behavior is unchanged",()=>{
+  const off={...plain,missing_dates:["2026-10-12"]};
+  assert.equal(outputRejection("Recovery score was missing on 2026-10-12.",off),null);
+  // Expected values recorded from main d98346f's outputRejection with the same stats.
+  assert.equal(outputRejection("On 2026-10-12, it was missing.",off),null);
+  assert.deepEqual(outputRejection("Recovery score median was 40, and 2026-10-12 is unavailable.",off),{rule:"vocabulary",unknown_words:1});
+  assert.deepEqual(outputRejection("HRV data was unavailable on 2026-10-12.",off),{rule:"vocabulary",unknown_words:1});
+  assert.deepEqual(outputRejection("The stress estimate was 40.",off),{rule:"vocabulary",unknown_words:2});
+  assert.equal(systemPromptFor(off),mainPrompt);
 });
