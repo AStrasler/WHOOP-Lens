@@ -844,7 +844,8 @@ const DATE_RE=/\b\d{4}-\d{2}-\d{2}\b/g;
 const MISSING_TRIGGER=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient|missing)\b/i;
 const PRONOUN_ANY=/\b(?:it|its|this|that|they|these|those|which)\b/i;
 const CLAUSE_SPLIT=/,|;|\b(?:and|but|while|whereas|although|though)\b/i;
-const INTRO_DATE=/^\s*(?:on|for|as of|by)?\s*\d{4}-\d{2}-\d{2}\s*$/i;
+const INTRO_DATE=/^\s*(?:on|for|as of|by)\s+\d{4}-\d{2}-\d{2}\s*$/i;
+const DATE_FRAGMENT=/^\s*(?:(?:on|for|as of|by|or)\s+)?\d{4}-\d{2}-\d{2}(?:\s*(?:,|or)\s*\d{4}-\d{2}-\d{2})*\s*[.!?]?\s*$/i;
 function stressNumbers(text){
   const bare=text.replace(DATE_RE," ");
   const digits=(bare.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
@@ -917,14 +918,26 @@ function stressClaimRejection(text,stats){
     }
     // Missing-data wording: classify each clause on its own. A clause that is
     // only an introductory date ("On 2026-10-15,") belongs to the next clause.
+    // Fragments made only of dates and connectors belong to a neighboring
+    // clause: an introductory date ("On 2026-10-15,") or a leading list item joins
+    // the clause after it; a later list item ("..., 2026-10-15 and 2026-10-13")
+    // joins the clause before it. Every date then gets that clause's validation.
     const raw=sentence.split(CLAUSE_SPLIT).filter(c=>c&&c.trim());
     const clauses=[];
     let carry="";
-    for(const c of raw){
-      if(INTRO_DATE.test(c)){carry+=c+" ";continue;}
+    raw.forEach((c,i)=>{
+      if(DATE_FRAGMENT.test(c)){
+        // Joins forward when it is introductory, when nothing precedes it, or
+        // when the list runs into the next real clause ("A and B have no estimate").
+        const next=raw.slice(i+1).find(x=>!DATE_FRAGMENT.test(x));
+        const forward=!clauses.length||INTRO_DATE.test(c)||(next!==undefined&&/^\s*\d{4}-\d{2}-\d{2}/.test(next));
+        if(forward)carry+=c+" ";
+        else clauses[clauses.length-1]+=" "+c;
+        return;
+      }
       clauses.push(carry+c);carry="";
-    }
-    if(carry)clauses.push(carry);
+    });
+    if(carry){if(clauses.length)clauses[clauses.length-1]+=" "+carry;else clauses.push(carry);}
     let last=null;
     for(const clause of clauses){
       const w=words(clause);

@@ -113,8 +113,9 @@ estimate, newest first, at most 7), value, band, confidence, baseline_days}. Onl
 - a stress sentence may instead say an estimate is **unavailable**, using only: no estimate, not available, unavailable, insufficient.
   Such a statement must name at least one date, only dates in `unavailable_dates`, and contains no number or level word.
   Sentences with missing-data wording (no estimate, not available, unavailable, insufficient, missing) are split into clauses
-  (`,` `;` and / but / while / whereas / although / though; a clause that is only an introductory date such as "On 2026-10-15," joins
-  the next clause) and each clause is classified: **stress-unavailable** (missing-data wording, and a stress word, a pronoun anywhere,
+  (`,` `;` and / but / while / whereas / although / though; a fragment made only of dates and connectors joins a neighbor: an introductory date such as "On 2026-10-15,"
+  or a list that runs into the next clause ("2026-10-14 and 2026-10-15 have no estimate") joins the clause after it, and a trailing list
+  item ("No estimate was returned for 2026-10-14, 2026-10-15 and 2026-10-13") joins the clause before it, so every listed date gets that claim's validation) and each clause is classified: **stress-unavailable** (missing-data wording, and a stress word, a pronoun anywhere,
   or no named metric) must name at least one date, only dates in `unavailable_dates`, with no number or level word; **stress-value**
   keeps the measurement rules; **metric** (names a non-stress metric as subject) keeps normal grounding without the estimate's numbers;
   **other** may carry no estimate number, and level words only right after a stress-value clause. Example accepted:

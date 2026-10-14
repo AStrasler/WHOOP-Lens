@@ -760,3 +760,34 @@ test("Codex3 feature-off behavior is unchanged",()=>{
   assert.deepEqual(outputRejection("The stress estimate was 40.",off),{rule:"vocabulary",unknown_words:2});
   assert.equal(systemPromptFor(off),mainPrompt);
 });
+
+// ---------- Codex review of f30e5a1: date lists in unavailable claims ----------
+// r3: estimate on 2026-10-13; unavailable 2026-10-14 and 2026-10-15.
+test("Codex4 a valid list of unavailable dates is accepted, in both orders",()=>{
+  for(const t of ["The stress estimate was 72 on 2026-10-13. 2026-10-14 and 2026-10-15 have no estimate.",
+    "The stress estimate was 72 on 2026-10-13. 2026-10-15 and 2026-10-14 have no estimate.",
+    "The stress estimate was 72 on 2026-10-13. No estimate was returned for 2026-10-14 and 2026-10-15.",
+    "The stress estimate was 72 on 2026-10-13. No estimate was returned for 2026-10-15, 2026-10-14."])
+    assert.equal(outputRejection(t,r3),null,t);
+});
+test("Codex4 a list containing a date that has an estimate is rejected, in each position",()=>{
+  for(const t of ["The stress estimate was 72 on 2026-10-13. 2026-10-13 and 2026-10-15 have no estimate.",
+    "The stress estimate was 72 on 2026-10-13. 2026-10-15 and 2026-10-13 have no estimate.",
+    "The stress estimate was 72 on 2026-10-13. 2026-10-14, 2026-10-13 and 2026-10-15 have no estimate.",
+    "The stress estimate was 72 on 2026-10-13. No estimate was returned for 2026-10-13, 2026-10-14 and 2026-10-15.",
+    "The stress estimate was 72 on 2026-10-13. No estimate was returned for 2026-10-14, 2026-10-13 and 2026-10-15.",
+    "The stress estimate was 72 on 2026-10-13. No estimate was returned for 2026-10-14, 2026-10-15 and 2026-10-13."])
+    assert.equal(outputRejection(t,r3)?.rule,"stress_claim",t);
+});
+test("Codex4 an unavailable list mixed with a separate true stress value clause is accepted",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13, and 2026-10-14 and 2026-10-15 have no estimate.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13, and on 2026-10-15, it was unavailable.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13, and 2026-10-14 and 2026-10-13 have no estimate.",r3)?.rule,"stress_claim");
+});
+const MAIN_OFF={list:{rule:"vocabulary",unknown_words:1},metric:null};
+test("Codex4 feature-off behavior matches main for date lists",()=>{
+  const off={...plain,missing_dates:["2026-10-12","2026-10-11"]};
+  // Expected values recorded from main d98346f with the same stats.
+  assert.deepEqual(outputRejection("2026-10-12 and 2026-10-11 have no estimate.",off),MAIN_OFF["list"]);
+  assert.deepEqual(outputRejection("Recovery score was missing on 2026-10-12 and 2026-10-11.",off),MAIN_OFF["metric"]);
+});
