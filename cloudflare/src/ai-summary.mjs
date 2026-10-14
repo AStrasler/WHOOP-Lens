@@ -841,6 +841,8 @@ const LEVEL_WORDS=new Set(["low","typical","elevated","high","moderate"]);
 // Tight missing-data wording only.
 const UNAVAILABLE=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient)\b/i;
 const DATE_RE=/\b\d{4}-\d{2}-\d{2}\b/g;
+const MISSING_TRIGGER=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient|missing)\b/i;
+const PRONOUN_LEAD=/^\s*(?:it|its|this|that|they|these|those)\b/i;
 function stressNumbers(text){
   const bare=text.replace(DATE_RE," ");
   const digits=(bare.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
@@ -866,6 +868,8 @@ function measurementRejection(part,est,needDate){
 function unavailableRejection(part,est){
   const missing=new Set(Array.isArray(est.unavailable_dates)?est.unavailable_dates:[]);
   const dates=part.match(DATE_RE)||[];
+  // Must name at least one actual requested date that has no valid estimate.
+  if(!dates.length)return {rule:"stress_claim",category:"unavailable_date_missing"};
   if(dates.some(d=>!missing.has(d)))return {rule:"stress_claim",category:"unavailable_date"};
   const values=stressNumbers(part);
   if(values===null||values.length)return {rule:"stress_claim",category:"unavailable_value"};
@@ -890,6 +894,19 @@ function stressClaimRejection(text,stats){
   const baseNumbers=[],baseDates=new Set();
   collectAllowed(others,baseNumbers,baseDates);
   for(const sentence of text.split(/(?<=[.!?])\s+/)){
+    // Unavailability sentences without a stress word: one that names another
+    // metric follows the normal rules; a pronoun-led one ("It is unavailable
+    // for ...") or a bare tight-wording one is an unavailable-estimate claim.
+    if(!STRESS_CLAIM.test(sentence)&&MISSING_TRIGGER.test(sentence)&&
+       !(sentence.toLowerCase().match(/[a-z0-9]+/g)||[]).some(w=>METRIC_WORDS.has(w))){
+      const pronoun=PRONOUN_LEAD.test(sentence);
+      if(pronoun||UNAVAILABLE.test(sentence)){
+        if(!UNAVAILABLE.test(sentence))return {rule:"stress_claim",category:"unavailable_wording"};
+        const r=unavailableRejection(sentence,est);
+        if(r)return r;
+        continue;
+      }
+    }
     if(!STRESS_CLAIM.test(sentence)){
       const tokens=numberTokens(sentence.replace(/spo2/ig,"spo"));
       if(tokens.some(t=>t.kind==="number"&&!baseNumbers.some(stat=>roundedEqual(stat,t))))

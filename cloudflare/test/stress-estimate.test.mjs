@@ -690,3 +690,35 @@ test("Codex P1 the estimate value cannot ground another metric",()=>{
   const same={...r2stats,metrics:{...r2stats.metrics,"score.recovery_score":{min:35,max:72,mean:50,median:50}}};
   assert.equal(outputRejection("The stress estimate was 72. Recovery score maximum was 72.",same),null);
 });
+
+// ---------- Codex review of d4c28b4 ----------
+test("Codex2 P1-1 an undated unavailable claim is rejected",()=>{
+  for(const t of ["The stress estimate was 72 on 2026-10-13. The stress estimate is unavailable.",
+    "The stress estimate was 72 on 2026-10-13. A newer estimate is not available."])
+    assert.equal(outputRejection(t,r3)?.rule,"stress_claim",t);
+});
+test("Codex2 P1-1 a real missing date is accepted; a date with a valid estimate is rejected",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. The stress estimate is unavailable for 2026-10-15.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. The stress estimate is unavailable for 2026-10-13.",r3)?.rule,"stress_claim");
+});
+test("Codex2 P1-2 a pronoun pointing to a genuinely unavailable date is accepted",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It is unavailable for 2026-10-15.",r3),null);
+});
+test("Codex2 P1-2 a pronoun pointing to a date with an estimate, or with no date, is rejected",()=>{
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It is unavailable for 2026-10-13.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It is unavailable.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. 2026-10-13 is unavailable.",r3)?.rule,"stress_claim");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It was missing on 2026-10-15.",r3)?.rule,"stress_claim");
+});
+test("Codex2 P1-2 a non-stress unavailable sentence follows the normal rules, and feature-off is unchanged",()=>{
+  const withDates={...r3,missing_dates:["2026-10-12"]};
+  // Not treated as a stress claim: it names HRV, so the normal (grounding, vocabulary) rules decide.
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. HRV data was unavailable on 2026-10-12.",withDates),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. HRV data was unavailable on 2026-10-11.",withDates)?.rule,"number");
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score was missing on 2026-10-12.",withDates),
+    outputRejection("Recovery score was missing on 2026-10-12.",{...withDates,stress_estimate:undefined}));
+  // Feature off: the stress validator never runs; results equal main's rules.
+  const off={...plain,missing_dates:["2026-10-12"]};
+  assert.equal(outputRejection("It is unavailable for 2026-10-12.",off)?.rule,"vocabulary");
+  assert.equal(outputRejection("Recovery score was missing on 2026-10-12.",off),null);
+});
