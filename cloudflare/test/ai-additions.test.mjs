@@ -6,7 +6,7 @@ import {handleMcpRpc,mcpTools} from "../src/mcp.mjs";
 import {d1Database} from "./d1-sqlite.mjs";
 import {userScope} from "../src/ai-quota.mjs";
 import {attachSummary,outputAcceptable} from "../src/ai-summary.mjs";
-import {mostRecentCompleteWeekEnding} from "../src/ai-digest.mjs";
+import {mostRecentCompleteWeekEnding,digestCacheScope} from "../src/ai-digest.mjs";
 import {HISTORY_MAX_PAGES} from "../src/ai-summary.mjs";
 
 const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -240,7 +240,7 @@ test("weekly digest defaults to the last complete week and does not send",async(
     assert.deepEqual(cached.insights,body.insights);
     assert.equal(seen.length,reads);
     assert.equal(calls,0);
-    const stored=db.sqlite.prepare("SELECT body FROM ai_weekly_digest WHERE scope=? AND week_ending=?").get(userScope(A),"2026-10-02").body;
+    const stored=db.sqlite.prepare("SELECT body FROM ai_weekly_digest WHERE scope=? AND week_ending=?").get(digestCacheScope(A,digestEnv),"2026-10-02").body;
     assert.doesNotMatch(stored,/99999|Ignore previous/);
     assert.doesNotMatch(stored,new RegExp(B));
     const rejected=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-02",user_id:B}),{
@@ -373,12 +373,12 @@ test("a weekly digest claim is single flight and a failed pull can be retried",a
     assert.equal(JSON.parse(third.result.content[0].text).cached,true);
     assert.equal(calls,1);
     assert.equal(fetches,after);
-    db.sqlite.prepare("INSERT INTO ai_weekly_digest(scope,week_ending,state,body,created_at) VALUES(?,?, 'pending', NULL, ?)").run(userScope(A),"2026-09-27",Date.now()-60000);
+    db.sqlite.prepare("INSERT INTO ai_weekly_digest(scope,week_ending,state,body,created_at) VALUES(?,?, 'pending', NULL, ?)").run(digestCacheScope(A,env),"2026-09-27",Date.now()-60000);
     const reclaimed=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-09-27"}),{
       db,userId:A,env,whoopRequest:async()=>({records:[recovery(64,"2026-09-22")],next_token:null})
     },modern);
     assert.equal(JSON.parse(reclaimed.result.content[0].text).cached,false);
-    assert.equal(db.sqlite.prepare("SELECT state FROM ai_weekly_digest WHERE scope=? AND week_ending=?").get(userScope(A),"2026-09-27").state,"ready");
+    assert.equal(db.sqlite.prepare("SELECT state FROM ai_weekly_digest WHERE scope=? AND week_ending=?").get(digestCacheScope(A,env),"2026-09-27").state,"ready");
     let failed=true;
     const failing=async()=>{
       if(failed)throw Error("upstream");
@@ -492,7 +492,7 @@ test("an analytics failure is not cached, and a later healthy call caches the mo
     assert.equal(secondBody.status,"model");
     assert.equal(secondBody.text,modelText);
     assert.equal(calls,1);
-    assert.equal(db.sqlite.prepare("SELECT state FROM ai_weekly_digest WHERE scope=? AND week_ending=?").get(userScope(A),"2026-10-04").state,"ready");
+    assert.equal(db.sqlite.prepare("SELECT state FROM ai_weekly_digest WHERE scope=? AND week_ending=?").get(digestCacheScope(A,healthy),"2026-10-04").state,"ready");
     const third=await handleMcpRpc(rpc("get_weekly_digest",{week_ending:"2026-10-04"}),{
       db,userId:A,env:healthy,whoopRequest
     },modern);
