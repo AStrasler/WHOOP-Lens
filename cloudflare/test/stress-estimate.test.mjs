@@ -801,6 +801,21 @@ test("Codex5 a pronoun follow-up cannot assign recovery numbers to the stress es
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It was 72 on 2026-10-15.",r3)?.rule,"stress_claim");
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. It was 72 on 2026-10-13.",r3),null);
 });
+test("Codex6 date-led pronoun continuations remain bound to stress",()=>{
+  for(const sentence of [
+    "On 2026-10-13, it was 40.",
+    "For 2026-10-13, this was 40.",
+    "As of 2026-10-13, it was 40.",
+    "However, it was 40.",
+    "On 2026-10-15, it was 72."
+  ]){
+    const result=outputRejection("The stress estimate was 72 on 2026-10-13. "+sentence,r3);
+    assert.equal(result?.rule,"stress_claim",sentence);
+  }
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. On 2026-10-13, it was 72.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. On 2026-10-13, it was 40.",r3),null);
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
