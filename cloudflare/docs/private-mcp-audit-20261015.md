@@ -29,7 +29,7 @@ Checked-in feature flags remain off to prevent accidental activation. The produc
 
 ## Open work and limits
 
-- PR #34 is already merged. Its requested stress/source/claim/cache corrections are covered by retained regression cases and the new bounded production selection contract. Resolve review threads only after these checks pass.
+- PR #34 is already merged. Its requested stress/source/claim/cache corrections are covered by retained regression cases and the new bounded production selection contract. All 32 outstanding review threads were resolved after the 318-test suite and CI passed.
 - PR #21 is an unmerged legacy Supabase parity proposal with merge conflicts. Source inspection finds the same pre-write revocation gap and independent chunk writes in its proposed webhook/RPC path. It is not an approved production-ready replacement for the current Cloudflare integration and must not be merged or marked complete by this audit. Its proposed SQL is not applied.
 - Issue #23 includes research/user-evaluation criteria, experimental validity, provider retention assessment and a distinct three-person rollout proposal beyond functional delivery. Code activation alone does not establish those criteria. Keep the research issue open and record the implemented scope.
 - Issue #25's future aggregation/autoimmune concepts remain out of scope and unchanged.
@@ -40,4 +40,13 @@ Checked-in feature flags remain off to prevent accidental activation. The produc
 
 ## Deployment record
 
-Pending completion of final CI, merge and production verification.
+- Repair commit: `d5b0425c1d3f368d5e8f33df5fa1bba4e823f02c`; PR #35 merged as `a3d2c88b515a198896ba1641a72c04e01ee4069a`.
+- Deployed 2026-10-15 05:56:56 UTC, resource Worker `whoop-lens`, version `53e335c6-5a36-4b8c-8b19-9d97369affbe`, 100% traffic. MCP source version 1.1.0. Auth Worker unchanged.
+- Local verification: 318 tests passed, zero failures/skips; both OAuth bundles built. GitHub Check integration (#462), Cloudflare staging isolation (#288), and Cloudflare OAuth build validation (#83) all succeeded.
+- Read back production settings: AI_SUMMARY_ENABLED, STRESS_ESTIMATE_ENABLED, WEEKLY_DIGEST_ENABLED, WHOOP_OAUTH_ENABLED, WHOOP_READS_ENABLED, HEALTH_CONNECT_WEBHOOK_ENABLED, WEB_HEALTH_IMPORT_ENABLED, MCP_ENABLED and OAUTH_RESOURCE_ENABLED are true. Existing router gate MIGRATION_API_ENABLED remains true; no diagnostic/migration operation was enabled or run.
+- Existing binding names/types, D1 database, auth service, model, secret bindings and Secrets Store references preserved through strict binding inheritance. No secret values were retrieved or replaced. Query-string log redaction is now true; workers.dev and previews remain disabled.
+- Live non-destructive checks: signed-in WHOOP recovery returned records and a successful model summary; text carries the WHOOP Lens experimental label, index units, date, band, confidence and explicit Stress Monitor disclaimer. Signed-in Health Connect reads and capability discovery succeeded. No health values are included in this report. Anonymous MCP tools/list and a synthetic invalid webhook token each returned HTTP 401.
+- Live digest execution remains unverified: the connected chat tool catalog does not expose get_weekly_digest after server activation. No credentials were extracted or authentication bypassed to work around that catalog limitation. Synthetic generation/cache/isolation/retry tests pass and the production flag is verified.
+- No real-account revocation, token rotation, ingestion writes, migration, membership edit or destructive data check was performed. Phone background delivery is covered at the endpoint contract level, not an on-device scheduler test.
+
+The tested implementation satisfies the scoped account-isolation, consent, integrity and grounded-output requirements. Operational evidence confirms private production access, existing WHOOP authorization and Health Connect reads; the live digest and phone-delivery limitations above prevent an unconditional end-to-end certification.
