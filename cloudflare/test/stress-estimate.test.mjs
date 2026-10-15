@@ -893,6 +893,52 @@ test("Codex9 explicit other measurements still switch context",()=>{
   assert.equal(outputRejection(stress+" Recovery score median was 40, and the records were returned at the same rate. It was 40 on 2026-10-13.",r3),null);
 });
 
+test("Codex10 mixed clauses cannot shield a contradictory inherited stress value",()=>{
+  const lead="The stress estimate was 72 on 2026-10-13.";
+  const failures=[
+    "It was 40 on 2026-10-13, while recovery score median was 40.",
+    "On 2026-10-13, it was 40, while recovery score median was 40.",
+    "It was 40 on 2026-10-13, and recovery score median was 40.",
+    "It was 40 on 2026-10-13; recovery score median was 40.",
+    "It was 40 on 2026-10-13, but recovery score median was 40.",
+    "On the date 2026-10-13, it was 40, whereas recovery score median was 40.",
+    "It was 72 on 2026-10-15, while recovery score median was 40.",
+    "The value was 40 on 2026-10-13, while recovery score median was 40."
+  ];
+  for(const continuation of failures){
+    const text=lead+" "+continuation;
+    assert.equal(outputRejection(text,r3)?.rule,"stress_claim",text);
+  }
+  // A true inherited stress measurement is not rejected merely because a
+  // later clause reports a separate, independently grounded recovery value.
+  for(const continuation of [
+    "It was 72 on 2026-10-13, while recovery score median was 40.",
+    "On 2026-10-13, it was 72, and recovery score median was 40."
+  ]){
+    const text=lead+" "+continuation;
+    assert.equal(outputRejection(text,r3),null,text);
+  }
+});
+test("Codex10 clause-order context and neutral clauses are checked before metric resets",()=>{
+  const lead="The stress estimate was 72 on 2026-10-13.";
+  const examples=[
+    "The data was complete, and it was 40 on 2026-10-13, while recovery score median was 40.",
+    "The records were returned at the same rate, and it was 40 on 2026-10-13.",
+    "The data was complete, but it was 40 on 2026-10-13."
+  ];
+  for(const rest of examples)
+    assert.equal(outputRejection(lead+" "+rest,r3)?.rule,"stress_claim",rest);
+  assert.equal(outputRejection(lead+" Recovery score median was 40, while it was 40 on 2026-10-13.",r3),null);
+});
+test("Codex10 unmeasured metric mentions with a record count cannot reset stress",()=>{
+  const lead="The stress estimate was 72 on 2026-10-13.";
+  for(const rest of [
+    "The recovery score data contained 40 records. It was 40 on 2026-10-13.",
+    "The sleep data included 40 records. It was 40 on 2026-10-13.",
+    "The recovery records totaled 40. It was 40 on 2026-10-13."
+  ])assert.equal(outputRejection(lead+" "+rest,r3)?.rule,"stress_claim",rest);
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
