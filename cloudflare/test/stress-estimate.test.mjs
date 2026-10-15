@@ -988,6 +988,75 @@ test("Codex11 missing-data clauses cannot shield inherited stress contradictions
   ])assert.equal(outputRejection(lead+" "+t,r3)?.rule,"stress_claim",t);
 });
 
+test("Codex12 reject false stress semantics despite matching numeric and label tokens",()=>{
+  for(const claim of [
+    "The stress estimate was not 72 on 2026-10-13.",
+    "The stress estimate was below 72 on 2026-10-13.",
+    "The stress estimate was above 72 on 2026-10-13.",
+    "The stress estimate was 72 percent on 2026-10-13.",
+    "The stress estimate was 72 points on 2026-10-13.",
+    "The stress estimate was approximately 72 on 2026-10-13.",
+    "The stress estimate was 72 on 2026-10-13. The band was not elevated.",
+    "The stress estimate was 72 on 2026-10-13. The confidence was 72 on 2026-10-13.",
+    "The stress estimate was 72 on 2026-10-13. The band was 72 on 2026-10-13.",
+    "The stress estimate was 72 on 2026-10-13. The confidence was below moderate."
+  ])assert.equal(outputRejection(claim,r3)?.rule,"stress_claim",claim);
+  for(const claim of [
+    "The stress estimate was 72 on 2026-10-13.",
+    "The stress estimate was 72 on 2026-10-13 in the elevated band with moderate confidence.",
+    "The stress estimate was 72 on 2026-10-13. The band was elevated.",
+    "The stress estimate was 72 on 2026-10-13. The confidence was moderate."
+  ])assert.equal(outputRejection(claim,r3),null,claim);
+  assert.equal(outputRejection("Recovery score median was 40.",r3),null);
+});
+test("Codex12 transient baseline failures cannot poison a weekly digest cache",async()=>{
+  for(const [failedResource,failStatus] of [["recovery",429],["sleep",429],["sleep",500]]){
+    const sqlite=new DatabaseSync(":memory:");
+    for(const f of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+      sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
+    const db={sqlite,...d1Database(sqlite)},week="2026-10-11";
+    const u=syntheticUser({prefix:"transient12"});
+    const upstream=whoopFor({[A]:u},[]);
+    let remaining=1,modelCalls=0;
+    const whoopRequest=async(db,id,resource,env,opts)=>{
+      if(remaining>0&&resource===failedResource&&opts?.start&&
+         opts.start.slice(0,10)<"2026-10-04"){
+        remaining--;
+        const err=Error("transient baseline failure");
+        err.status=failStatus;throw err;
+      }
+      return upstream(db,id,resource,env,opts);
+    };
+    const AI={async run(_model,input){
+      modelCalls++;
+      const stats=JSON.parse(input.messages[1].content).stats;
+      return {response:`Recovery score median was ${stats.metrics["score.recovery_score"].median}.`};
+    }};
+    const env={WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true",
+      AI,AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      AI_ACCOUNT_ANALYTICS_TOKEN:"synthetic-analytics-token",
+      AI_ANALYTICS_QUERY:async()=>({neurons:0})};
+    const request=()=>buildWeeklyDigest({db,userId:A,env,whoopRequest,weekEnding:week,
+      now:Date.parse("2026-10-12T08:00:00Z")});
+    try{
+      const first=await request();
+      assert.equal(first.ok,true);
+      assert.equal(first.cached,false);
+      assert.equal(first.status,"model");
+      assert.equal(first.chart_data.stress_estimate.history.complete,false);
+      assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_weekly_digest").get().n,0);
+      const retry=await request();
+      assert.equal(retry.ok,true);
+      assert.equal(retry.cached,false);
+      assert.equal(retry.chart_data.stress_estimate.history.complete,true);
+      const cached=await request();
+      assert.equal(cached.cached,true);
+      assert.equal(modelCalls,2);
+      assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_weekly_digest").get().n,1);
+    }finally{sqlite.close();}
+  }
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
