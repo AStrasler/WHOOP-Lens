@@ -843,6 +843,28 @@ test("Codex7 natural date-led and unqualified numeric follow-ups cannot use reco
   assert.notEqual(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. On the date 2026-10-13, it was 40.",r3)?.rule,"stress_claim");
 });
 
+test("Codex8 neutral sentences preserve the prior stress context",()=>{
+  const start="The stress estimate was 72 on 2026-10-13.";
+  for(const neutral of ["The data was complete.","The records were returned."]){
+    for(const followUp of [
+      "It was 40 on 2026-10-13.",
+      "On the date 2026-10-13, it was 40.",
+      "On the date 2026-10-13, the value was 40.",
+      "It was 72 on 2026-10-15."
+    ]){
+      const sentence=start+" "+neutral+" "+followUp;
+      assert.equal(outputRejection(sentence,r3)?.rule,"stress_claim",sentence);
+    }
+    assert.equal(outputRejection(start+" "+neutral+" It was 72 on 2026-10-13.",r3),null);
+  }
+});
+
+test("Codex8 only an explicit other metric resets neutral-sentence context",()=>{
+  assert.equal(outputRejection("Recovery score median was 40. The data was complete. It was 40 on 2026-10-13.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40, and the data was complete. It was 40 on 2026-10-13.",r3),null);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. The stress estimate is unavailable for 2026-10-15, and the data was complete. It was 40 on 2026-10-13.",r3)?.rule,"stress_claim");
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
