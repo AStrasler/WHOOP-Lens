@@ -117,6 +117,12 @@ test("Legacy initialization and tools/list continue without exposing arbitrary m
   assert.equal(initBody.result.serverInfo.name,"whoop-lens");
   assert.match(initBody.result.instructions,/call get_capabilities first/);
   assert.match(initBody.result.instructions,/label it user-provided/);
+  assert.doesNotMatch(initBody.result.instructions,/experimental daily physiological stress/);
+  const initOn=await route(req(payload("initialize",1,{protocolVersion:legacy,capabilities:{},
+    clientInfo:{name:"test",version:"1"}}),{version:legacy}),{...enabled(db()),STRESS_ESTIMATE_ENABLED:"true",AI_SUMMARY_ENABLED:"true"});
+  const onText=(await initOn.json()).result.instructions;
+  assert.match(onText,/experimental daily physiological stress index/);
+  assert.match(onText,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
   const result=await route(req(payload("tools/list"),{version:legacy}),enabled(db()));
   const list=(await result.json()).result;
   assert.equal(list.tools.length,16);assert.equal(Object.hasOwn(list,"resultType"),false);

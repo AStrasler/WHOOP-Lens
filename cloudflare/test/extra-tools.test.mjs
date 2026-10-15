@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
-import {readExtraTool,extraArguments} from '../src/extra-tools.mjs';
+import {readExtraTool,extraArguments,STRESS_CAPABILITY} from '../src/extra-tools.mjs';
+import {hostInstructions,hostInstructionsFor} from '../src/host-instructions.mjs';
 import {createStagingRouter} from '../src/router.mjs';
 import {d1Prepare,d1Database} from './d1-sqlite.mjs';
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -87,4 +88,45 @@ test('connect MCP dispatch uses verified identity and separate connection gate',
     assert.match(result.result.content[0].text,/^https:\/\/api.prod.whoop.com/);
     assert.equal(calls,1);
   }finally{db.sql.close();}
+});
+
+test('experimental stress estimate is listed only with STRESS_ESTIMATE_ENABLED; Stress Monitor stays unsupported',async()=>{
+  const db=fixture();try{
+    for(const env of [null,{},{STRESS_ESTIMATE_ENABLED:'false'},{STRESS_ESTIMATE_ENABLED:'TRUE'}]){
+      const off=await readExtraTool(db,A,'get_capabilities',{},env);
+      assert.equal(off.capabilities.some(c=>c.id===STRESS_CAPABILITY.id),false);
+      assert.ok(!off.global_limitations.some(l=>/experimental WHOOP Lens physiological stress/.test(l)));
+      assert.equal(off.capabilities.find(c=>c.id==='stress-monitor').status,'unsupported');
+    }
+    const on=await readExtraTool(db,A,'get_capabilities',{},{STRESS_ESTIMATE_ENABLED:'true',AI_SUMMARY_ENABLED:'true'});
+    const est=on.capabilities.find(c=>c.id===STRESS_CAPABILITY.id);
+    assert.ok(est);
+    assert.match(est.description,/Not WHOOP's Stress Monitor\. Not clinically validated\./);
+    assert.ok(est.limitations.some(l=>/not clinically validated/.test(l)));
+    assert.ok(est.limitations.some(l=>/zone durations/.test(l)));
+    const monitor=on.capabilities.find(c=>c.id==='stress-monitor');
+    assert.equal(monitor.status,'unsupported');assert.deepEqual(monitor.tools,[]);
+    assert.ok(on.global_limitations.some(l=>/Stress Monitor zone data remains unsupported/.test(l)));
+    // Enabled, but this account has no WHOOP connection (insufficient account data):
+    // listed honestly as not yet usable, never as available.
+    assert.equal(est.status,'requires_connection_or_data');
+    assert.equal(est.availability_reason,'Connect WHOOP first.');
+    // Discovery with the flag off never advertises it, even with include_planned.
+    const offAll=await readExtraTool(db,A,'get_capabilities',{include_planned:true,category:'explore'},{});
+    assert.ok(!JSON.stringify(offAll).includes('experimental physiological stress'));
+  }finally{db.sql.close();}
+});
+test('host instructions: Stress Monitor stays unsupported; the experimental index is described only with the flag on',()=>{
+  const mainText=readFileSync(new URL('./fixtures/host-instructions-main.txt',import.meta.url),'utf8').replace(/\n$/,'');
+  for(const env of [undefined,{},{STRESS_ESTIMATE_ENABLED:'false'},{STRESS_ESTIMATE_ENABLED:'TRUE'}]){
+    assert.equal(hostInstructionsFor(env),mainText);
+    assert.doesNotMatch(hostInstructionsFor(env),/experimental (?:daily )?physiological stress/);
+  }
+  assert.equal(hostInstructions,mainText);
+  const on=hostInstructionsFor({STRESS_ESTIMATE_ENABLED:'true',AI_SUMMARY_ENABLED:'true'});
+  assert.match(on,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
+  assert.match(on,/Do not estimate those durations/);
+  assert.match(on,/experimental daily physiological stress index that is enabled on this server/);
+  assert.match(on,/not WHOOP's Stress Monitor and not clinically validated/);
+  assert.match(on,/When it is absent, do not compute or imitate it/);
 });

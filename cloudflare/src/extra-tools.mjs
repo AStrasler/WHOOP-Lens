@@ -64,10 +64,11 @@ async function rows(db,sql,args){
   if(result.success===false||!Array.isArray(result.results))throw Error('Record read unavailable');
   return result.results;
 }
-export async function readExtraTool(db,userId,name,args){
+// env is optional and only read for the STRESS_ESTIMATE_ENABLED capability entry.
+export async function readExtraTool(db,userId,name,args,env=null){
   if(!await activeMembership(db,userId))throw Error('Not authorized');
   if(extraArguments(name,args)===null)throw Error('Invalid arguments');
-  if(name==='get_capabilities')return catalog(db,userId,args);
+  if(name==='get_capabilities')return catalog(db,userId,args,env);
   const {limit=25,offset=0,metric}=args;
   const filter=metric===undefined?'':' AND metric=?4';
   let sql;
@@ -90,7 +91,20 @@ export async function readExtraTool(db,userId,name,args){
   return {records,next_offset,source:name==='get_samsung_health'?'samsung_health':'health_connect',
     transport:name==='get_samsung_health'?'samsung_health_data_sdk':'stored_health_connect'};
 }
-async function catalog(db,userId,{category,limit=25,offset=0,include_planned=true}){
+// Listed only when STRESS_ESTIMATE_ENABLED and AI_SUMMARY_ENABLED are both exactly "true". The Stress Monitor
+// entries from the manifest stay unsupported either way.
+export const STRESS_CAPABILITY=Object.freeze({
+  id:'experimental-stress-estimate',name:'WHOOP Lens experimental physiological stress estimate',category:'explore',
+  delivery:'mcp_tool',tools:['get_recovery'],status:'available',
+  description:"An experimental daily 0-100 index derived from the user's own HRV, resting heart rate, sleep and respiratory rate against that user's prior 30 days. Not WHOOP's Stress Monitor. Not clinically validated.",
+  provides:'chart_data.stress_estimate on get_recovery summaries, with value, band, confidence, contributing measurements and limitations.',
+  data_requirements:['A WHOOP connection with at least 14 scored recovery days in the 30 days before each estimated day.'],
+  limitations:["Not WHOOP's Stress Monitor and not clinically validated; not a diagnosis.",
+    'Does not provide Stress Monitor zone durations, non-activity high stress, or an intraday timeline.',
+    'One value per day from daily WHOOP scores; it does not identify a cause.'],
+  example_prompts:['What was my experimental stress estimate this week, and how confident is it?']
+});
+async function catalog(db,userId,{category,limit=25,offset=0,include_planned=true},env=null){
   const connected=(await connectionStatus(db,userId)).connected;
   const available={};
   for(const [id,sql] of Object.entries({
@@ -99,7 +113,9 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
     'medical-context':'SELECT id FROM medical_context WHERE user_id=?1 AND reviewed_at IS NOT NULL LIMIT 1'
   }))available[id]=!!await db.prepare(sql).bind(userId).first();
   const localTools={'samsung':'get_samsung_health','health-connect':'get_health_connect','medical-context':'get_medical_context'};
-  const capabilities=manifest.capabilities.map(item=>{
+  // Same rule as the summary path, the only path that can return the estimate.
+  const stressOn=env?.STRESS_ESTIMATE_ENABLED==='true'&&env?.AI_SUMMARY_ENABLED==='true';
+  const capabilities=[...manifest.capabilities,...(stressOn?[STRESS_CAPABILITY]:[])].map(item=>{
     let value={...item};
     if(localTools[item.id]){
       const health=item.id==='health-connect';
@@ -121,7 +137,8 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
   return {schema_version:manifest.schema_version,registry_version:'cloudflare-1.2',source:'bundled_cloudflare_catalog',
     global_limitations:[...manifest.global_limitations.filter(s=>!s.startsWith('Android Health Connect')),
       'Local record tools read stored records for the signed-in account.',
-      'Health Connect phone ingest stays off until an ingest token is issued and the server flag is on. File import is a separate consent.'],
+      'Health Connect phone ingest stays off until an ingest token is issued and the server flag is on. File import is a separate consent.',
+      ...(stressOn?["An experimental WHOOP Lens physiological stress estimate is enabled on this server. It is not WHOOP's Stress Monitor and not clinically validated; Stress Monitor zone data remains unsupported."]:[])],
     total:capabilities.length,next_offset:offset+limit<capabilities.length?offset+limit:null,
     capabilities:capabilities.slice(offset,offset+limit)};
 }

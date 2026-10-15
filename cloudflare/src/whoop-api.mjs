@@ -153,13 +153,26 @@ export async function callWhoop(db,userId,resource,env,opts={},deps={}){
   if(spec.history){
     search.set("limit",String(limit));
     if(nextToken)search.set("nextToken",nextToken);
+    // Optional WHOOP time window (ISO 8601). Only sent when a caller passes it,
+    // so existing requests are unchanged.
+    for(const key of ["start","end"]){
+      const value=opts[key];
+      if(value==null)continue;
+      if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value)||!Number.isFinite(Date.parse(value)))
+        throw Error("Invalid WHOOP time window");
+      search.set(key,value);
+    }
   }
   const url=API+spec.path+(search.size?"?"+search:"");
   const response=await (deps.fetcher||fetch)(url,{
     method:"GET",headers:{authorization:"Bearer "+token,"accept":"application/json"},
     redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
   });
-  if(!response.ok)throw Error("WHOOP API request failed");
+  if(!response.ok){
+    // Same message as before; the status lets optional features (the stress
+    // estimate) tell a WHOOP rate limit (429) apart from other failures.
+    const error=Error("WHOOP API request failed");error.status=response.status;throw error;
+  }
   const data=await boundedJson(response);
   if(!data||typeof data!=="object"||Array.isArray(data))throw Error("WHOOP response invalid");
   return data;

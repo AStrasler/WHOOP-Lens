@@ -81,6 +81,23 @@ test("six WHOOP endpoints honor fixed resource paths and bounded pagination",asy
     }
   }finally{d.close();}
 });
+test("optional WHOOP start/end window is sent only when given, validated, and 429 keeps its status",async()=>{
+  const d=dbFixture();
+  try{
+    await connect(d,A);
+    let got=null;
+    const fetcher=async(url)=>{got=new URL(url);return response({records:[]});};
+    await callWhoop(d,A,"recovery",env,{limit:25},{now:()=>now,fetcher});
+    assert.equal(got.searchParams.has("start"),false);assert.equal(got.searchParams.has("end"),false);
+    await callWhoop(d,A,"recovery",env,{limit:25,start:"2026-08-01T00:00:00.000Z",end:"2026-09-02T00:00:00.000Z"},{now:()=>now,fetcher});
+    assert.equal(got.searchParams.get("start"),"2026-08-01T00:00:00.000Z");
+    assert.equal(got.searchParams.get("end"),"2026-09-02T00:00:00.000Z");
+    await assert.rejects(callWhoop(d,A,"recovery",env,{start:"yesterday"},{now:()=>now,fetcher}),/Invalid WHOOP time window/);
+    await assert.rejects(callWhoop(d,A,"recovery",env,{end:"2026-09-02T00:00:00Z&x=1"},{now:()=>now,fetcher}),/Invalid WHOOP time window/);
+    await assert.rejects(callWhoop(d,A,"recovery",env,{},{now:()=>now,fetcher:async()=>new Response("",{status:429})}),
+      e=>e.message==="WHOOP API request failed"&&e.status===429);
+  }finally{d.close();}
+});
 test("expired tokens rotate securely via fixed WHOOP token endpoint; old tokens replaced",async()=>{
   const d=dbFixture();
   try{

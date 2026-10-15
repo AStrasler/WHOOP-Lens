@@ -1,0 +1,1281 @@
+{
+  "metric": "stress_estimate",
+  "name": "WHOOP Lens experimental physiological stress estimate",
+  "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+  "experimental": true,
+  "version": "wl-stress-v1",
+  "unit": "index",
+  "scale": {
+    "min": 0,
+    "max": 100,
+    "personal_typical": 50
+  },
+  "available": true,
+  "reason": null,
+  "date_range": {
+    "start": "2026-10-06",
+    "end": "2026-10-15"
+  },
+  "history": {
+    "complete": true,
+    "recovery_complete": true,
+    "sleep": "complete"
+  },
+  "method": {
+    "baseline_days": 30,
+    "min_baseline_days": 14,
+    "center": "median",
+    "spread": "MAD x 1.4826",
+    "z_clip": 3,
+    "artifact_z": 8,
+    "plausible_ranges": {
+      "hrv_rmssd": [
+        5,
+        300
+      ],
+      "resting_heart_rate": [
+        25,
+        130
+      ],
+      "sleep_performance": [
+        0,
+        100
+      ],
+      "sleep_duration": [
+        0.5,
+        16
+      ],
+      "sleep_efficiency": [
+        0,
+        100
+      ],
+      "respiratory_rate": [
+        5,
+        40
+      ]
+    },
+    "confidence": "sum of scored effective weights x each input's baseline completeness (n/30), x (1 - 0.15 per conflict); conflicts are disagreeing or unsupported capped inputs, suspected artifacts and implausible values",
+    "clusters": {
+      "autonomic": 0.6,
+      "sleep": 0.3,
+      "respiratory": 0.1
+    },
+    "inputs": {
+      "hrv_rmssd": {
+        "label": "HRV (RMSSD)",
+        "unit": "millisecond",
+        "direction": "lower_is_more_load",
+        "cluster": "autonomic",
+        "weight_in_cluster": 0.6
+      },
+      "resting_heart_rate": {
+        "label": "Resting heart rate",
+        "unit": "bpm",
+        "direction": "higher_is_more_load",
+        "cluster": "autonomic",
+        "weight_in_cluster": 0.4
+      },
+      "sleep_performance": {
+        "label": "Sleep performance",
+        "unit": "percent",
+        "direction": "lower_is_more_load",
+        "cluster": "sleep",
+        "weight_in_cluster": 0.4
+      },
+      "sleep_duration": {
+        "label": "Sleep duration",
+        "unit": "hour",
+        "direction": "lower_is_more_load",
+        "cluster": "sleep",
+        "weight_in_cluster": 0.35
+      },
+      "sleep_efficiency": {
+        "label": "Sleep efficiency",
+        "unit": "percent",
+        "direction": "lower_is_more_load",
+        "cluster": "sleep",
+        "weight_in_cluster": 0.25
+      },
+      "respiratory_rate": {
+        "label": "Respiratory rate",
+        "unit": "breaths per minute",
+        "direction": "higher_is_more_load",
+        "cluster": "respiratory",
+        "weight_in_cluster": 1
+      }
+    },
+    "excluded": {
+      "recovery_score": "WHOOP recovery is derived largely from HRV, resting heart rate and sleep, so scoring it would double count those inputs.",
+      "skin_temp": "WHOOP skin temperature has no single stress direction (it can move either way), so it is not scored."
+    },
+    "bands": [
+      {
+        "band": "low",
+        "max": 35
+      },
+      {
+        "band": "typical",
+        "max": 65
+      },
+      {
+        "band": "elevated",
+        "max": 80
+      },
+      {
+        "band": "high",
+        "max": 100
+      }
+    ],
+    "sleep_join": "recovery.sleep_id = sleep.id",
+    "sleep_data": "complete"
+  },
+  "excluded_days": 0,
+  "points": [
+    {
+      "date": "2026-10-06",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 45,
+      "band": "typical",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": -5,
+        "direction": "toward_less_load",
+        "largest_input": {
+          "input": "resting_heart_rate",
+          "z": -0.67
+        }
+      },
+      "anomalies": [],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": -1.48,
+        "resting_heart_rate": -2.7,
+        "sleep_performance": -1.33,
+        "sleep_duration": 0,
+        "sleep_efficiency": -0.63,
+        "respiratory_rate": 1.11
+      },
+      "measurements": {
+        "hrv_rmssd": 65.75,
+        "resting_heart_rate": 54,
+        "sleep_performance": 93,
+        "sleep_duration": 6.7,
+        "sleep_efficiency": 94,
+        "respiratory_rate": 15.4
+      },
+      "limitations": []
+    },
+    {
+      "date": "2026-10-07",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 53,
+      "band": "typical",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 3,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "respiratory_rate",
+          "z": 0.67
+        }
+      },
+      "anomalies": [],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": 2.88,
+        "resting_heart_rate": 0,
+        "sleep_performance": 0,
+        "sleep_duration": 0,
+        "sleep_efficiency": -0.63,
+        "respiratory_rate": 1.11
+      },
+      "measurements": {
+        "hrv_rmssd": 63.39,
+        "resting_heart_rate": 55,
+        "sleep_performance": 91,
+        "sleep_duration": 6.7,
+        "sleep_efficiency": 94,
+        "respiratory_rate": 15.4
+      },
+      "limitations": []
+    },
+    {
+      "date": "2026-10-08",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 51,
+      "band": "typical",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 1,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "resting_heart_rate",
+          "z": 0.67
+        }
+      },
+      "anomalies": [],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": -1.35,
+        "resting_heart_rate": 2.7,
+        "sleep_performance": -0.67,
+        "sleep_duration": 0,
+        "sleep_efficiency": -0.31,
+        "respiratory_rate": 1.11
+      },
+      "measurements": {
+        "hrv_rmssd": 65.68,
+        "resting_heart_rate": 56,
+        "sleep_performance": 92,
+        "sleep_duration": 6.7,
+        "sleep_efficiency": 94,
+        "respiratory_rate": 15.4
+      },
+      "limitations": []
+    },
+    {
+      "date": "2026-10-09",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 47,
+      "band": "typical",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": -3,
+        "direction": "toward_less_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": -0.69
+        }
+      },
+      "anomalies": [],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": -4.16,
+        "resting_heart_rate": 2.7,
+        "sleep_performance": -0.67,
+        "sleep_duration": 0,
+        "sleep_efficiency": 0,
+        "respiratory_rate": -0.56
+      },
+      "measurements": {
+        "hrv_rmssd": 67.2,
+        "resting_heart_rate": 56,
+        "sleep_performance": 92,
+        "sleep_duration": 6.7,
+        "sleep_efficiency": 94,
+        "respiratory_rate": 15.1
+      },
+      "limitations": []
+    },
+    {
+      "date": "2026-10-10",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 50,
+      "band": "typical",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 0,
+        "direction": "none",
+        "largest_input": {
+          "input": "respiratory_rate",
+          "z": -0.67
+        }
+      },
+      "anomalies": [],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": 2.72,
+        "resting_heart_rate": 0,
+        "sleep_performance": -0.67,
+        "sleep_duration": 0,
+        "sleep_efficiency": -0.63,
+        "respiratory_rate": -1.11
+      },
+      "measurements": {
+        "hrv_rmssd": 63.48,
+        "resting_heart_rate": 55,
+        "sleep_performance": 92,
+        "sleep_duration": 6.7,
+        "sleep_efficiency": 95,
+        "respiratory_rate": 15
+      },
+      "limitations": []
+    },
+    {
+      "date": "2026-10-11",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 100,
+      "band": "high",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
+      },
+      "anomalies": [
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
+      ],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": 18,
+        "resting_heart_rate": 12,
+        "sleep_performance": 6,
+        "sleep_duration": 5.25,
+        "sleep_efficiency": 3.75,
+        "respiratory_rate": 5
+      },
+      "measurements": {
+        "hrv_rmssd": 47.92,
+        "resting_heart_rate": 62,
+        "sleep_performance": 73,
+        "sleep_duration": 5.6,
+        "sleep_efficiency": 86,
+        "respiratory_rate": 16.7
+      },
+      "limitations": [
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 100,
+      "band": "high",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
+      },
+      "anomalies": [
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
+      ],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": 18,
+        "resting_heart_rate": 12,
+        "sleep_performance": 6,
+        "sleep_duration": 5.25,
+        "sleep_efficiency": 3.75,
+        "respiratory_rate": 5
+      },
+      "measurements": {
+        "hrv_rmssd": 43.32,
+        "resting_heart_rate": 63,
+        "sleep_performance": 73,
+        "sleep_duration": 5.6,
+        "sleep_efficiency": 87,
+        "respiratory_rate": 16.7
+      },
+      "limitations": [
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+      ]
+    },
+    {
+      "date": "2026-10-13",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 100,
+      "band": "high",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
+      },
+      "anomalies": [
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
+      ],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": 18,
+        "resting_heart_rate": 12,
+        "sleep_performance": 6,
+        "sleep_duration": 5.25,
+        "sleep_efficiency": 3.75,
+        "respiratory_rate": 5
+      },
+      "measurements": {
+        "hrv_rmssd": 43.77,
+        "resting_heart_rate": 61,
+        "sleep_performance": 74,
+        "sleep_duration": 5.6,
+        "sleep_efficiency": 85,
+        "respiratory_rate": 16.7
+      },
+      "limitations": [
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+      ]
+    },
+    {
+      "date": "2026-10-14",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 100,
+      "band": "high",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
+      },
+      "anomalies": [
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
+      ],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": 18,
+        "resting_heart_rate": 12,
+        "sleep_performance": 6,
+        "sleep_duration": 5.25,
+        "sleep_efficiency": 3.75,
+        "respiratory_rate": 5
+      },
+      "measurements": {
+        "hrv_rmssd": 42.65,
+        "resting_heart_rate": 62,
+        "sleep_performance": 73,
+        "sleep_duration": 5.6,
+        "sleep_efficiency": 85,
+        "respiratory_rate": 16.6
+      },
+      "limitations": [
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+      ]
+    },
+    {
+      "date": "2026-10-15",
+      "baseline_days": 30,
+      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "sleep_data": "complete",
+      "value": 100,
+      "band": "high",
+      "status": "ok",
+      "coverage": 1,
+      "confidence": {
+        "score": 1,
+        "level": "high",
+        "components": {
+          "input_coverage": 1,
+          "baseline_completeness": 1,
+          "conflicts": 0,
+          "sleep_history_partial": false,
+          "per_input": {
+            "hrv_rmssd": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "resting_heart_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_performance": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_duration": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "sleep_efficiency": {
+              "baseline_values": 30,
+              "completeness": 1
+            },
+            "respiratory_rate": {
+              "baseline_values": 30,
+              "completeness": 1
+            }
+          }
+        }
+      },
+      "deviation": {
+        "points_from_typical": 50,
+        "direction": "toward_more_load",
+        "largest_input": {
+          "input": "hrv_rmssd",
+          "z": 3
+        }
+      },
+      "anomalies": [
+        {
+          "input": "hrv_rmssd",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "resting_heart_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_performance",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_duration",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "sleep_efficiency",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        },
+        {
+          "input": "respiratory_rate",
+          "capped_z": 3,
+          "direction": "toward_more_load",
+          "relation": "agrees",
+          "lowers_confidence": false,
+          "scored": true,
+          "note": "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+        }
+      ],
+      "inputs_used": [
+        "hrv_rmssd",
+        "resting_heart_rate",
+        "sleep_performance",
+        "sleep_duration",
+        "sleep_efficiency",
+        "respiratory_rate"
+      ],
+      "inputs_missing": [],
+      "contributions": {
+        "hrv_rmssd": 18,
+        "resting_heart_rate": 12,
+        "sleep_performance": 6,
+        "sleep_duration": 5.25,
+        "sleep_efficiency": 3.75,
+        "respiratory_rate": 5
+      },
+      "measurements": {
+        "hrv_rmssd": 47.54,
+        "resting_heart_rate": 62,
+        "sleep_performance": 73,
+        "sleep_duration": 5.6,
+        "sleep_efficiency": 85,
+        "respiratory_rate": 16.6
+      },
+      "limitations": [
+        "HRV (RMSSD) was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Resting heart rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep performance was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep duration was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Sleep efficiency was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced.",
+        "Respiratory rate was far outside the usual range and capped; the other inputs moved the same way, so confidence is not reduced."
+      ]
+    }
+  ],
+  "requested_latest_date": "2026-10-15",
+  "latest_requested": {
+    "date": "2026-10-15",
+    "status": "ok",
+    "value": 100,
+    "band": "high",
+    "confidence": "high",
+    "baseline_days": 30
+  },
+  "latest_valid": {
+    "date": "2026-10-15",
+    "status": "ok",
+    "value": 100,
+    "band": "high",
+    "confidence": "high",
+    "baseline_days": 30
+  },
+  "latest_valid_is_requested_latest": true,
+  "limitations": [
+    "This is the WHOOP Lens experimental physiological stress estimate, a derived daily index. It is not WHOOP's Stress Monitor and is not clinically validated.",
+    "It compares each day with the same person's prior 30 days. 50 means typical for that person; higher values mean HRV, resting heart rate, sleep or respiratory rate moved in the direction usually linked with physiological load.",
+    "WHOOP provides one value per day, with no intraday heart rate, so short events within a day are not visible.",
+    "Training, illness, alcohol, travel and measurement noise can move the same inputs. The estimate does not identify a cause.",
+    "Days without enough history (at least 14 scored days in the prior 30) are reported as insufficient instead of estimated.",
+    "Confidence describes how good the evidence is (input coverage, each input's own baseline completeness, conflicts and artifacts), not how large the change is. Inputs agreeing in direction are not penalized, but agreement is not treated as proof."
+  ]
+}

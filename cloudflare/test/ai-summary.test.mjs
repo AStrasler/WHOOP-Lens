@@ -854,10 +854,11 @@ test("chart series and insights are factual on both the model and template paths
     });
     const slot=reserved.summary.chart_data.stress_estimate;
     assert.equal(slot.metric,"stress_estimate");
+    // Too little history: the estimate reports insufficient, never a value.
     assert.equal(slot.available,false);
-    assert.equal(slot.unit,null);
-    assert.equal(slot.stats,null);
-    assert.deepEqual(slot.points,[]);
+    assert.equal(slot.experimental,true);
+    assert.match(slot.label,/Not WHOOP's Stress Monitor/);
+    assert.ok(slot.points.every(p=>p.value===null&&p.confidence.level==="none"));
     assert.equal(Object.hasOwn(slot,"value"),false);
     assert.equal(calls,1);
     assert.deepEqual(reserved.summary.chart_data.series,modeled.summary.chart_data.series);
