@@ -877,6 +877,7 @@ function stressNumbers(text){
 // Interpret level terms against their own field. The band and confidence
 // can use overlapping adjectives but are NOT interchangeable.
 const STRESS_LEVEL_RE=/\b(?:low|typical|elevated|high|moderate)\b/gi;
+const STRESS_LEVEL_TEST=/\b(?:low|typical|elevated|high|moderate)\b/i;
 function stressLevelRejection(part,est){
   const dates=part.match(DATE_RE)||[];
   if(dates.some(d=>d!==est.estimate_date))return {rule:"stress_claim",category:"date"};
@@ -906,7 +907,7 @@ function hasStressQuantity(part){
 }
 function inheritedStressRejection(part,est,needDate){
   if(hasStressQuantity(part))return measurementRejection(part,est,needDate);
-  if(STRESS_LEVEL_RE.test(part))return stressLevelRejection(part,est);
+  if(STRESS_LEVEL_TEST.test(part))return stressLevelRejection(part,est);
   return {rule:"stress_claim",category:"unqualified_continuation"};
 }
 // A measurement statement: exactly the value, matching level words, only
@@ -990,14 +991,14 @@ function stressClaimRejection(text,stats){
           // value in the same clause. Dates alone are not measurements.
           const metricAt=EXPLICIT_OTHER_METRIC.exec(clause).index;
           const prefix=clause.slice(0,metricAt);
-          if(hasStressQuantity(prefix)||STRESS_LEVEL_RE.test(prefix)){
+          if(hasStressQuantity(prefix)||STRESS_LEVEL_TEST.test(prefix)){
             const r=inheritedStressRejection(prefix,est,needDate);
             if(r)return r;
             remaining=clause.slice(metricAt);
           }
         }
         if(precedingMetric==="stress"&&!otherMetric&&
-           (STRESS_FOLLOWUP.test(clause)||hasStressQuantity(clause)||STRESS_LEVEL_RE.test(clause))){
+           (STRESS_FOLLOWUP.test(clause)||hasStressQuantity(clause)||STRESS_LEVEL_TEST.test(clause))){
           const r=inheritedStressRejection(clause,est,needDate);
           if(r)return r;
           continue;
