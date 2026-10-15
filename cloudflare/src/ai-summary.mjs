@@ -882,7 +882,7 @@ const STRESS_LEVEL_TEST=/\b(?:low|typical|elevated|high|moderate)\b/i;
 // units, or assigns that number to a categorical stress field. Fail closed;
 // truthful quantitative stress prose is intentionally narrow.
 const STRESS_NEGATION=/\b(?:no|not|never|isn't|wasn't|weren't|aren't|doesn't|didn't|without|neither|no longer)\b/i;
-const STRESS_COMPARISON=/\b(?:below|above|under|over|less than|greater than|higher than|lower than|more than|at least|at most|between|compared to|versus|vs\.?|approximately|roughly|around|about|nearly|almost|rose|risen|rising|fell|fallen|falling|increased?|decreased?|declined?|dipped|climbed|dropped|spiked|jumped|trended|changed|change|shifted|worsened|improved|higher|lower)\b|[<>≈≠]/i;
+const STRESS_COMPARISON=/\b(?:below|above|under|over|less than|greater than|higher than|lower than|more than|at least|at most|between|compared to|versus|vs\.?|approximately|roughly|around|about|nearly|almost|rose|risen|rising|fell|fallen|falling|increased?|decreased?|declined?|dipped|climbed|dropped|spiked|jumped|trended|changed|change|shifted|worsened|improved|higher|lower|peaked|peaking|peak|stayed|stays|remaining|remained|remains|steady|steadily|stable|stabilized|unchanged|reached|reaching|topped|bottomed|highest|lowest)\b|[<>≈≠]/i;
 // The stress scale is a dimensionless index, not a rate or measurement unit.
 const STRESS_UNIT=/\b(?:percent|percentage|percentages|bpm|beats|per|minute|minutes|hour|hours|seconds?|milliseconds?|millisec(?:onds?)?|points?|degrees|celsius|rate|ratio|units?)\b|%|\/\s*(?:min|s|h|day)\b/i;
 const STRESS_NUMERIC_CATEGORY=/\b(?:confidence|band)(?:\s+level)?\s+(?:(?:is|was|were|at|of|equals?|had|has)\s+)*(?:(?:about|approximately|around)\s+)?(?:-?\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/i;
@@ -1017,7 +1017,13 @@ function stressClaimRejection(text,stats){
       // mask a preceding false stress continuation in the SAME sentence.
       for(const clause of stressClauses(sentence)){
         const otherMetric=explicitlyNamesOtherMeasurement(clause);
-        const categoryClaim=/^\s*(?:(?:the|its|this|that)\s+)?(?:(?:stress|estimate)\s+)?(?:band|confidence)\b|\bno\s+(?:low|typical|elevated|high|moderate)\s+band\b/i.test(clause);
+        // A category can appear before the numeric stress estimate and can
+        // carry modifiers ("overall confidence", "no overall elevated band").
+        // Do not treat explicit recovery/HRV/sleep statements as stress claims.
+        const otherSubject=/^\s*(?:(?:the|its|this|that)\s+)?(?:recovery|hrv|heart\s+rate|sleep|strain|steps?|respiratory|skin\s+temperature|spo2?)\b/i.test(clause);
+        const categoryClaim=!otherSubject&&/\b(?:confidence|band)\b/i.test(clause)&&
+          (/\b(?:is|was|were|remained|stayed|no|not|low|typical|elevated|high|moderate)\b/i.test(clause)||
+           /^\s*(?:(?:overall|daily|current|latest|experimental|physiological|the|its|this|that|stress|estimate)\s+)*(?:band|confidence)\b/i.test(clause));
         if(!otherMetric&&categoryClaim){
           const r=stressLevelRejection(clause,est);
           if(r)return r;
