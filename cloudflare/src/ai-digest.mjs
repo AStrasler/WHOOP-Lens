@@ -123,7 +123,11 @@ async function generateDigest({db,userId,env,whoopRequest,now,period,weekEnding}
   // transient stress failures as a ready digest: retry on the next request.
   // A stable "insufficient_baseline" with fully fetched history may be cached.
   const chart=view.chart_data?.stress_estimate;
-  const stressReady=!stressEstimateEnabled(env)||
+  // A complete sleep-only week has no recovery target days: retrying the
+  // physiological baseline cannot change this stable absence. Cache it just
+  // like other complete weekly digests, without caching transient failures.
+  const stableNoRecovery=chart?.reason==="requires_recovery_data"&&recovery.complete;
+  const stressReady=!stressEstimateEnabled(env)||stableNoRecovery||
     (chart!=null&&chart.reason!=="rate_limited"&&chart.reason!=="incomplete_history"&&
      chart.history?.complete===true);
   const cacheable=covered&&stressReady&&(summariesOn?view.status==="model":view.status==="template");
