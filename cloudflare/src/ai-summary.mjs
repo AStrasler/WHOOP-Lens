@@ -1025,7 +1025,7 @@ function stressClaimRejection(text,stats){
     // the clause after it; a later list item ("..., 2026-10-15 and 2026-10-13")
     // joins the clause before it. Every date then gets that clause's validation.
     const clauses=stressClauses(sentence);
-    let last=null,latestExplicitMetric=null;
+    let last=null,latestExplicitMetric=null,activeMetric=precedingMetric;
     for(const clause of clauses){
       const w=words(clause);
       const hasStress=STRESS_CLAIM.test(clause),hasPronoun=PRONOUN_ANY.test(clause);
@@ -1035,8 +1035,16 @@ function stressClaimRejection(text,stats){
         :hasStress?"stress_value":hasMetric?"metric":"other";
       // Preserve the last explicitly named metric across neutral clauses.
       // For mixed clauses, an explicit other metric still resets the referent.
-      if(kind==="stress_unavailable"||kind==="stress_value")latestExplicitMetric="stress";
-      else if(kind==="metric")latestExplicitMetric="other";
+      if(kind==="stress_unavailable"||kind==="stress_value"){
+        latestExplicitMetric="stress";activeMetric="stress";
+      }else if(kind==="metric"){
+        latestExplicitMetric="other";activeMetric="other";
+      }
+      if(kind==="other"&&activeMetric==="stress"&&
+         (STRESS_FOLLOWUP.test(clause)||hasStressQuantity(clause)||STRESS_LEVEL_TEST.test(clause))){
+        const r=inheritedStressRejection(clause,est,needDate);
+        if(r)return r;
+      }
       if(kind==="stress_unavailable"){
         const r=unavailableRejection(clause,est);
         if(r)return r;
