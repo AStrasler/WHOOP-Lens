@@ -17,4 +17,4 @@ const stressEstimateGuidance = "Separately, WHOOP Lens has an experimental daily
 export function hostInstructionsFor(env) {
   return env?.STRESS_ESTIMATE_ENABLED === "true" && env?.AI_SUMMARY_ENABLED === "true" ? hostInstructions + " " + stressEstimateGuidance : hostInstructions;
 }
-export const serverInfo = Object.freeze({ name: "whoop-lens", version: "1.0.0" });
+export const serverInfo = Object.freeze({ name: "whoop-lens", version: "1.1.0" });

@@ -402,6 +402,10 @@ test("F2 weekly digest: boundary dates, no fabricated target dates, cached outpu
   const sqlite=new DatabaseSync(":memory:");
   for(const f of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
     sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0001_initial.sql",import.meta.url),"utf8"));
+  sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(A,A);
+  sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(A);
+  sqlite.prepare("INSERT INTO whoop_connections(user_id,expires_at,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,'2027-01-01','synthetic-access','synthetic-refresh','v1','public')").run(A);
   const db={sqlite,...d1Database(sqlite)};
   try{
     const u=syntheticUser({prefix:"w"}); // day(34)=2026-10-05 Mon .. day(40)=2026-10-11 Sun
@@ -412,7 +416,7 @@ test("F2 weekly digest: boundary dates, no fabricated target dates, cached outpu
     const AI={async run(_m,input){
       modelCalls++;
       const stats=JSON.parse(input.messages[1].content).stats;
-      return {response:`Recovery score median was ${stats.metrics["score.recovery_score"].median}.`};
+      return {response:'{"selected":[0]}'};
     }};
     const env={WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true",AI,
       AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",AI_ACCOUNT_ANALYTICS_TOKEN:"synthetic-analytics-token",AI_ANALYTICS_QUERY:async()=>({neurons:0}),
@@ -1030,7 +1034,7 @@ test("Codex12 transient baseline failures cannot poison a weekly digest cache",a
     const AI={async run(_model,input){
       modelCalls++;
       const stats=JSON.parse(input.messages[1].content).stats;
-      return {response:`Recovery score median was ${stats.metrics["score.recovery_score"].median}.`};
+      return {response:'{"selected":[0]}'};
     }};
     const env={WEEKLY_DIGEST_ENABLED:"true",AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true",
       AI,AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1108,7 +1112,7 @@ test("Tenant isolation: two signed-in users keep distinct stress digest data and
   const AI={async run(_model,input){
     modelCalls++;
     const stats=JSON.parse(input.messages[1].content).stats;
-    return {response:`Recovery score median was ${stats.metrics["score.recovery_score"].median}.`};
+    return {response:'{"selected":[0]}'};
   }};
   const env={AI,AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true",WEEKLY_DIGEST_ENABLED:"true",
     AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1219,7 +1223,7 @@ test("Codex14 fully fetched sleep-only weeks cache without repeat AI quota",asyn
   const AI={async run(_m,input){
     modelCalls++;
     const stats=JSON.parse(input.messages[1].content).stats;
-    return {response:`${stats.count} WHOOP records were returned.`};
+    return {response:'{"selected":[0]}'};
   }};
   const env={AI,AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true",WEEKLY_DIGEST_ENABLED:"true",
     AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -1260,7 +1264,7 @@ test("Codex5 weekly digest caches never cross AI/stress feature states, includin
   const AI={async run(_m,input){
     modelCalls++;
     const stats=JSON.parse(input.messages[1].content).stats;
-    return {response:`Recovery score median was ${stats.metrics["score.recovery_score"].median}.`};
+    return {response:'{"selected":[0]}'};
   }};
   const base={WEEKLY_DIGEST_ENABLED:"true",AI,
     AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

@@ -90,7 +90,7 @@ test("normal analytics usage reserves inside the account room",async()=>{
       return {neurons:100};
     },{AI:{async run(){
       calls++;
-      return {response:accepted,usage:{prompt_tokens:20,completion_tokens:8}};
+      return {response:'{"selected":[0]}',usage:{prompt_tokens:20,completion_tokens:8}};
     }}});
     const first=await attachSummary(page(),{db,userId:A,tool:"get_recovery",now:NOW,env});
     assert.equal(first.summary.status,"model");
@@ -176,7 +176,7 @@ test("outside account usage near the limit skips the model",async()=>{
   const db=openDb();
   try{
     let calls=0;
-    const env=analyticsEnv(async()=>({neurons:9600}),{AI:{async run(){calls++;return {response:accepted};}}});
+    const env=analyticsEnv(async()=>({neurons:9600}),{AI:{async run(){calls++;return {response:'{"selected":[0]}'};}}});
     const summary=await attachSummary(page(),{db,userId:A,tool:"get_recovery",now:NOW,env});
     assert.equal(calls,0);
     assert.equal(summary.summary.status,"template");
@@ -209,7 +209,7 @@ test("analytics failure and stale snapshots fail closed",async()=>{
   try{
     let calls=0,queries=0;
     const failing=analyticsEnv(async()=>{queries++;throw Error("analytics down");},{
-      AI:{async run(){calls++;return {response:accepted};}}
+      AI:{async run(){calls++;return {response:'{"selected":[0]}'};}}
     });
     const down=await attachSummary(page(),{db,userId:A,tool:"get_recovery",now:NOW,env:failing});
     assert.equal(down.summary.status,"template");
@@ -269,7 +269,7 @@ test("the GraphQL analytics query sums neurons and fail closed on a bad response
       },
       AI:{async run(){
         calls++;
-        return {response:accepted,usage:{prompt_tokens:20,completion_tokens:8}};
+        return {response:'{"selected":[0]}',usage:{prompt_tokens:20,completion_tokens:8}};
       }}
     };
     const summary=await attachSummary(page(),{db,userId:A,tool:"get_recovery",now:NOW,env});
@@ -362,7 +362,7 @@ test("a last call hours ago stays fresh, and a stale or failed fetch uses the te
     db.sqlite.prepare("INSERT INTO ai_usage_event(day,at_ms,amount) VALUES(?,?,?)").run("2026-10-12",callAt,50);
     let calls=0;
     const env=analyticsEnv(async()=>({neurons:8000,end:new Date(callAt).toISOString()}),{
-      AI:{async run(){calls++;return {response:accepted,usage:{prompt_tokens:20,completion_tokens:8}};}}
+      AI:{async run(){calls++;return {response:'{"selected":[0]}',usage:{prompt_tokens:20,completion_tokens:8}};}}
     });
     const budget=await loadAccountBudget(db,env,{day:DAY,now:checkAt});
     assert.equal(budget.ok,true);
@@ -379,7 +379,7 @@ test("a last call hours ago stays fresh, and a stale or failed fetch uses the te
         neurons:0,
         end:new Date(checkAt).toISOString(),
         freshAt:new Date(checkAt-ANALYTICS_STALE_MS-1000).toISOString()
-      }),{AI:{async run(){calls++;return {response:accepted};}}})
+      }),{AI:{async run(){calls++;return {response:'{"selected":[0]}'};}}})
     });
     assert.equal(stale.summary.status,"template");
     assert.equal(calls,0);
@@ -387,7 +387,7 @@ test("a last call hours ago stays fresh, and a stale or failed fetch uses the te
     const failed=await attachSummary(page(),{
       db,userId:A,tool:"get_recovery",now:checkAt,
       env:analyticsEnv(async()=>{throw Error("analytics down");},{
-        AI:{async run(){calls++;return {response:accepted};}}
+        AI:{async run(){calls++;return {response:'{"selected":[0]}'};}}
       })
     });
     assert.equal(failed.summary.status,"template");

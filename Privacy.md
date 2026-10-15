@@ -39,3 +39,11 @@ For privacy questions, contact Aaron Strasler at the contact email specified in 
 ## Changes
 
 This statement will be updated if the plugin's data handling changes.
+
+## Private Cloudflare MCP and optional processing
+
+The private MCP at `whooplens.tech/mcp` verifies OAuth identity and active membership. Health Connect phone delivery requires a separate per-member ingest token and storage consent. Tokens are stored as hashes; each record is owned by the authenticated token's member. Revocation stops future writes, including uploads still in progress. Withdrawal deletes that member's Health Connect records and revokes ingest tokens.
+
+On-demand summaries send minimized numerical facts and precomputed statements to Cloudflare Workers AI. Free-text record notes, credentials and account identifiers are excluded. WHOOP Lens stores daily usage counters and, when the weekly-digest feature is enabled, an account-scoped digest cache containing derived health facts and charts. It does not store model prompts. Disconnecting WHOOP through WHOOP Lens invalidates that account's weekly digests. Turning off AI or stress changes the reachable cache mode. Existing conversations remain subject to the host's retention controls.
+
+Experimental stress estimates are WHOOP Lens calculations, not official WHOOP Stress Monitor measurements. They are not clinically validated. Feature activation does not grant access to another member or enroll anyone in cross-account analytics.

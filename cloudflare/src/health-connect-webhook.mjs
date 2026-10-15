@@ -1,3 +1,4 @@
+import {readBounded} from './bounded-body.mjs';
 // HC Webhook (com.hcwebhook.app) JSON ingest. The phone authenticates with a
 // per-user bearer. The owner is the token's member, never a field in the body.
 import {activeMembership} from './storage.mjs';
@@ -57,6 +58,10 @@ function httpJson(data,status=200){
 function fail(status,error){return httpJson({error},status);}
 function instant(value){
   if(typeof value!=='string'||value.length>40)return null;
+  const parts=/^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if(!parts||Number(parts[2])>23||Number(parts[3])>59||Number(parts[4])>59)return null;
+  const calendar=Date.parse(parts[1]+'T00:00:00Z');
+  if(!Number.isFinite(calendar)||new Date(calendar).toISOString().slice(0,10)!==parts[1])return null;
   const ms=Date.parse(value);
   if(!Number.isFinite(ms))return null;
   return new Date(ms).toISOString();
@@ -161,7 +166,7 @@ function row(metric,record_key,origin,observed_at,ended_at,local_date,unit,paylo
 }
 export async function mapWebhookPayload(data,{maxStored=DEFAULT_MAX_STORED}={}){
   if(!data||typeof data!=='object'||Array.isArray(data)) return {error:'invalid'};
-  if(typeof data.timestamp!=='string'||data.timestamp.length<1||data.timestamp.length>40) return {error:'invalid'};
+  if(!instant(data.timestamp)) return {error:'invalid'};
   if(typeof data.app_version!=='string'||data.app_version.length<1||data.app_version.length>40) return {error:'invalid'};
   const skipped_types={};
   let skipped=0,rejected=0;
@@ -183,7 +188,13 @@ export async function mapWebhookPayload(data,{maxStored=DEFAULT_MAX_STORED}={}){
     }
   }
   const byKey=new Map();
-  for(const record of mapped) byKey.set(record.metric+'\n'+record.record_key,record);
+  for(const record of mapped){
+    const key=record.metric+'\n'+record.record_key,previous=byKey.get(key);
+    const incoming=JSON.parse(record.payload_json).last_modified;
+    const existing=previous&&JSON.parse(previous.payload_json).last_modified;
+    // Match the database version rule, including legacy unversioned uploads.
+    if(!existing||(incoming&&incoming>=existing))byKey.set(key,record);
+  }
   const rows=[...byKey.values()];
   if(rows.length>maxStored) return {error:'too_large'};
   return {rows,skipped,skipped_types,rejected};
@@ -204,17 +215,28 @@ function chunkRows(rows){
   if(current.length) batches.push(current);
   return batches;
 }
+// Rechecked inside the write transaction, after reading/validating the body.
+// A revoked token cannot become valid again, even when consent is re-granted.
+const WRITE_AUTH=`EXISTS (
+  SELECT 1 FROM health_connect_ingest_tokens t
+  JOIN health_import_consent c ON c.user_id=t.user_id
+  JOIN whoop_members m ON m.user_id=t.user_id
+  JOIN identity_links i ON i.user_id=t.user_id
+  WHERE t.user_id=?1 AND t.token_hash=?3 AND t.revoked_at IS NULL
+    AND c.purpose='health_connect_file' AND c.granted_at IS NOT NULL AND c.withdrawn_at IS NULL
+    AND m.active=1 AND ((i.identity_provider='supabase' AND i.provider_subject=?1)
+      OR (i.identity_provider='cloudflare_access' AND length(i.provider_subject)>0))
+)`;
 const UPSERT=
   'INSERT INTO health_connect_records(id,user_id,metric,record_key,origin_package,observed_at,ended_at,local_date,unit,payload_json) '+
   'SELECT json_extract(j.value,\'$.id\'),?1,json_extract(j.value,\'$.metric\'),json_extract(j.value,\'$.record_key\'),'+
   'json_extract(j.value,\'$.origin_package\'),json_extract(j.value,\'$.observed_at\'),json_extract(j.value,\'$.ended_at\'),'+
   'json_extract(j.value,\'$.local_date\'),json_extract(j.value,\'$.unit\'),json_extract(j.value,\'$.payload_json\') '+
-  'FROM json_each(?2) AS j WHERE 1 '+ // WHERE ends the FROM so ON CONFLICT is the upsert, not a join.
+  'FROM json_each(?2) AS j WHERE '+WRITE_AUTH+' '+ // WHERE ends the FROM so ON CONFLICT is the upsert, not a join.
   'ON CONFLICT(user_id,metric,record_key) DO UPDATE SET origin_package=excluded.origin_package,'+
   'observed_at=excluded.observed_at,ended_at=excluded.ended_at,local_date=excluded.local_date,'+
   'unit=excluded.unit,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP '+
   'WHERE json_extract(health_connect_records.payload_json,\'$.last_modified\') IS NULL '+
-  'OR json_extract(excluded.payload_json,\'$.last_modified\') IS NULL '+
   'OR json_extract(excluded.payload_json,\'$.last_modified\')>=json_extract(health_connect_records.payload_json,\'$.last_modified\')';
 
 async function consumeRate(db,hash,now,maxHits){
@@ -228,28 +250,7 @@ async function consumeRate(db,hash,now,maxHits){
   ).bind(cutoff,nowIso,hash,maxHits).run();
   return result?.success&&result.meta?.changes===1;
 }
-async function readBounded(request,limit){
-  const declared=request.headers.get('content-length');
-  if(declared!=null&&(!/^\d+$/.test(declared)||Number(declared)>limit)) return {error:'too_large'};
-  if(!request.body) return {error:'invalid'};
-  const reader=request.body.getReader();
-  const chunks=[];
-  let size=0;
-  try{
-    while(true){
-      const {done,value}=await reader.read();
-      if(done) break;
-      size+=value.byteLength;
-      if(size>limit){await reader.cancel();return {error:'too_large'};}
-      chunks.push(value);
-    }
-  }catch{return {error:'invalid'};}
-  const bytes=new Uint8Array(size);
-  let offset=0;
-  for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
-  try{return {text:new TextDecoder('utf-8',{fatal:true}).decode(bytes)};}
-  catch{return {error:'invalid'};}
-}
+
 function bearer(request){
   const header=request.headers.get('authorization')||'';
   if(header.length>200) return null;
@@ -330,10 +331,18 @@ export async function healthConnectWebhook(request,env,{now=Date.now(),maxBody=D
   if(mapped.error==='too_large') return fail(413,'Payload too large');
   if(mapped.error) return fail(400,'Invalid payload');
   try{
-    for(const batch of chunkRows(mapped.rows)){
-      const saved=await env.DB.prepare(UPSERT).bind(owner.user_id,JSON.stringify(batch)).run();
-      if(!saved?.success) return fail(503,'Health Connect webhook is unavailable');
-    }
+    // D1 batch is transactional: no partial upload on a failed chunk, and
+    // revocation/withdrawal cannot interleave between authorization and writes.
+    const statements=[env.DB.prepare(
+      'UPDATE health_connect_ingest_tokens SET window_hits=window_hits '+
+      'WHERE user_id=?1 AND token_hash=?3 AND '+WRITE_AUTH
+    ).bind(owner.user_id,null,hash)];
+    for(const batch of chunkRows(mapped.rows))
+      statements.push(env.DB.prepare(UPSERT).bind(owner.user_id,JSON.stringify(batch),hash));
+    const results=await env.DB.batch(statements);
+    if(!Array.isArray(results)||results.length!==statements.length||results.some(r=>!r?.success))
+      return fail(503,'Health Connect webhook is unavailable');
+    if(results[0].meta?.changes!==1)return fail(403,'Not authorized');
   }catch{return fail(503,'Health Connect webhook is unavailable');}
   return httpJson({ok:true,stored:mapped.rows.length,skipped:mapped.skipped,skipped_types:mapped.skipped_types,rejected:mapped.rejected});
 }
