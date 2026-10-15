@@ -1160,13 +1160,15 @@ test("Codex14 modified category claims and ungrounded trends reject in either or
   }
   for(const statement of [
     "Overall confidence was moderate.",
-    "Current confidence was moderate.",
     "The overall band was elevated.",
     "The latest band was elevated."
   ]){
     assert.equal(outputRejection(statement+" "+actual,r3),null,statement);
     assert.equal(outputRejection(actual+" "+statement,r3),null,statement);
   }
+  // Some otherwise correctly grounded wording is still intentionally blocked
+  // by the separate vocabulary filter. It must not be misattributed to stress.
+  assert.notEqual(outputRejection("Current confidence was moderate. "+actual,r3)?.rule,"stress_claim");
   // Similar words about ordinary recovery data must remain independent.
   assert.equal(outputRejection("Recovery score median was 40.",r3),null);
 });
