@@ -947,6 +947,47 @@ test("Codex10 true stress prefixes and explicit metric switches are still ground
   assert.notEqual(outputRejection(start+" It was 72 on 2026-10-13 because recovery score median was 40.",r3)?.rule,"stress_claim");
   assert.notEqual(outputRejection(start+" On 2026-10-13, recovery score median was 40. It was 40.",r3)?.rule,"stress_claim");
 });
+test("Codex11 label-only stress continuations bind separately to band and confidence",()=>{
+  const lead="The stress estimate was 72 on 2026-10-13.";
+  for(const t of ["The band was high.","The confidence was high.","The confidence was elevated.",
+    "The band was moderate.","The band was low.","The confidence level was elevated."]){
+    assert.equal(outputRejection(lead+" "+t,r3)?.rule,"stress_claim",t);
+  }
+  for(const t of ["The band was elevated.","The confidence was moderate.",
+    "The confidence level was moderate."]){
+    assert.notEqual(outputRejection(lead+" "+t,r3)?.rule,"stress_claim",t);
+  }
+  assert.equal(outputRejection(lead+" The band was elevated on 2026-10-15.",r3)?.rule,"stress_claim");
+});
+test("Codex11 band and confidence must not cross-authorize levels",()=>{
+  for(const t of [
+    "The stress estimate was 72 on 2026-10-13 in the moderate band.",
+    "The stress estimate was 72 on 2026-10-13 with elevated confidence.",
+    "The stress estimate was 72 on 2026-10-13 in the high band with moderate confidence.",
+    "The stress estimate was 72 on 2026-10-13 in the elevated band with high confidence."
+  ])assert.equal(outputRejection(t,r3)?.rule,"stress_claim",t);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13 in the elevated band with moderate confidence.",r3),null);
+});
+test("Codex11 spelled-out stress continuations cannot be laundered by recovery values",()=>{
+  const lead="The stress estimate was 72 on 2026-10-13.";
+  for(const t of [
+    "It was forty on 2026-10-13 then recovery score was 40.",
+    "The value was forty on 2026-10-13 then recovery score was 40.",
+    "It was forty on 2026-10-13.",
+    "The value was forty on 2026-10-13.",
+    "It was seventy-two on 2026-10-15 then recovery score was 40."
+  ])assert.equal(outputRejection(lead+" "+t,r3)?.rule,"stress_claim",t);
+  assert.notEqual(outputRejection(lead+" It was seventy-two on 2026-10-13 then recovery score was 40.",r3)?.rule,"stress_claim");
+});
+test("Codex11 missing-data clauses cannot shield inherited stress contradictions",()=>{
+  const lead="The stress estimate was 72 on 2026-10-13.";
+  for(const t of [
+    "It was 40 on 2026-10-13, but recovery score was missing on 2026-10-15.",
+    "It was forty on 2026-10-13, and recovery score was missing on 2026-10-15.",
+    "The band was high, and recovery score was missing on 2026-10-15."
+  ])assert.equal(outputRejection(lead+" "+t,r3)?.rule,"stress_claim",t);
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
