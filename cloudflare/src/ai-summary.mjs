@@ -878,7 +878,23 @@ function stressNumbers(text){
 // can use overlapping adjectives but are NOT interchangeable.
 const STRESS_LEVEL_RE=/\b(?:low|typical|elevated|high|moderate)\b/gi;
 const STRESS_LEVEL_TEST=/\b(?:low|typical|elevated|high|moderate)\b/i;
+// Matching a value is insufficient if the grammar denies, compares, changes
+// units, or assigns that number to a categorical stress field. Fail closed;
+// truthful quantitative stress prose is intentionally narrow.
+const STRESS_NEGATION=/\b(?:not|never|isn't|wasn't|weren't|aren't|doesn't|didn't|without|neither|no longer)\b/i;
+const STRESS_COMPARISON=/\b(?:below|above|under|over|less than|greater than|higher than|lower than|more than|at least|at most|between|compared to|versus|vs\.?|approximately|roughly|around|about|nearly|almost)\b|[<>≈≠]/i;
+const STRESS_UNIT=/\b(?:percent|percentage|percentages|bpm|beats per minute|milliseconds?|millisec(?:onds?)?|points?|degrees|celsius)\b|%/i;
+const STRESS_NUMERIC_CATEGORY=/\b(?:confidence|band)(?:\s+level)?\s+(?:(?:is|was|were|at|of|equals?|had|has)\s+)*(?:(?:about|approximately|around)\s+)?(?:-?\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/i;
+function stressSemanticRejection(part){
+  if(STRESS_NEGATION.test(part))return {rule:"stress_claim",category:"negation"};
+  if(STRESS_COMPARISON.test(part))return {rule:"stress_claim",category:"comparison"};
+  if(STRESS_UNIT.test(part))return {rule:"stress_claim",category:"unit"};
+  if(STRESS_NUMERIC_CATEGORY.test(part))return {rule:"stress_claim",category:"numeric_category"};
+  return null;
+}
 function stressLevelRejection(part,est){
+  const semantic=stressSemanticRejection(part);
+  if(semantic)return semantic;
   const dates=part.match(DATE_RE)||[];
   if(dates.some(d=>d!==est.estimate_date))return {rule:"stress_claim",category:"date"};
   for(const level of part.matchAll(STRESS_LEVEL_RE)){
@@ -913,6 +929,8 @@ function inheritedStressRejection(part,est,needDate){
 // A measurement statement: exactly the value, matching level words, only
 // estimate_date, and estimate_date when it is not the newest requested date.
 function measurementRejection(part,est,needDate){
+  const semantic=stressSemanticRejection(part);
+  if(semantic)return semantic;
   const dates=part.match(DATE_RE)||[];
   if(dates.some(d=>d!==est.estimate_date))return {rule:"stress_claim",category:"date"};
   if(needDate&&!dates.includes(est.estimate_date))return {rule:"stress_claim",category:"date_missing"};
