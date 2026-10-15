@@ -903,7 +903,10 @@ test("Codex10 mixed clauses cannot shield a contradictory inherited stress value
     "It was 40 on 2026-10-13, but recovery score median was 40.",
     "On the date 2026-10-13, it was 40, whereas recovery score median was 40.",
     "It was 72 on 2026-10-15, while recovery score median was 40.",
-    "The value was 40 on 2026-10-13, while recovery score median was 40."
+    "The value was 40 on 2026-10-13, while recovery score median was 40.",
+    "It was 40 on 2026-10-13 because recovery score was 40.",
+    "It was 40 on 2026-10-13 since recovery score was 40.",
+    "It was 40 on 2026-10-13 when recovery score was 40."
   ];
   for(const continuation of failures){
     const text=lead+" "+continuation;
