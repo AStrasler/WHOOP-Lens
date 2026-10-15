@@ -873,7 +873,10 @@ test("Codex9 generic metric vocabulary cannot clear the stress referent",()=>{
     "The score data was complete.",
     "The recovery records were returned.",
     "The sleep data was complete.",
-    "The HRV data was complete."
+    "The HRV data was complete.",
+    "The recovery score data was complete.",
+    "The sleep performance data was complete.",
+    "The recovery average data was complete."
   ];
   for(const neutral of neutrals){
     const misleading=stress+" "+neutral+" It was 40 on 2026-10-13.";
