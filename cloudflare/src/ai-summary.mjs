@@ -884,10 +884,7 @@ const STRESS_LEVEL_TEST=/\b(?:low|typical|elevated|high|moderate)\b/i;
 const STRESS_NEGATION=/\b(?:no|not|never|isn't|wasn't|weren't|aren't|doesn't|didn't|without|neither|no longer)\b/i;
 // The index is computed by WHOOP Lens from WHOOP-sourced signals; it is
 // not an estimate calculated or published by WHOOP itself.
-const UNSUPPORTED_STRESS_SOURCE=new RegExp(
-  String.raw\`\bWHOOP(?:'s)?\s+(?:(?:experimental|daily|physiological|derived|calculated|estimated|numeric|personalized)\s+){0,5}stress(?:\s+(?:estimate|index))?\b\`+"|"+
-  String.raw\`\bstress\s+(?:estimate|index)\s+(?:(?:is|was)\s+)?(?:from|by|according\s+to|provided\s+by|reported\s+by)\s+WHOOP\b\`,"i"
-);
+const UNSUPPORTED_STRESS_SOURCE=/\b(?:WHOOP(?:'s)?\s+(?:(?:experimental|daily|physiological|derived|calculated|estimated|numeric|personalized)\s+){0,5}stress(?:\s+(?:estimate|index))?|stress\s+(?:estimate|index)\s+(?:(?:is|was)\s+)?(?:from|by|according\s+to|provided\s+by|reported\s+by)\s+WHOOP)\b/i;
 // The stats supply one selected date's value, not a mean, range, or trend.
 // Only accept aggregate claims if independently calculated and grounded.
 const UNSUPPORTED_STRESS_AGGREGATE=/\b(?:averaged?|mean|median|minimum|maximum|min|max|range|ranged|ranging|aggregate|aggregated|across|over\s+(?:the|this|last|past)\s+(?:week|days?|period)|total|sum|summed|typical\s+value)\b/i;
