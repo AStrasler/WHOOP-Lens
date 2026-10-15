@@ -16,6 +16,8 @@ const SAVE=`UPDATE ai_weekly_digest SET state = 'ready', body = ?1
 WHERE scope = ?2 AND week_ending = ?3 AND state = 'pending' AND body = ?4`;
 const RELEASE=`DELETE FROM ai_weekly_digest
 WHERE scope = ?1 AND week_ending = ?2 AND state = 'pending' AND body = ?3`;
+const REPAIR=`UPDATE ai_weekly_digest SET state = 'pending', body = ?1, created_at = ?2
+WHERE scope = ?3 AND week_ending = ?4 AND state = 'ready' AND body = ?5`;
 const RECLAIM=`UPDATE ai_weekly_digest SET created_at = ?1, body = ?5
 WHERE scope = ?2 AND week_ending = ?3 AND state = 'pending' AND created_at <= ?4`;
 
@@ -24,7 +26,7 @@ export function weeklyDigestEnabled(env){return env?.WEEKLY_DIGEST_ENABLED==="tr
 // mode separates model/template output and experimental stress on/off without a
 // D1 migration or mutation of cached health data. Same user/week stays cached.
 export function digestCacheScope(userId,env){
-  return `${userScope(userId)}:weekly-v3:${aiSummaryEnabled(env)?"model":"template"}:${stressEstimateEnabled(env)?"stress":"no-stress"}`;
+  return `${userScope(userId)}:weekly-v4:${aiSummaryEnabled(env)?"model":"template"}:${stressEstimateEnabled(env)?"stress":"no-stress"}`;
 }
 export function parseWeekEnding(value){
   if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
@@ -90,7 +92,11 @@ async function claimWeek(db,scope,weekEnding){
   const row=await db.prepare(READ).bind(scope,weekEnding).first();
   if(row?.state==="ready"){
     const cached=readyDigest(row,weekEnding);
-    return cached?{status:"ready",cached}:{status:"invalid"};
+    if(cached)return {status:"ready",cached};
+    // Replace only the exact invalid value we inspected. A concurrent repair
+    // must keep its lease, and another account's cache is never touched.
+    const repaired=await db.prepare(REPAIR).bind(lease,nowMs,scope,weekEnding,row.body).run();
+    return changesOf(repaired)===1?{status:"owner",lease}:{status:"busy"};
   }
   if(row?.state==="pending"&&Number.isSafeInteger(row.created_at)&&nowMs-row.created_at>=PENDING_MS){
     const reclaimed=await db.prepare(RECLAIM).bind(nowMs,scope,weekEnding,nowMs-PENDING_MS,lease).run();
@@ -139,8 +145,15 @@ export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEndi
   if(!day||!validUser(userId)||!db||typeof db.prepare!=="function")return {ok:false};
   const period=digestPeriod(day);
   const scope=digestCacheScope(userId,env);
+  const clock=weekClock(now,env);
   let owned=false,saved=false,lease=null;
   try{
+    // Explicit windows can end today or later. Preserve that read contract,
+    // but never read or persist a cache snapshot while the window is open.
+    if(day>=utcDay(clock)){
+      const generated=await generateDigest({db,userId,env,whoopRequest,now:clock,period,weekEnding:day});
+      return generated?{ok:true,...generated.view,cached:false}:{ok:false};
+    }
     const claim=await claimWeek(db,scope,day);
     if(claim.status==="ready")return {ok:true,...claim.cached,cached:true};
     if(claim.status!=="owner")return {ok:false};

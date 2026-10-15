@@ -61,7 +61,7 @@ const aiUsageTool=Object.freeze({
 });
 const weeklyDigestTool=Object.freeze({
   name:"get_weekly_digest",
-  description:"Pull this account's weekly measurement digest. Call it with no arguments. Optional week_ending (YYYY-MM-DD) selects the last day of the window; the default is the most recent complete Monday-Sunday week. The result has text, chart_data, insights, and status (model or template). A repeat for the same week returns the cached digest and does not spend more quota. When summaries are on, a template fallback is not cached. The digest is not sent.",
+  description:"Pull this account's weekly measurement digest. Call it with no arguments. Optional week_ending (YYYY-MM-DD) selects the last day of the window; the default is the most recent complete Monday-Sunday week. The result has text, chart_data, insights, and status (model or template). A repeat for a completed window returns the cached digest and does not spend more quota. Windows ending today or later are refreshed and not cached. When summaries are on, a template fallback is not cached. The digest is not sent.",
   inputSchema:{type:"object",properties:{
     week_ending:{type:"string",description:"Last day of the seven-day window, YYYY-MM-DD. Defaults to the most recent complete Monday-Sunday week."}
   },additionalProperties:false},

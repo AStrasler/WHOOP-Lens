@@ -632,3 +632,62 @@ test('a cached digest is not served after the source connection is removed',asyn
     assert.doesNotMatch(JSON.stringify(denied),/median 70/);
   }finally{db.close();}
 });
+
+test('unfinished digest windows stay fresh until their last UTC day has ended',async()=>{
+  const db=openDb();try{
+    const env={AI_SUMMARY_ENABLED:'false'};
+    let score=40;
+    const options={db,userId:A,env,weekEnding:'2026-10-15',now:Date.parse('2026-10-15T12:00:00Z'),
+      whoopRequest:async(_d,_u,r)=>({records:r==='recovery'?[recovery(score,'2026-10-15')]:[],next_token:null})};
+    assert.equal((await buildWeeklyDigest(options)).cached,false);
+    score=80;
+    const updated=await buildWeeklyDigest(options);
+    assert.equal(updated.cached,false);
+    assert.match(updated.text,/80/);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM ai_weekly_digest').get().n,0);
+    options.now=Date.parse('2026-10-16T00:00:00Z');
+    assert.equal((await buildWeeklyDigest(options)).cached,false);
+    assert.equal((await buildWeeklyDigest(options)).cached,true);
+  }finally{db.close();}
+});
+
+test('an invalid ready digest is regenerated without changing another account cache',async()=>{
+  const db=openDb();try{
+    const env={AI_SUMMARY_ENABLED:'false'};
+    for(const id of [A,B])db.sqlite.prepare("INSERT INTO ai_weekly_digest(scope,week_ending,state,body,created_at) VALUES(?,'2026-10-04','ready','{broken',0)").run(digestCacheScope(id,env));
+    const options={db,userId:A,env,weekEnding:'2026-10-04',whoopRequest:async(_d,_u,r)=>({records:r==='recovery'?[recovery(70,'2026-10-01')]:[],next_token:null})};
+    assert.equal((await buildWeeklyDigest(options)).ok,true);
+    assert.equal((await buildWeeklyDigest(options)).cached,true);
+    assert.equal(db.sqlite.prepare('SELECT body FROM ai_weekly_digest WHERE scope=?').get(digestCacheScope(B,env)).body,'{broken');
+  }finally{db.close();}
+});
+
+test('cache repair cannot overwrite a concurrent owner or completed replacement',async()=>{
+  for(const winner of ['pending','ready']){
+    const db=openDb();try{
+      const env={AI_SUMMARY_ENABLED:'false'};
+      const scope=digestCacheScope(A,env);
+      const options={db,userId:A,env,weekEnding:'2026-10-04',whoopRequest:async(_d,_u,r)=>({records:r==='recovery'?[recovery(70,'2026-10-01')]:[],next_token:null})};
+      await buildWeeklyDigest(options);
+      const valid=db.sqlite.prepare('SELECT body FROM ai_weekly_digest WHERE scope=?').get(scope).body;
+      db.sqlite.prepare("UPDATE ai_weekly_digest SET body='{broken' WHERE scope=?").run(scope);
+      const prepare=db.prepare;
+      db.prepare=sql=>{
+        const statement=prepare(sql);
+        if(sql.startsWith('SELECT state, body, created_at')){
+          const first=statement.first.bind(statement);
+          statement.first=async()=>{
+            const old=await first();
+            db.sqlite.prepare('UPDATE ai_weekly_digest SET state=?,body=? WHERE scope=?').run(winner,winner==='ready'?valid:'new-owner',scope);
+            return old;
+          };
+        }
+        return statement;
+      };
+      assert.equal((await buildWeeklyDigest(options)).ok,false);
+      const row=db.sqlite.prepare('SELECT state,body FROM ai_weekly_digest WHERE scope=?').get(scope);
+      assert.equal(row.state,winner);
+      assert.equal(row.body,winner==='ready'?valid:'new-owner');
+    }finally{db.close();}
+  }
+});
