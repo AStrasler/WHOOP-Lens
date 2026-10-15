@@ -6,6 +6,7 @@ import {createStagingRouter} from '../src/router.mjs';
 import {d1Database} from './d1-sqlite.mjs';
 import {handleMcpRpc,validateMcpTransport} from '../src/mcp.mjs';
 import {healthConnectWebhook,ISSUE_CONSENT,REVOKE_CONFIRM} from '../src/health-connect-webhook.mjs';
+import {withdrawHealthConnectImport,WITHDRAW_CONSENT} from '../src/health-import.mjs';
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const NOW=Date.parse('2026-10-13T03:00:00Z');
@@ -48,6 +49,54 @@ async function issue(db,userId){
 function payload(extra={}){
   return {timestamp:'2026-10-13T03:00:00.000Z',app_version:'1.9.22',user_id:B,...extra};
 }
+const stepVersion=(count,modified)=>({count,start_time:'2026-10-12T00:00:00Z',end_time:'2026-10-13T00:00:00Z',
+  metadata:{id:'versioned-step',lastModifiedTime:modified}});
+test('in-flight webhook cannot write after token revocation, withdrawal, rotation or membership removal',async()=>{
+  for(const action of ['revoke','withdraw','rotate','membership']){
+    const db=fixture();try{
+      const token=await issue(db,A),other=await issue(db,B);
+      await post(db,other,payload({steps:[stepVersion(777,'2026-10-13T02:00:00Z')]}));
+      let release,started;
+      const gate=new Promise(resolve=>{started=resolve;});
+      const body=new ReadableStream({start(controller){release=()=>{
+        controller.enqueue(new TextEncoder().encode(JSON.stringify(payload({steps:[stepVersion(123,'2026-10-13T02:00:00Z')]}))));
+        controller.close();
+      };},pull(){started();}});
+      const pending=healthConnectWebhook(new Request('https://whooplens.tech/api/health-connect/webhook',{
+        method:'POST',duplex:'half',headers:{'content-type':'application/json',authorization:`Bearer ${token}`},body
+      }),env(db),{now:NOW});
+      // Observe the completed authorization/rate reservation, not scheduler timing.
+      while(db.sqlite.prepare('SELECT window_hits FROM health_connect_ingest_tokens WHERE user_id=? AND revoked_at IS NULL').get(A).window_hits===0)
+        await new Promise(resolve=>setImmediate(resolve));
+      await gate;
+      if(action==='withdraw')await withdrawHealthConnectImport(db,A,WITHDRAW_CONSENT);
+      if(action==='revoke')await call(db,A,'revoke_health_connect_ingest_token',{confirm:REVOKE_CONFIRM});
+      if(action==='rotate')await issue(db,A);
+      if(action==='membership')db.sqlite.prepare('UPDATE whoop_members SET active=0 WHERE user_id=?').run(A);
+      release();
+      const result=await pending;
+      assert.equal(result.status,403,action);
+      assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records WHERE user_id=?').get(A).n,0,action);
+      assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records WHERE user_id=?').get(B).n,1);
+    }finally{db.close();}
+  }
+});
+test('duplicate versions within an upload keep newest modification regardless of order',async()=>{
+  for(const reverse of [false,true]){
+    const db=fixture();try{
+      const token=await issue(db,A);
+      const rows=[stepVersion(20,'2026-10-13T02:00:00Z'),stepVersion(10,'2026-10-13T01:00:00Z')];
+      if(reverse)rows.reverse();
+      assert.equal((await post(db,token,payload({steps:rows}))).status,200);
+      const read=()=>JSON.parse(db.sqlite.prepare('SELECT payload_json FROM health_connect_records WHERE user_id=?').get(A).payload_json).count;
+      assert.equal(read(),20);
+      await post(db,token,payload({steps:[stepVersion(5,undefined)]}));
+      assert.equal(read(),20,'unversioned retry must not downgrade versioned data');
+      await post(db,token,payload({steps:[stepVersion(30,'2026-10-13T03:00:00Z')]}));
+      assert.equal(read(),30);
+    }finally{db.close();}
+  }
+});
 test('webhook auth failure, disabled flag, and a foreign user id never write rows',async()=>{
   const db=fixture();
   const logs=[];
@@ -205,5 +254,33 @@ test('the router hides the webhook until its flag is on and limits repeat posts'
     const resource=readFileSync(new URL('../oauth/resource/wrangler.jsonc',import.meta.url),'utf8');
     assert.match(cfg,/"HEALTH_CONNECT_WEBHOOK_ENABLED"\s*:\s*"false"/);
     assert.match(resource,/"HEALTH_CONNECT_WEBHOOK_ENABLED"\s*:\s*"false"/);
+  }finally{db.close();}
+});
+
+test('a failed later upload chunk rolls back all records and the retry succeeds',async()=>{
+  const db=fixture();try{
+    const token=await issue(db,A);
+    const rows=Array.from({length:1800},(_,i)=>({...stepVersion(i,'2026-10-13T02:00:00Z'),metadata:{id:'large-'+String(i).padStart(4,'0')}}));
+    db.sqlite.exec("CREATE TRIGGER fail_late BEFORE INSERT ON health_connect_records WHEN NEW.record_key='hc:large-1799' BEGIN SELECT RAISE(ABORT,'synthetic failure'); END;");
+    assert.equal((await post(db,token,payload({steps:rows}))).status,503);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records').get().n,0);
+    db.sqlite.exec('DROP TRIGGER fail_late');
+    assert.equal((await post(db,token,payload({steps:rows}))).status,200);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records').get().n,1800);
+    assert.equal((await post(db,token,payload({steps:rows}))).status,200);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records').get().n,1800);
+  }finally{db.close();}
+});
+
+test('malformed calendar dates never silently normalize into a different day',async()=>{
+  const db=fixture();try{
+    const token=await issue(db,A);
+    assert.equal((await post(db,token,payload({timestamp:'not-a-date'}))).status,400);
+    const record={...stepVersion(10),start_time:'2026-02-30T00:00:00Z',end_time:'2026-03-03T00:00:00Z'};
+    const result=await (await post(db,token,payload({steps:[record]}))).json();
+    assert.equal(result.rejected,1);assert.equal(result.stored,0);
+    const valid={...record,start_time:'2026-02-28T00:00:00-06:00'};
+    assert.equal((await (await post(db,token,payload({steps:[valid]}))).json()).stored,1);
+    assert.equal(db.sqlite.prepare('SELECT observed_at FROM health_connect_records').get().observed_at,'2026-02-28T06:00:00.000Z');
   }finally{db.close();}
 });

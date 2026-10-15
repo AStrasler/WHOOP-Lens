@@ -71,7 +71,7 @@ test("MCP 2026 protocol discovers sixteen bounded account tools",async()=>{
   const discover=await route(req(payload("server/discover")),enabled(db()));
   const discovery=(await discover.json()).result;
   assert.equal(discovery.serverInfo.name,"whoop-lens");
-  assert.equal(discovery.serverInfo.version,"1.0.0");
+  assert.equal(discovery.serverInfo.version,"1.1.0");
   assert.match(discovery.instructions,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
   assert.match(discovery.instructions,/Do not estimate those durations/);
   assert.equal(discovery.cacheScope,"private");

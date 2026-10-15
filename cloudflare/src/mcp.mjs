@@ -1,3 +1,4 @@
+import {activeMembership,connectionStatus} from './storage.mjs';
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
 import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
 import {buildWeeklyDigest,parseWeekEnding,weeklyDigestEnabled} from './ai-digest.mjs';
@@ -237,8 +238,9 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       data={day:usage.day,used:usage.used,cap:usage.cap,remaining:usage.remaining};
       if(usage.global)data.global=usage.global;
     }else if(name==="get_weekly_digest"){
+      if(!(await connectionStatus(db,userId)).connected)throw Error("digest");
       const digest=await buildWeeklyDigest({db,userId,env,whoopRequest,weekEnding:args.week_ending});
-      if(!digest.ok)throw Error("digest");
+      if(!digest.ok||!(await connectionStatus(db,userId)).connected||!await activeMembership(db,userId))throw Error("digest");
       data={kind:digest.kind,week_ending:digest.week_ending,period:digest.period,
         text:digest.text,chart_data:digest.chart_data,insights:digest.insights,
         status:digest.status,cached:digest.cached===true};

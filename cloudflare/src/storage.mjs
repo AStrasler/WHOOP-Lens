@@ -8,14 +8,14 @@ function verifiedUserId(userId) {
 function checkD1(db) {
   if (!db || typeof db.prepare !== "function") throw new Error("Staging D1 binding missing");
 }
+export const ACTIVE_MEMBER_SQL =
+  "SELECT m.user_id FROM whoop_members m INNER JOIN identity_links i ON i.user_id=m.user_id " +
+  "WHERE m.user_id=?1 AND m.active=1 AND ((i.identity_provider='supabase' AND i.provider_subject=?1) OR (i.identity_provider='cloudflare_access' AND length(i.provider_subject)>0)) LIMIT 1";
 export async function activeMembership(db, userId) {
   checkD1(db);
   const id = verifiedUserId(userId);
   // Strict approval: missing membership is denied, even if a WHOOP connection exists.
-  const member = await db.prepare(
-    "SELECT m.user_id FROM whoop_members m INNER JOIN identity_links i ON i.user_id=m.user_id " +
-    "WHERE m.user_id=?1 AND m.active=1 AND ((i.identity_provider='supabase' AND i.provider_subject=?1) OR (i.identity_provider='cloudflare_access' AND length(i.provider_subject)>0)) LIMIT 1"
-  ).bind(id).first();
+  const member = await db.prepare(ACTIVE_MEMBER_SQL).bind(id).first();
   return !!member;
 }
 export async function connectionStatus(db, userId) {

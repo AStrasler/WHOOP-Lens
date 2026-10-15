@@ -1,3 +1,4 @@
+import {readBounded} from './bounded-body.mjs';
 // Web file import for Health Connect v2 JSON. Not a phone sync and not an
 // Android companion. Ownership comes only from the verified caller.
 import {parseLocalImport} from '../../docs/web-import.mjs';
@@ -111,8 +112,10 @@ function httpJson(data,status=200){
 async function readJson(request,limit){
   if(Number(request.headers.get('content-length'))>limit)
     throw Error('Choose a JSON file no larger than 500 KB.');
-  const text=await request.text();
-  if(text.length>limit)throw Error('Choose a JSON file no larger than 500 KB.');
+  const bounded=await readBounded(request,limit);
+  if(bounded.error==='too_large')throw Error('Choose a JSON file no larger than 500 KB.');
+  if(bounded.error)throw Error('This file is not valid JSON.');
+  const text=bounded.text;
   try{return JSON.parse(text);}catch{throw Error('This file is not valid JSON.');}
 }
 export async function healthConnectHttp(request,env,userId){

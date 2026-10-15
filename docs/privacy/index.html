@@ -46,6 +46,9 @@
 Independent personal integration. Not affiliated with WHOOP.<br>
 <a href="/WHOOP-Lens/privacy/">Privacy statement</a> · <a href="/WHOOP-Lens/terms/">Terms</a> · <a href="/WHOOP-Lens/support/">Support</a>
 </footer>
+<h2>Private Cloudflare MCP and optional processing</h2>
+<p>The private MCP verifies OAuth identity and active membership. Health Connect phone delivery requires separate consent and a per-member token stored as a hash. Withdrawal deletes that member's Health Connect records and revokes ingest tokens. In-progress uploads cannot write after withdrawal.</p>
+<p>On-demand summaries send minimized numerical facts and precomputed statements to Cloudflare Workers AI, excluding free-text notes, credentials and account identifiers. WHOOP Lens stores daily usage counters and optional account-scoped weekly digests containing derived health facts and charts, but not model prompts. Disconnecting WHOOP through WHOOP Lens invalidates that account's digest cache. Experimental stress estimates are WHOOP Lens calculations, not WHOOP Stress Monitor measurements or clinically validated results.</p>
 </main>
 </body>
 </html>

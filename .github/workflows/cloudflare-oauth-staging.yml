@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'cloudflare/oauth/**'
+      - 'cloudflare/src/**'
       - 'cloudflare/migrations/0003_oauth_login_limits.sql'
       - 'cloudflare/test/oauth-*.test.mjs'
       - 'cloudflare/test/provider/**'
@@ -13,6 +14,7 @@ on:
   pull_request:
     paths:
       - 'cloudflare/oauth/**'
+      - 'cloudflare/src/**'
       - 'cloudflare/migrations/0003_oauth_login_limits.sql'
       - 'cloudflare/test/oauth-*.test.mjs'
       - 'cloudflare/test/provider/**'

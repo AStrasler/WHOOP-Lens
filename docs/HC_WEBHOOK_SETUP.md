@@ -31,3 +31,9 @@ The Worker attributes every accepted row to the token's member. A user id inside
 Rows upsert on the Health Connect record id when the JSON includes `metadata.id` (or a top-level `id`). v1.9.22's JSON metadata sends `data_origin` and `recording_method` and omits that id; the id is present on the app's protobuf metadata. Without an id, the upsert key is a hash of the type, time bounds, and data origin, so a 48-hour resend updates the same row. `metadata.lastModifiedTime` or `metadata.last_modified_time`, when present, keeps an older retry from replacing a newer row.
 
 Every other array the app can send is skipped and counted. The response is still HTTP 200 after the supported rows are written, including when every record is unsupported, so the app can advance its sync marker. A body that is not the webhook envelope, or a write that fails, is not 2xx.
+
+## Ingestion integrity
+
+Authorization is checked again inside the atomic write transaction. Token revocation, rotation, consent withdrawal and inactive membership block an upload already waiting on its body. A failed chunk rolls back the whole upload; retrying a successful upload is idempotent. The newest supplied modification timestamp wins both within one payload and across requests. An unversioned retry cannot replace a versioned record; legacy unversioned records still update by their stable key. With no modification timestamps, ordering of distinct legacy retries cannot be established.
+
+The body limit is enforced while streaming, in bytes. Invalid calendar dates are rejected rather than normalized. Invalid supported records are counted in `rejected`; unsupported types remain counted in `skipped`. An otherwise valid envelope receives 200 after valid rows commit so unsupported data does not stall phone sync. A 503 write failure is retryable; 401/403 requires restoring authorized access, and 413 requires a smaller upload. Tests use synthetic accounts only.

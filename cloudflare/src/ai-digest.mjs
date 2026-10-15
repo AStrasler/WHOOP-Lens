@@ -8,15 +8,15 @@ import {userScope,utcDay} from "./ai-quota.mjs";
 const PENDING_MS=30000;
 const MAX_BODY=200000;
 const CLAIM=`INSERT INTO ai_weekly_digest(scope, week_ending, state, body, created_at)
-VALUES (?1, ?2, 'pending', NULL, ?3)
+VALUES (?1, ?2, 'pending', ?4, ?3)
 ON CONFLICT(scope, week_ending) DO NOTHING`;
 const READ=`SELECT state, body, created_at FROM ai_weekly_digest
 WHERE scope = ?1 AND week_ending = ?2`;
 const SAVE=`UPDATE ai_weekly_digest SET state = 'ready', body = ?1
-WHERE scope = ?2 AND week_ending = ?3 AND state = 'pending'`;
+WHERE scope = ?2 AND week_ending = ?3 AND state = 'pending' AND body = ?4`;
 const RELEASE=`DELETE FROM ai_weekly_digest
-WHERE scope = ?1 AND week_ending = ?2 AND state = 'pending'`;
-const RECLAIM=`UPDATE ai_weekly_digest SET created_at = ?1
+WHERE scope = ?1 AND week_ending = ?2 AND state = 'pending' AND body = ?3`;
+const RECLAIM=`UPDATE ai_weekly_digest SET created_at = ?1, body = ?5
 WHERE scope = ?2 AND week_ending = ?3 AND state = 'pending' AND created_at <= ?4`;
 
 export function weeklyDigestEnabled(env){return env?.WEEKLY_DIGEST_ENABLED==="true";}
@@ -24,7 +24,7 @@ export function weeklyDigestEnabled(env){return env?.WEEKLY_DIGEST_ENABLED==="tr
 // mode separates model/template output and experimental stress on/off without a
 // D1 migration or mutation of cached health data. Same user/week stays cached.
 export function digestCacheScope(userId,env){
-  return `${userScope(userId)}:weekly-v2:${aiSummaryEnabled(env)?"model":"template"}:${stressEstimateEnabled(env)?"stress":"no-stress"}`;
+  return `${userScope(userId)}:weekly-v3:${aiSummaryEnabled(env)?"model":"template"}:${stressEstimateEnabled(env)?"stress":"no-stress"}`;
 }
 export function parseWeekEnding(value){
   if(typeof value!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(value))return null;
@@ -84,16 +84,17 @@ function readyDigest(row,weekEnding){
 }
 async function claimWeek(db,scope,weekEnding){
   const nowMs=Date.now();
-  const inserted=await db.prepare(CLAIM).bind(scope,weekEnding,nowMs).run();
-  if(changesOf(inserted)===1)return {status:"owner"};
+  const lease=crypto.randomUUID();
+  const inserted=await db.prepare(CLAIM).bind(scope,weekEnding,nowMs,lease).run();
+  if(changesOf(inserted)===1)return {status:"owner",lease};
   const row=await db.prepare(READ).bind(scope,weekEnding).first();
   if(row?.state==="ready"){
     const cached=readyDigest(row,weekEnding);
     return cached?{status:"ready",cached}:{status:"invalid"};
   }
   if(row?.state==="pending"&&Number.isSafeInteger(row.created_at)&&nowMs-row.created_at>=PENDING_MS){
-    const reclaimed=await db.prepare(RECLAIM).bind(nowMs,scope,weekEnding,nowMs-PENDING_MS).run();
-    if(changesOf(reclaimed)===1)return {status:"owner"};
+    const reclaimed=await db.prepare(RECLAIM).bind(nowMs,scope,weekEnding,nowMs-PENDING_MS,lease).run();
+    if(changesOf(reclaimed)===1)return {status:"owner",lease};
   }
   return {status:"busy"};
 }
@@ -110,7 +111,7 @@ async function generateDigest({db,userId,env,whoopRequest,now,period,weekEnding}
     ?await collectHistoryPages(whoopRequest,ctx,"sleep",{start:sleepStart,end:period.end})
     :{records:[],complete:false};
   const covered=recovery.complete&&sleep.complete&&recovery.records.length+sleep.records.length>0;
-  const data={records:[...sleep.records,...recovery.records],next_token:null};
+  const data={records:[...sleep.records,...recovery.records],next_token:null,complete:recovery.complete&&sleep.complete};
   const summariesOn=aiSummaryEnabled(env);
   const modelEnv=summariesOn?env:{...env,AI:undefined};
   const summarized=await attachSummary(data,{db,userId,env:modelEnv,tool:"get_recovery",now,whoopRequest});
@@ -130,7 +131,7 @@ async function generateDigest({db,userId,env,whoopRequest,now,period,weekEnding}
   const stressReady=!stressEstimateEnabled(env)||stableNoRecovery||
     (chart!=null&&chart.reason!=="rate_limited"&&chart.reason!=="incomplete_history"&&
      chart.history?.complete===true);
-  const cacheable=covered&&stressReady&&(summariesOn?view.status==="model":view.status==="template");
+  const cacheable=covered&&summarized?.summary?.coverage?.baseline_history_complete===true&&stressReady&&(summariesOn?view.status==="model":view.status==="template");
   return {view,cacheable};
 }
 export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEnding}){
@@ -138,18 +139,18 @@ export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEndi
   if(!day||!validUser(userId)||!db||typeof db.prepare!=="function")return {ok:false};
   const period=digestPeriod(day);
   const scope=digestCacheScope(userId,env);
-  let owned=false,saved=false;
+  let owned=false,saved=false,lease=null;
   try{
     const claim=await claimWeek(db,scope,day);
     if(claim.status==="ready")return {ok:true,...claim.cached,cached:true};
     if(claim.status!=="owner")return {ok:false};
-    owned=true;
+    owned=true;lease=claim.lease;
     const generated=await generateDigest({db,userId,env,whoopRequest,now:weekClock(now,env),period,weekEnding:day});
     if(!generated)return {ok:false};
     if(generated.cacheable){
       const body=JSON.stringify(generated.view);
       if(body.length>MAX_BODY)return {ok:false};
-      const written=await db.prepare(SAVE).bind(body,scope,day).run();
+      const written=await db.prepare(SAVE).bind(body,scope,day,lease).run();
       if(changesOf(written)!==1)return {ok:false};
       saved=true;
     }
@@ -158,7 +159,7 @@ export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEndi
     return {ok:false};
   }finally{
     if(owned&&!saved){
-      try{await db.prepare(RELEASE).bind(scope,day).run();}catch{/* the next pull can claim the week */}
+      try{await db.prepare(RELEASE).bind(scope,day,lease).run();}catch{/* the next pull can claim the week */}
     }
   }
 }

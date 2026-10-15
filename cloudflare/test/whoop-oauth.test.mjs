@@ -243,3 +243,25 @@ test("pending WHOOP states are pruned and capped per member", async () => {
     assert.ok(!rows.some(r => r.state_hash === "e".repeat(64)));
   } finally { db.close(); }
 });
+
+test('disconnect invalidates only the caller digest caches and in-flight claims',async()=>{
+  const d=fixture();try{
+    d.sqlite.exec(readFileSync(new URL('../migrations/0011_ai_weekly_digest.sql',import.meta.url),'utf8'));
+    for(const id of [A,B])for(const state of ['ready','pending'])
+      d.sqlite.prepare('INSERT INTO ai_weekly_digest(scope,week_ending,state,body,created_at) VALUES(?,?,?,?,?)')
+        .run('user:'+id+':weekly-v3:model:stress',state==='ready'?'2026-10-04':'2026-10-11',state,'synthetic',1);
+    await revokeWhoopConnection(d,A,{now:()=>base});
+    assert.equal(d.sqlite.prepare('SELECT COUNT(*) n FROM ai_weekly_digest WHERE scope LIKE ?').get('user:'+A+'%').n,0);
+    assert.equal(d.sqlite.prepare('SELECT COUNT(*) n FROM ai_weekly_digest WHERE scope LIKE ?').get('user:'+B+'%').n,2);
+  }finally{d.close();}
+});
+test('membership revoked during WHOOP token exchange cannot save authorization',async()=>{
+  const d=fixture();try{
+    const start=await createWhoopAuthorization(d,A,env,{now:()=>base});
+    await assert.rejects(acceptWhoopCallback(d,callbackUrl(start),env,{now:()=>base,fetcher:async()=>{
+      d.sqlite.prepare('UPDATE whoop_members SET active=0 WHERE user_id=?').run(A);
+      return json({access_token:'synthetic',refresh_token:'synthetic',expires_in:3600});
+    }}));
+    assert.equal(d.sqlite.prepare('SELECT COUNT(*) n FROM whoop_connections').get().n,0);
+  }finally{d.close();}
+});

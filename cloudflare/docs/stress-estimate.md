@@ -22,7 +22,7 @@ This change replaces the placeholder. It stays off until Aaron enables it.
   - `none_recorded`: retrieval complete, no sleep exists. A limitation says so; no retrieval penalty (only lower coverage);
   - `partial`: page budget exhausted, invalid cursor, or a failed sleep fetch. A limitation says so and confidence counts it as one conflict (x0.85).
   `history.complete` = recovery complete AND sleep not `partial`; `history.recovery_complete` is reported separately.
-- The summary's own baseline fetch is unchanged from main; the estimate does its own bounded fetch only when the flag is on.
+- The estimate uses a bounded date-window fetch only when the flag is on. Both summary and stress history collectors reject malformed pages and repeated cursors as incomplete.
 - **Incomplete history** (page budget exhausted, invalid cursor, or a non-rate-limit error) sets `history.complete=false`, adds a limitation,
   and days short of baseline get status `incomplete_history` (reason `incomplete_history`), distinct from a genuine `insufficient_baseline`.
 - **Rate limit:** a WHOOP 429 on either fetch returns no estimate (`available:false`, `reason:"rate_limited"`, no points) and a limitation note.
@@ -157,3 +157,7 @@ travel and noise move the same inputs; no cause is identified; there's no valida
 - `test/whoop-api.test.mjs`: start/end sent only when given, validated; 429 keeps its status.
 - Round 2 tests are named `R2-1 ...` (claim binding), `R2-2 ...` (sleep completeness) and `R2-3 ...` (four flag combinations); round 3 tests `R3 ...` (unavailable-estimate statements).
 - `test/fixtures/stress-estimate-sample.json`: full output for 45 synthetic days. Regenerate with `node test/make-stress-fixture.mjs`.
+
+## Explanation integrity
+
+Production AI output is a bounded selection of Worker-generated factual statements, not arbitrary prose checked by word patterns. The Worker appends the experimental stress name, exact estimate date, index value, band and confidence. If the latest requested date lacks an estimate, the Worker states that date explicitly. Raw records, chart data and deterministic calculations do not depend on a model selection succeeding. Existing prose-filter tests are retained as historical regression cases; they are not the production acceptance boundary.

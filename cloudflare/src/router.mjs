@@ -1,3 +1,4 @@
+import {readBounded} from './bounded-body.mjs';
 import { resolveSecrets } from "./secrets.mjs";
 import { AccessDenied } from "./access-denied.mjs";
 import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
@@ -49,9 +50,10 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       const declared=Number(request.headers.get("content-length"));
       if(Number.isFinite(declared)&&declared>512000)
         return json({error:"MCP request too large"},413);
-      let raw;
-      try{raw=await request.text();}catch{return json({error:"Unreadable request"},400);}
-      if(raw.length>512000)return json({error:"MCP request too large"},413);
+      const bounded=await readBounded(request,512000);
+      if(bounded.error==='too_large')return json({error:"MCP request too large"},413);
+      if(bounded.error)return json({error:"Unreadable request"},400);
+      const raw=bounded.text;
       let message;
       try{message=JSON.parse(raw);}catch{return json({error:"Invalid JSON"},400);}
       const importing=message?.method==="tools/call"&&

@@ -1,7 +1,7 @@
 // WHOOP OAuth handshake for the future Cloudflare backend.
 // Not active in production. Requires WHOOP_OAUTH_ENABLED=true, which is disabled in Wrangler.
 // Source Supabase WHOOP OAuth redirect remains unchanged until separate cutover approval.
-import { activeMembership } from "./storage.mjs";
+import { activeMembership, ACTIVE_MEMBER_SQL } from "./storage.mjs";
 import { sealWithKeyring, tokenKeyring } from "./token-crypto.mjs";
 const AUTH="https://api.prod.whoop.com/oauth/oauth2/auth";
 const TOKEN="https://api.prod.whoop.com/oauth/oauth2/token";
@@ -60,6 +60,12 @@ export async function createWhoopAuthorization(db,userId,env,{now=NOW}={}){
   });
   return {authorization_url:AUTH+"?"+params};
 }
+async function digestInvalidation(db,id){
+  // Compatible with installations predating the optional digest table.
+  const table=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_weekly_digest'").first();
+  return table?[db.prepare("DELETE FROM ai_weekly_digest WHERE scope=?1 OR substr(scope,1,length(?2))=?2")
+    .bind('user:'+id,'user:'+id+':')]:[];
+}
 export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW}={}){
   requireConfig(env);
   const url=callback instanceof URL?callback:new URL(callback);
@@ -102,16 +108,18 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
   const expiresAt=new Date(now()+Number(data.expires_in)*1000).toISOString();
   // Seat limit and one-developer-seat constraints are enforced by SQLite
   // migration 0002, including concurrent callbacks.
-  const saved=await db.prepare(
+  const invalidate=await digestInvalidation(db,id);
+  const statement=db.prepare(
     "INSERT INTO whoop_connections(user_id,expires_at,scope,encrypted_access_token,"+
     "encrypted_refresh_token,encryption_key_version,seat_role) "+
-    "SELECT ?1,?2,?3,?4,?5,?8,?6 WHERE NOT EXISTS ("+
+    "SELECT ?1,?2,?3,?4,?5,?8,?6 WHERE EXISTS ("+ACTIVE_MEMBER_SQL+") AND NOT EXISTS ("+
     "SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7) "+
     "ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at,scope=excluded.scope,"+
     "encrypted_access_token=excluded.encrypted_access_token,"+
     "encrypted_refresh_token=excluded.encrypted_refresh_token,encryption_key_version=excluded.encryption_key_version,updated_at=CURRENT_TIMESTAMP "+
-    "WHERE NOT EXISTS (SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7)"
-  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role,stateCreated,keys.current==="k2"?"k2":"v1").run();
+    "WHERE EXISTS ("+ACTIVE_MEMBER_SQL+") AND NOT EXISTS (SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7)"
+  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role,stateCreated,keys.current==="k2"?"k2":"v1");
+  const [saved]=await db.batch([statement,...invalidate]);
   if(!saved?.success||saved.meta?.changes!==1){
     const blocked=await db.prepare(
       "SELECT user_id FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?2"
@@ -139,16 +147,18 @@ export async function revokeWhoopConnection(db,userId,{now=NOW}={}){
   // state still cannot save tokens created at or before this revocation.
   let results;
   try{
+    const invalidate=await digestInvalidation(db,id);
     results=await db.batch([
       db.prepare(
         "INSERT INTO whoop_credential_revocations(user_id,revoked_at) VALUES(?1,?2) "+
         "ON CONFLICT(user_id) DO UPDATE SET revoked_at=excluded.revoked_at"
       ).bind(id,utcStamp(now())),
       db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1").bind(id),
-      db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id)
+      db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id),
+      ...invalidate
     ]);
   }catch{throw Error("WHOOP disconnect failed");}
-  if(!Array.isArray(results)||results.length!==3||results.some(result=>result?.success===false))
+  if(!Array.isArray(results)||results.length<3||results.some(result=>result?.success===false))
     throw Error("WHOOP disconnect failed");
   return {disconnected:true,removed:results[2].meta?.changes===1};
 }

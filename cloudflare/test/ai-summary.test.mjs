@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {groundedStatements,selectedSummaryText} from '../src/ai-summary.mjs';
 import test from "node:test";
 import {DatabaseSync} from "node:sqlite";
 import {readFileSync} from "node:fs";
@@ -131,7 +132,7 @@ test("summary is additive, isolated, and the model never receives record text",a
   const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{
     async run(model,input){
       calls++;seen={model,input};
-      return {response:"There are 2 records from 2026-10-01 to 2026-10-03. Recovery score mean is 50 and the latest value is 60. The missing-date count is 1.",
+      return {response:'{"selected":[0]}',
         usage:{prompt_tokens:100,completion_tokens:20}};
     }
   }});
@@ -306,7 +307,7 @@ test("successful usage is reconciled and an unknown model is not called",async()
     const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI_SUMMARY_MODEL:"@cf/google/gemma-4-26b-a4b-it",AI:{
       async run(model){
         assert.equal(model,"@cf/google/gemma-4-26b-a4b-it");
-        return {response:"There are 2 records from 2026-10-01 to 2026-10-03. The latest recovery score is 60 and the mean is 50. The missing-date count is 1.",
+        return {response:'{"selected":[0]}',
           usage:{prompt_tokens:100,completion_tokens:20}};
       }
     }});
@@ -339,7 +340,7 @@ test("successful usage is reconciled and an unknown model is not called",async()
 });
 
 test("choices content is used and empty content with reasoning falls back to the template",async()=>{
-  const answer="There are 2 records from 2026-10-01 to 2026-10-03. The latest recovery score is 60 and the mean is 50. The missing-date count is 1.";
+  const answer='{"selected":[0]}';
   const reasoning="Hidden reasoning: the user should see a doctor. Secret score 99999.";
   const db=openDb();
   try{
@@ -358,7 +359,8 @@ test("choices content is used and empty content with reasoning falls back to the
         }})
       });
       assert.equal(summary.summary.status,"model");
-      assert.equal(summary.summary.text,answer);
+      assert.match(summary.summary.text,/Recovery score.*mean 50.*latest 60 on 2026-10-03/);
+      assert.match(summary.summary.text,/incomplete/);
       assert.equal(summary.summary.model,model);
       assert.equal(JSON.stringify(summary).includes(reasoning),false);
       assert.equal(JSON.stringify(summary).includes("see a doctor"),false);
@@ -478,7 +480,7 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
     const modeled=await quiet(()=>attachSummary(pageA,{
       db,userId:B,tool:"get_recovery",now:Date.parse("2026-10-16T00:00:00Z"),
       env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{
-        async run(){return {response:"There are 2 records from 2026-10-01 to 2026-10-03. The latest recovery score is 60 and the mean is 50. The missing-date count is 1."};}
+        async run(){return {response:'{"selected":[0]}'};}
       }})
     }));
     assert.equal(modeled.result.summary.status,"model");
@@ -693,7 +695,7 @@ test("summaries use only WHOOP and Health Connect allowlisted fields",async()=>{
       env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
         prompt=input.messages[1].content;
         assert.equal(input.max_tokens,MAX_OUTPUT_TOKENS);
-        return {response:"The recovery score was 52 on 2026-09-01.",
+        return {response:'{"selected":[0]}',
           usage:{prompt_tokens:40,completion_tokens:12}};
       }}})
     });
@@ -723,7 +725,7 @@ test("the reserved input cap covers the call and over-cap usage is kept",async()
     let request=null;
     const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
       request=input;
-      return {response:"There are 26 records from 2026-01-01 to 2026-09-15. The latest recovery score is 70.",
+      return {response:'{"selected":[0]}',
         usage:{prompt_tokens:100,completion_tokens:20}};
     }}});
     const body=await handleMcpRpc(rpc("get_recovery",{summary:true}),{
@@ -788,7 +790,7 @@ test("chart series and insights are factual on both the model and template paths
     const env=withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(_model,input){
       calls++;
       prompt=input.messages[1].content;
-      return {response:"The recovery score rose from 40 to 60 across 4 records.",
+      return {response:'{"selected":[0]}',
         usage:{prompt_tokens:40,completion_tokens:16}};
     }}});
     const modeled=await attachSummary(hidden,{
@@ -924,4 +926,24 @@ test("vocabulary accepts plurals and -ing forms of allowed words only",async()=>
   assert.equal(outputRejection("Recovery scores ranged from 40 to 60, advising rest.",stats).rule,"advice");
   assert.equal(outputRejection("Recovery scores ranged from 40 to 60 with diagnoses.",stats).rule,"advice");
   assert.equal(outputRejection("Recovery score ranged from 40 to 77.",stats).rule,"number");
+});
+
+test('model selection cannot swap metric numbers, dates, units or append free-form claims',async()=>{
+  const facts=buildSummaryFacts({records:[{created_at:'2026-10-13T08:00:00Z',score:{recovery_score:70,hrv_rmssd_milli:40}}]},'get_recovery');
+  const statements=groundedStatements(facts);
+  assert.match(selectedSummaryText('{"selected":[0]}',statements),/Recovery score.*latest 70 on 2026-10-13/);
+  assert.match(selectedSummaryText('{"selected":[1,0]}',statements),/40.*70/);
+  for(const response of ['Recovery score was 40 on 2026-10-13.',
+    '{"selected":[0],"text":"Recovery score was 40"}', '{"selected":[-1]}',
+    '{"selected":[99]}','{"selected":[0,0]}','{"selected":["0"]}',
+    '{"selected":[]}','{"selected":[0]} The stress estimate from WHOOP was 40.',
+    '{"selected":[0.5]}','null','[]'])assert.equal(selectedSummaryText(response,statements),null,response);
+  const db=openDb();try{
+    const result=await attachSummary({records:[{created_at:'2026-10-13T08:00:00Z',score:{recovery_score:70,hrv_rmssd_milli:40}}]}, {
+      db,userId:A,tool:'get_recovery',env:withAnalytics({AI_SUMMARY_ENABLED:'true',AI:{async run(){return {response:'Recovery score was 40 on 2026-10-13.'};}}})
+    });
+    assert.equal(result.summary.status,'template');
+    assert.equal(result.summary.fallback_reason,'filter');
+    assert.doesNotMatch(result.summary.text,/Recovery score was 40/);
+  }finally{db.close();}
 });
