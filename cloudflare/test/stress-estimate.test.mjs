@@ -942,6 +942,11 @@ test("Codex10 unmeasured metric mentions with a record count cannot reset stress
   ])assert.equal(outputRejection(lead+" "+rest,r3)?.rule,"stress_claim",rest);
 });
 
+test("Codex10 true stress prefixes and explicit metric switches are still grounded",()=>{
+  const start="The stress estimate was 72 on 2026-10-13.";
+  assert.notEqual(outputRejection(start+" It was 72 on 2026-10-13 because recovery score median was 40.",r3)?.rule,"stress_claim");
+  assert.notEqual(outputRejection(start+" On 2026-10-13, recovery score median was 40. It was 40.",r3)?.rule,"stress_claim");
+});
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
