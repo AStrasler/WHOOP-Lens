@@ -920,7 +920,9 @@ function stressClaimRejection(text,stats){
         continue;
       }
       if(!grounded(sentence))return {rule:"stress_claim",category:"estimate_value_reused"};
-      precedingMetric=otherMetric?"other":null;
+      // Neutral sentences do not change which measurement an unqualified
+      // follow-up refers to; only an explicitly named metric changes it.
+      if(otherMetric)precedingMetric="other";
       continue;
     }
     if(!missing){
@@ -953,7 +955,7 @@ function stressClaimRejection(text,stats){
       clauses.push(carry+c);carry="";
     });
     if(carry){if(clauses.length)clauses[clauses.length-1]+=" "+carry;else clauses.push(carry);}
-    let last=null;
+    let last=null,latestExplicitMetric=null;
     for(const clause of clauses){
       const w=words(clause);
       const hasStress=STRESS_CLAIM.test(clause),hasPronoun=PRONOUN_ANY.test(clause);
@@ -961,6 +963,10 @@ function stressClaimRejection(text,stats){
       const kind=MISSING_TRIGGER.test(clause)
         ?(hasStress||hasPronoun||!hasMetric?"stress_unavailable":"metric")
         :hasStress?"stress_value":hasMetric?"metric":"other";
+      // Preserve the last explicitly named metric across neutral clauses.
+      // For mixed clauses, an explicit other metric still resets the referent.
+      if(kind==="stress_unavailable"||kind==="stress_value")latestExplicitMetric="stress";
+      else if(kind==="metric")latestExplicitMetric="other";
       if(kind==="stress_unavailable"){
         const r=unavailableRejection(clause,est);
         if(r)return r;
@@ -983,7 +989,7 @@ function stressClaimRejection(text,stats){
       }
       last=kind;
     }
-    precedingMetric=last==="stress_value"||last==="stress_unavailable"?"stress":last==="metric"?"other":null;
+    if(latestExplicitMetric)precedingMetric=latestExplicitMetric;
   }
   return null;
 }
