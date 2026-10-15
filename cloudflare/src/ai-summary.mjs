@@ -75,6 +75,19 @@ const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
 const STRESS_WORDS=new Set("experimental physiological stress estimate lens band elevated low high confidence moderate index unavailable insufficient".split(" "));
 const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps respiratory "+
   "spo spo2 skin temperature performance score bpm").split(" "));
+// Context may switch only for a named other measurement, not for loose words
+// such as "rate", "score" or "performance" in neutral prose.
+const EXPLICIT_OTHER_METRIC=/\b(?:recovery(?:\s+score)?|hrv|(?:resting\s+)?heart\s+rate|sleep(?:\s+(?:performance|duration|efficiency|score))?|strain|steps?|respiratory(?:\s+rate)?|spo2?|skin\s+temperature)\b/i;
+const MEASUREMENT_DETAIL=/\b(?:median|mean|minimum|maximum|average|latest|score|value|measurement|measurements|performance|duration|efficiency|range|level|percent|percentage|improved|increased|decreased|changed|higher|lower|peaked)\b/i;
+function explicitlyNamesOtherMeasurement(part){
+  if(!EXPLICIT_OTHER_METRIC.test(part))return false;
+  // A date alone is not a measurement. Mentioning records or generic data is
+  // not a metric change; an actual measurement or availability statement is.
+  const withoutDates=part.replace(DATE_RE," ");
+  return MISSING_TRIGGER.test(part)||MEASUREMENT_DETAIL.test(part)||
+    numberTokens(withoutDates).some(t=>t.kind==="number")||
+    (spelledNumbers(withoutDates)||[]).length>0;
+}
 const VERBS=new Set(("is are was were be been has have had returned summarize summarized "+
   "ranged averaged rose fell increased decreased reduced stayed peaked climbed compared "+
   "remained measured dipped followed varied spanned").split(" "));
@@ -913,7 +926,7 @@ function stressClaimRejection(text,stats){
   for(const sentence of text.split(/(?<=[.!?])\s+/)){
     const stressy=STRESS_CLAIM.test(sentence),missing=MISSING_TRIGGER.test(sentence);
     if(!stressy&&!missing){
-      const otherMetric=words(sentence).some(w=>METRIC_WORDS.has(w));
+      const otherMetric=explicitlyNamesOtherMeasurement(sentence);
       if(precedingMetric==="stress"&&!otherMetric&&(STRESS_FOLLOWUP.test(sentence)||numberTokens(sentence).some(t=>t.kind==="number"))){
         const r=measurementRejection(sentence,est,needDate);
         if(r)return r;
@@ -959,7 +972,7 @@ function stressClaimRejection(text,stats){
     for(const clause of clauses){
       const w=words(clause);
       const hasStress=STRESS_CLAIM.test(clause),hasPronoun=PRONOUN_ANY.test(clause);
-      const hasMetric=w.some(x=>METRIC_WORDS.has(x));
+      const hasMetric=explicitlyNamesOtherMeasurement(clause);
       const kind=MISSING_TRIGGER.test(clause)
         ?(hasStress||hasPronoun||!hasMetric?"stress_unavailable":"metric")
         :hasStress?"stress_value":hasMetric?"metric":"other";
