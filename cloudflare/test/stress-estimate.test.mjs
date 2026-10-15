@@ -1136,6 +1136,41 @@ test("Tenant isolation: two signed-in users keep distinct stress digest data and
   }finally{sqlite.close();}
 });
 
+test("Codex15 independently calculated stress index is never attributed to WHOOP",()=>{
+  const falseAttribution=[
+    "The stress estimate from WHOOP was 72 on 2026-10-13.",
+    "The WHOOP physiological stress estimate was 72 on 2026-10-13.",
+    "The WHOOP stress estimate was 72 on 2026-10-13.",
+    "The stress estimate was provided by WHOOP on 2026-10-13 at 72.",
+    "WHOOP's stress estimate was 72 on 2026-10-13."
+  ];
+  for(const claim of falseAttribution)
+    assert.equal(outputRejection(claim,r3)?.rule,"stress_claim",claim);
+  for(const claim of [
+    "The WHOOP Lens experimental physiological stress estimate was 72 on 2026-10-13, in the elevated band with moderate confidence.",
+    "The stress estimate was 72 on 2026-10-13.",
+    "The stress estimate was 72 on 2026-10-13. Recovery score median was 40."
+  ])assert.equal(outputRejection(claim,r3),null,claim);
+});
+test("Codex15 a single dated index cannot substantiate stress aggregations",()=>{
+  const unsupported=[
+    "The stress estimate averaged 72 on 2026-10-13.",
+    "The minimum stress estimate was 72 on 2026-10-13.",
+    "The maximum stress estimate was 72 on 2026-10-13.",
+    "The stress estimate ranged from 72 to 72 on 2026-10-13.",
+    "The average stress estimate was 72 on 2026-10-13.",
+    "The stress estimate was a mean of 72 on 2026-10-13.",
+    "The stress estimate median was 72 on 2026-10-13.",
+    "The stress estimate totaled 72 on 2026-10-13."
+  ];
+  for(const claim of unsupported)
+    assert.equal(outputRejection(claim,r3)?.rule,"stress_claim",claim);
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13.",r3),null);
+  assert.equal(outputRejection("Recovery score median was 40.",r3),null);
+  // Feature-off vocabulary still excludes these experimental stress terms.
+  assert.equal(outputRejection("The stress estimate averaged 72 on 2026-10-13.",plain)?.rule,"number");
+});
+
 test("Codex14 modified category claims and ungrounded trends reject in either order",()=>{
   const actual="The stress estimate was 72 on 2026-10-13.";
   const bad=[
