@@ -843,9 +843,12 @@ const UNAVAILABLE=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient)\
 const DATE_RE=/\b\d{4}-\d{2}-\d{2}\b/g;
 const MISSING_TRIGGER=/\b(?:no\s+estimate|not\s+available|unavailable|insufficient|missing)\b/i;
 const PRONOUN_ANY=/\b(?:it|its|this|that|they|these|those|which)\b/i;
-// A standalone follow-up inherits a stress measurement only when the immediately
-// preceding sentence explicitly named that measurement (not another metric).
-const STRESS_FOLLOWUP=/^\s*(?:(?:(?:on|for|as of|by)\s+\d{4}-\d{2}-\d{2}|(?:however|then|also|additionally|meanwhile)),?\s+)?(?:it|its|this|that|they|these|those)\b/i;
+// After an explicit stress measurement, a neighboring unqualified follow-up
+// inherits that metric until another measurement is explicitly named. Look for
+// pronouns ANYWHERE rather than enumerating date-led natural-language prefixes.
+// Unqualified numeric follow-ups are also bound to stress; otherwise recovery
+// numbers could silently be attributed to stress without any pronoun.
+const STRESS_FOLLOWUP=/\b(?:it|its|this|that|they|these|those)\b/i;
 const CLAUSE_SPLIT=/,|;|\b(?:and|but|while|whereas|although|though)\b/i;
 const INTRO_DATE=/^\s*(?:on|for|as of|by)\s+\d{4}-\d{2}-\d{2}\s*$/i;
 const DATE_FRAGMENT=/^\s*(?:(?:on|for|as of|by|or)\s+)?\d{4}-\d{2}-\d{2}(?:\s*(?:,|or)\s*\d{4}-\d{2}-\d{2})*\s*[.!?]?\s*$/i;
@@ -911,7 +914,7 @@ function stressClaimRejection(text,stats){
     const stressy=STRESS_CLAIM.test(sentence),missing=MISSING_TRIGGER.test(sentence);
     if(!stressy&&!missing){
       const otherMetric=words(sentence).some(w=>METRIC_WORDS.has(w));
-      if(precedingMetric==="stress"&&STRESS_FOLLOWUP.test(sentence)&&!otherMetric){
+      if(precedingMetric==="stress"&&!otherMetric&&(STRESS_FOLLOWUP.test(sentence)||numberTokens(sentence).some(t=>t.kind==="number"))){
         const r=measurementRejection(sentence,est,needDate);
         if(r)return r;
         continue;
