@@ -155,8 +155,8 @@ See the [privacy statement](https://astrasler.github.io/WHOOP-Lens/privacy/) for
 - Support: https://astrasler.github.io/WHOOP-Lens/support/
 - Private MCP: https://whooplens.tech/mcp
 
-Production status (2026-10-15): private MCP release 1.1.0 is deployed from PR #35. AI summaries, experimental stress estimates, weekly digests, WHOOP integration, and Health Connect ingestion are enabled. See [the audit and deployment record](cloudflare/docs/private-mcp-audit-20261015.md) for tests, version IDs and live-verification limits.
+Production status (2026-10-15): private MCP includes the repairs through PR #54 and opt-in flare journal/personal comparisons from PR #55 (code commit `ae57926`). AI summaries, experimental stress estimates, weekly digests, WHOOP integration, and Health Connect ingestion are enabled. See [the audit and deployment record](cloudflare/docs/private-mcp-audit-20261015.md) for tests, version IDs and live-verification limits.
 
 ### Opt-in flare journal and personal comparisons
 
-The private MCP implementation includes a separately gated condition/symptom journal and descriptive comparisons with the same member's WHOOP records. Storage and analysis require separate explicit consent. Users can edit, delete, pause analysis or withdraw and delete the journal. It does not predict flares, train a model or send notifications. See [consent, tools, calculations and release requirements](cloudflare/docs/flare-journal.md). `FLARE_JOURNAL_ENABLED` defaults off; implementation does not enroll anyone.
+The private MCP implementation includes a separately gated condition/symptom journal and descriptive comparisons with the same member's WHOOP records. Storage and analysis require separate explicit consent. Users can edit, delete, pause analysis or withdraw and delete the journal. It does not predict flares, train a model or send notifications. See [consent, tools, calculations and release requirements](cloudflare/docs/flare-journal.md). `FLARE_JOURNAL_ENABLED` defaults off in repository configs and is enabled in production as of 2026-10-15. Activation does not enroll anyone.

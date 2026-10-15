@@ -40,3 +40,11 @@ Notes are untrusted user text; the host must not execute them as instructions. T
 Synthetic multi-user tests cover storage/analysis consent, feature-off behavior, MCP schemas, private CRUD, optimistic revisions, pagination, write-time revocation, atomic rollback, in-flight withdrawal/re-consent/pause/edit/member/disconnect changes, malformed history and retry behavior, exact lag calculations, missing labels, units, and distinct personal references. Existing MCP, OAuth and HC paths remain unchanged when the flag is off.
 
 Production activation requires the additive D1 migration, deployment of this implementation and the feature flag. Consent must still be granted by each user through the tools; do not preload medical context or enroll users. Rollback disables the flag without deleting their data. Issue #53 remains open for prospective evidence review, event-level evaluation/calibration, user evaluation, and any later warning or notification design. Those are not implemented by this increment.
+
+## Production verification — 2026-10-15
+
+PR #55 was merged as `ae5792687081c2535ee3ad07f52dbd5ed89bf904` after 338 synthetic tests and all three applicable GitHub CI workflows passed. The deployed source tree is `9d9df1ba5a204ee5753b10f3af4051772b4d2670`, identical to the tested branch.
+
+Migration 0013 created the two journal tables and recorded its application without copying existing data or granting consent. Worker version `6ae55a84-64f3-4369-aaaf-ebae3750a7e4` was deployed at 100% traffic at 13:29:42 UTC, deployment `53b31b12-14e3-420f-aaf9-ca82bd8c8eb4`. Readback confirmed `FLARE_JOURNAL_ENABLED=true`, all previously enabled feature flags preserved, ten secret/secret-store bindings inherited, query redaction enabled, and workers.dev/preview access disabled.
+
+A signed-in production capability call advertised all eight new tools and continued to report Health Connect availability. Journal writes and personal analysis were tested using synthetic identities locally, not by enrolling a real user in production. Existing client sessions may need to refresh the MCP tool catalog. Issue #53 remains open for the unimplemented predictive research and validation work.
