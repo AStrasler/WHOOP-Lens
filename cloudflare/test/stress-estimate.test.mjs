@@ -865,6 +865,30 @@ test("Codex8 only an explicit other metric resets neutral-sentence context",()=>
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. The stress estimate is unavailable for 2026-10-15, and the data was complete. It was 40 on 2026-10-13.",r3)?.rule,"stress_claim");
 });
 
+test("Codex9 generic metric vocabulary cannot clear the stress referent",()=>{
+  const stress="The stress estimate was 72 on 2026-10-13.";
+  const neutrals=[
+    "The records were returned at the same rate.",
+    "The performance data was complete.",
+    "The score data was complete.",
+    "The recovery records were returned.",
+    "The sleep data was complete.",
+    "The HRV data was complete."
+  ];
+  for(const neutral of neutrals){
+    const misleading=stress+" "+neutral+" It was 40 on 2026-10-13.";
+    const accurate=stress+" "+neutral+" It was 72 on 2026-10-13.";
+    assert.equal(outputRejection(misleading,r3)?.rule,"stress_claim",misleading);
+    assert.equal(outputRejection(accurate,r3),null,accurate);
+  }
+});
+test("Codex9 explicit other measurements still switch context",()=>{
+  const stress="The stress estimate was 72 on 2026-10-13.";
+  assert.equal(outputRejection(stress+" Recovery score median was 40. It was 40 on 2026-10-13.",r3),null);
+  assert.equal(outputRejection(stress+" The records were returned at the same rate. Recovery score median was 40. It was 40 on 2026-10-13.",r3),null);
+  assert.equal(outputRejection(stress+" Recovery score median was 40, and the records were returned at the same rate. It was 40 on 2026-10-13.",r3),null);
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
