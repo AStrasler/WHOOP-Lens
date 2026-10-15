@@ -79,15 +79,16 @@ const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps 
 // such as "rate", "score" or "performance" in neutral prose.
 const EXPLICIT_OTHER_METRIC=/\b(?:recovery(?:\s+score)?|hrv|(?:resting\s+)?heart\s+rate|sleep(?:\s+(?:performance|duration|efficiency|score))?|strain|steps?|respiratory(?:\s+rate)?|spo2?|skin\s+temperature)\b/i;
 function explicitlyNamesOtherMeasurement(part){
-  if(!EXPLICIT_OTHER_METRIC.test(part))return false;
-  // A date alone is not a measurement. Mentioning records or generic data is
-  // not a metric change; an actual measurement or availability statement is.
-  const withoutDates=part.replace(DATE_RE," ");
-  // Generic references to a named metric still do not reset context unless
-  // they actually report a quantitative value or the metric is unavailable.
-  return MISSING_TRIGGER.test(part)||
-    numberTokens(withoutDates).some(t=>t.kind==="number")||
-    (spelledNumbers(withoutDates)||[]).length>0;
+  const match=EXPLICIT_OTHER_METRIC.exec(part);
+  if(!match)return false;
+  // A named metric can explicitly be unavailable, but a record count does not
+  // become that metric's value just because the metric is mentioned earlier.
+  if(MISSING_TRIGGER.test(part))return true;
+  const after=part.slice(match.index+match[0].length);
+  // Fail closed on ambiguous wording: the measured value must immediately
+  // follow the metric, optional aggregate, and linking verb. A number buried
+  // in "recovery data included 40 records" cannot reset stress context.
+  return /^\s*(?:(?:median|mean|minimum|maximum|average|latest|value|change|percentage|performance|duration|efficiency|range|level)\s+)*(?:(?:is|are|was|were|has been|had been|at|of|to)\s+)?(?:(?:about|around|near|approximately)\s+)?(?:-?\d+(?:\.\d+)?\b|(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b)/i.test(after);
 }
 const VERBS=new Set(("is are was were be been has have had returned summarize summarized "+
   "ranged averaged rose fell increased decreased reduced stayed peaked climbed compared "+
@@ -864,8 +865,8 @@ const PRONOUN_ANY=/\b(?:it|its|this|that|they|these|those|which)\b/i;
 // numbers could silently be attributed to stress without any pronoun.
 const STRESS_FOLLOWUP=/\b(?:it|its|this|that|they|these|those)\b/i;
 const CLAUSE_SPLIT=/,|;|\b(?:and|but|while|whereas|although|though)\b/i;
-const INTRO_DATE=/^\s*(?:on|for|as of|by)\s+\d{4}-\d{2}-\d{2}\s*$/i;
-const DATE_FRAGMENT=/^\s*(?:(?:on|for|as of|by|or)\s+)?\d{4}-\d{2}-\d{2}(?:\s*(?:,|or)\s*\d{4}-\d{2}-\d{2})*\s*[.!?]?\s*$/i;
+const INTRO_DATE=/^\s*(?:on|for|as of|by|during)\s+(?:(?:the|that)\s+date\s+)?\d{4}-\d{2}-\d{2}\s*$/i;
+const DATE_FRAGMENT=/^\s*(?:(?:(?:on|for|as of|by|during)\s+(?:(?:the|that)\s+date\s+)?|or\s+))?\d{4}-\d{2}-\d{2}(?:\s*(?:,|or)\s*\d{4}-\d{2}-\d{2})*\s*[.!?]?\s*$/i;
 function stressNumbers(text){
   const bare=text.replace(DATE_RE," ");
   const digits=(bare.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
