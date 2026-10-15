@@ -906,6 +906,25 @@ function unavailableRejection(part,est){
 // carries the value, the clause with an unavailable date carries the
 // unavailable wording, and nothing else may carry a number. Applied in addition
 // to every existing check; it can only reject more.
+// Preserve introductory ISO date fragments when a sentence is split into
+// clauses. Both measurement and missing-data paths must use identical grouping.
+function stressClauses(sentence){
+  const raw=sentence.split(CLAUSE_SPLIT).filter(c=>c&&c.trim());
+  const clauses=[];
+  let carry="";
+  raw.forEach((c,i)=>{
+    if(DATE_FRAGMENT.test(c)){
+      const next=raw.slice(i+1).find(x=>!DATE_FRAGMENT.test(x));
+      const forward=!clauses.length||INTRO_DATE.test(c)||(next!==undefined&&/^\s*\d{4}-\d{2}-\d{2}/.test(next));
+      if(forward)carry+=c+" ";
+      else clauses[clauses.length-1]+=" "+c;
+      return;
+    }
+    clauses.push(carry+c);carry="";
+  });
+  if(carry){if(clauses.length)clauses[clauses.length-1]+=" "+carry;else clauses.push(carry);}
+  return clauses;
+}
 function stressClaimRejection(text,stats){
   const est=stats?.stress_estimate;
   if(!est)return null;
@@ -927,16 +946,21 @@ function stressClaimRejection(text,stats){
   for(const sentence of text.split(/(?<=[.!?])\s+/)){
     const stressy=STRESS_CLAIM.test(sentence),missing=MISSING_TRIGGER.test(sentence);
     if(!stressy&&!missing){
-      const otherMetric=explicitlyNamesOtherMeasurement(sentence);
-      if(precedingMetric==="stress"&&!otherMetric&&(STRESS_FOLLOWUP.test(sentence)||numberTokens(sentence).some(t=>t.kind==="number"))){
-        const r=measurementRejection(sentence,est,needDate);
-        if(r)return r;
-        continue;
+      // Analyze clauses in textual order. A valid recovery clause must never
+      // mask a preceding false stress continuation in the SAME sentence.
+      for(const clause of stressClauses(sentence)){
+        const otherMetric=explicitlyNamesOtherMeasurement(clause);
+        if(precedingMetric==="stress"&&!otherMetric&&
+           (STRESS_FOLLOWUP.test(clause)||numberTokens(clause).some(t=>t.kind==="number"))){
+          const r=measurementRejection(clause,est,needDate);
+          if(r)return r;
+          continue;
+        }
+        if(!grounded(clause))return {rule:"stress_claim",category:"estimate_value_reused"};
+        // Only an explicitly named and grounded non-stress measurement
+        // changes the referent. Neutral clauses preserve existing context.
+        if(otherMetric)precedingMetric="other";
       }
-      if(!grounded(sentence))return {rule:"stress_claim",category:"estimate_value_reused"};
-      // Neutral sentences do not change which measurement an unqualified
-      // follow-up refers to; only an explicitly named metric changes it.
-      if(otherMetric)precedingMetric="other";
       continue;
     }
     if(!missing){
@@ -953,22 +977,7 @@ function stressClaimRejection(text,stats){
     // clause: an introductory date ("On 2026-10-15,") or a leading list item joins
     // the clause after it; a later list item ("..., 2026-10-15 and 2026-10-13")
     // joins the clause before it. Every date then gets that clause's validation.
-    const raw=sentence.split(CLAUSE_SPLIT).filter(c=>c&&c.trim());
-    const clauses=[];
-    let carry="";
-    raw.forEach((c,i)=>{
-      if(DATE_FRAGMENT.test(c)){
-        // Joins forward when it is introductory, when nothing precedes it, or
-        // when the list runs into the next real clause ("A and B have no estimate").
-        const next=raw.slice(i+1).find(x=>!DATE_FRAGMENT.test(x));
-        const forward=!clauses.length||INTRO_DATE.test(c)||(next!==undefined&&/^\s*\d{4}-\d{2}-\d{2}/.test(next));
-        if(forward)carry+=c+" ";
-        else clauses[clauses.length-1]+=" "+c;
-        return;
-      }
-      clauses.push(carry+c);carry="";
-    });
-    if(carry){if(clauses.length)clauses[clauses.length-1]+=" "+carry;else clauses.push(carry);}
+    const clauses=stressClauses(sentence);
     let last=null,latestExplicitMetric=null;
     for(const clause of clauses){
       const w=words(clause);
