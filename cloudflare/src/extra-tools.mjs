@@ -64,7 +64,7 @@ async function rows(db,sql,args){
   if(result.success===false||!Array.isArray(result.results))throw Error('Record read unavailable');
   return result.results;
 }
-// env is optional and only read for the STRESS_ESTIMATE_ENABLED capability entry.
+// Optional capabilities are advertised only when their exact feature flag is enabled.
 export async function readExtraTool(db,userId,name,args,env=null){
   if(!await activeMembership(db,userId))throw Error('Not authorized');
   if(extraArguments(name,args)===null)throw Error('Invalid arguments');
@@ -115,7 +115,14 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
   const localTools={'samsung':'get_samsung_health','health-connect':'get_health_connect','medical-context':'get_medical_context'};
   // Same rule as the summary path, the only path that can return the estimate.
   const stressOn=env?.STRESS_ESTIMATE_ENABLED==='true'&&env?.AI_SUMMARY_ENABLED==='true';
-  const capabilities=[...manifest.capabilities,...(stressOn?[STRESS_CAPABILITY]:[])].map(item=>{
+  const flareOn=env?.FLARE_JOURNAL_ENABLED==='true';
+  const flareCapability={id:'private-flare-journal',name:'Opt-in flare journal and descriptive personal patterns',category:'optional',delivery:'mcp_tool',
+    tools:['set_flare_consent','save_flare_context','save_flare_entry','get_flare_journal','delete_flare_entry','pause_flare_analysis','withdraw_flare_journal','analyze_flare_patterns'],status:'available',
+    description:"User-reported condition context and journal, with separately authorized comparisons against this account's WHOOP history.",
+    provides:'Private journal lifecycle and exploratory dated comparisons; no flare prediction or notifications.',
+    data_requirements:['Explicit journal storage consent; separate analysis consent plus WHOOP connection and user labels for comparisons.'],
+    limitations:['No automatic enrollment or diagnosis inference. Missing labels are not non-flare controls. Predictions remain disabled.'],example_prompts:['Explain flare-journal consent before I opt in.']};
+  const capabilities=[...manifest.capabilities,...(stressOn?[STRESS_CAPABILITY]:[]),...(flareOn?[flareCapability]:[])].map(item=>{
     let value={...item};
     if(localTools[item.id]){
       const health=item.id==='health-connect';

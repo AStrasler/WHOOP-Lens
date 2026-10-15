@@ -1,3 +1,4 @@
+import {flareTools,flareEnabled,flareArguments,runFlareTool} from './flare-journal.mjs';
 import {activeMembership,connectionStatus} from './storage.mjs';
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
 import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
@@ -70,16 +71,18 @@ const weeklyDigestTool=Object.freeze({
 function listedTools(env){
   const summaryOn=aiSummaryEnabled(env);
   const digestOn=weeklyDigestEnabled(env);
-  if(!summaryOn&&!digestOn)return mcpTools;
+  if(!summaryOn&&!digestOn&&!flareEnabled(env))return mcpTools;
   let tools=summaryOn?mcpTools.map(tool=>summaryTools.has(tool.name)?{...tool,inputSchema:{
     ...tool.inputSchema,
     properties:{...tool.inputSchema.properties,summary:{type:"boolean",description:"Add a summary of these results. Ignored unless true."}}
   }}:tool):mcpTools.slice();
   if(summaryOn)tools=[...tools,aiUsageTool];
   if(digestOn)tools=[...tools,weeklyDigestTool];
+  if(flareEnabled(env))tools=[...tools,...flareTools];
   return tools;
 }
 function optionalTool(name,env){
+  if(flareTools.some(t=>t.name===name))return flareEnabled(env);
   if(name==="get_ai_usage")return aiSummaryEnabled(env);
   if(name==="get_weekly_digest")return weeklyDigestEnabled(env);
   return false;
@@ -103,6 +106,7 @@ function toolError(id,message,modern) {
 }
 function checkArguments(name,args,env) {
   if(!isObject(args))return null;
+  if(flareTools.some(t=>t.name===name))return flareEnabled(env)?flareArguments(name,args):null;
   if(name==="get_ai_usage"){
     if(!aiSummaryEnabled(env))return null;
     return Object.keys(args).length===0?{}:null;
@@ -208,7 +212,9 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   try {
     const resource=toolToResource[name];
     let data;
-    if(name==='connect_whoop'){
+    if(flareTools.some(t=>t.name===name)){
+      data=await runFlareTool(name,args,{db,userId,env,whoopRequest});
+    }else if(name==='connect_whoop'){
       if(env.WHOOP_OAUTH_ENABLED!=='true'||typeof whoopAuthorize!=='function')throw Error('Connection disabled');
       const result=await whoopAuthorize(db,userId,env);
       const content={content:[{type:'text',text:result.authorization_url}]};
@@ -275,6 +281,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }catch(error){
     // No details about secrets, token status, providers, account existence or SQL.
     // File-import validation messages are safe to show; everything else stays generic.
+    if(flareTools.some(t=>t.name===name))return toolError(id,'Flare journal request could not be completed. Verify consent, active membership, the current entry revision, and WHOOP connection for analysis. No medical data or internal error details are included.',modern);
     const safe=publicImportError(error);
     return toolError(id,safe||"WHOOP data is unavailable for this connection.",modern);
   }

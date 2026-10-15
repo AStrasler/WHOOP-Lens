@@ -130,3 +130,17 @@ test('host instructions: Stress Monitor stays unsupported; the experimental inde
   assert.match(on,/not WHOOP's Stress Monitor and not clinically validated/);
   assert.match(on,/When it is absent, do not compute or imitate it/);
 });
+
+ test('flare capability requires the exact feature flag and advertises separate consent',async()=>{
+  const db=fixture();try{
+    for(const env of [{},{FLARE_JOURNAL_ENABLED:'false'},{FLARE_JOURNAL_ENABLED:'TRUE'}]){
+      const result=await readExtraTool(db,A,'get_capabilities',{category:'optional',limit:25},env);
+      assert.ok(!result.capabilities.some(c=>c.id==='private-flare-journal'));
+    }
+    const result=await readExtraTool(db,A,'get_capabilities',{category:'optional',limit:25},{FLARE_JOURNAL_ENABLED:'true'});
+    const capability=result.capabilities.find(c=>c.id==='private-flare-journal');
+    assert.equal(capability.tools.length,8);
+    assert.match(capability.data_requirements.join(' '),/separate analysis consent/);
+    assert.match(capability.limitations.join(' '),/Predictions remain disabled/);
+  }finally{db.sql.close();}
+});
