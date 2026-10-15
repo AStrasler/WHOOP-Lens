@@ -78,13 +78,14 @@ const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps 
 // Context may switch only for a named other measurement, not for loose words
 // such as "rate", "score" or "performance" in neutral prose.
 const EXPLICIT_OTHER_METRIC=/\b(?:recovery(?:\s+score)?|hrv|(?:resting\s+)?heart\s+rate|sleep(?:\s+(?:performance|duration|efficiency|score))?|strain|steps?|respiratory(?:\s+rate)?|spo2?|skin\s+temperature)\b/i;
-const MEASUREMENT_DETAIL=/\b(?:median|mean|minimum|maximum|average|latest|score|value|measurement|measurements|performance|duration|efficiency|range|level|percent|percentage|improved|increased|decreased|changed|higher|lower|peaked)\b/i;
 function explicitlyNamesOtherMeasurement(part){
   if(!EXPLICIT_OTHER_METRIC.test(part))return false;
   // A date alone is not a measurement. Mentioning records or generic data is
   // not a metric change; an actual measurement or availability statement is.
   const withoutDates=part.replace(DATE_RE," ");
-  return MISSING_TRIGGER.test(part)||MEASUREMENT_DETAIL.test(part)||
+  // Generic references to a named metric still do not reset context unless
+  // they actually report a quantitative value or the metric is unavailable.
+  return MISSING_TRIGGER.test(part)||
     numberTokens(withoutDates).some(t=>t.kind==="number")||
     (spelledNumbers(withoutDates)||[]).length>0;
 }
