@@ -1095,6 +1095,47 @@ test("Codex13 valid categorical claims remain valid in either order",()=>{
   assert.equal(outputRejection("The stress estimate is unavailable for 2026-10-15.",r3),null);
 });
 
+test("Tenant isolation: two signed-in users keep distinct stress digest data and caches",async()=>{
+  const sqlite=new DatabaseSync(":memory:");
+  for(const file of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+    sqlite.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));
+  const db={sqlite,...d1Database(sqlite)},week="2026-10-11",calls=[];
+  const alpha=syntheticUser({prefix:"tenant-alpha"});
+  const beta=syntheticUser({prefix:"tenant-beta"});
+  beta.recoveries=beta.recoveries.map(row=>({...row,score:{...row.score,recovery_score:95}}));
+  const whoopRequest=whoopFor({[A]:alpha,[B]:beta},calls);
+  let modelCalls=0;
+  const AI={async run(_model,input){
+    modelCalls++;
+    const stats=JSON.parse(input.messages[1].content).stats;
+    return {response:`Recovery score median was ${stats.metrics["score.recovery_score"].median}.`};
+  }};
+  const env={AI,AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true",WEEKLY_DIGEST_ENABLED:"true",
+    AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    AI_ACCOUNT_ANALYTICS_TOKEN:"synthetic-analytics-token",
+    AI_ANALYTICS_QUERY:async()=>({neurons:0})};
+  const request=id=>buildWeeklyDigest({db,userId:id,env,whoopRequest,weekEnding:week,now:Date.parse("2026-10-12T08:00:00Z")});
+  try{
+    assert.notEqual(digestCacheScope(A,env),digestCacheScope(B,env));
+    const firstA=await request(A);
+    const firstB=await request(B);
+    assert.equal(firstA.ok,true);
+    assert.equal(firstB.ok,true);
+    assert.equal(firstA.cached,false);
+    assert.equal(firstB.cached,false);
+    assert.notEqual(firstA.text,firstB.text);
+    assert.match(firstB.text,/95/);
+    assert.ok(!firstA.text.includes("95"));
+    assert.ok(calls.some(c=>c.userId===A));
+    assert.ok(calls.some(c=>c.userId===B));
+    assert.equal(modelCalls,2);
+    assert.equal((await request(A)).cached,true);
+    assert.equal((await request(B)).cached,true);
+    assert.equal(modelCalls,2);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_weekly_digest WHERE state='ready'").get().n,2);
+  }finally{sqlite.close();}
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
