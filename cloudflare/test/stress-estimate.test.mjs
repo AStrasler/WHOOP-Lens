@@ -1057,6 +1057,44 @@ test("Codex12 transient baseline failures cannot poison a weekly digest cache",a
   }
 });
 
+test("Codex13 reject five P1 semantic bypasses regardless of claim ordering",()=>{
+  const start="The stress estimate was 72 on 2026-10-13.";
+  for(const rest of [
+    "There was no elevated band.",
+    "The band was not elevated.",
+    "The stress estimate rose to 72 on 2026-10-13.",
+    "The stress estimate fell to 72 on 2026-10-13.",
+    "The stress estimate increased to 72 on 2026-10-13.",
+    "The stress estimate was 72 per minute on 2026-10-13.",
+    "The stress estimate was 72 per day on 2026-10-13.",
+    "The stress estimate was 72 beats on 2026-10-13.",
+    "The confidence value was 72 on 2026-10-13.",
+    "The confidence reading was 72 on 2026-10-13.",
+    "The band value was 72 on 2026-10-13.",
+    "The band reading was 72 on 2026-10-13."
+  ])assert.equal(outputRejection(start+" "+rest,r3)?.rule,"stress_claim",rest);
+  for(const first of [
+    "The confidence was high.",
+    "The band was high.",
+    "The band was moderate.",
+    "There was no elevated band.",
+    "The confidence value was 72 on 2026-10-13."
+  ])assert.equal(outputRejection(first+" "+start,r3)?.rule,"stress_claim",first);
+});
+test("Codex13 valid categorical claims remain valid in either order",()=>{
+  const stress="The stress estimate was 72 on 2026-10-13.";
+  for(const sentence of [
+    stress,
+    "The confidence was moderate. "+stress,
+    "The band was elevated. "+stress,
+    stress+" The band was elevated.",
+    stress+" The confidence was moderate.",
+    stress+" The band was elevated on 2026-10-13."
+  ])assert.equal(outputRejection(sentence,r3),null,sentence);
+  assert.equal(outputRejection("Recovery score median was 40.",r3),null);
+  assert.equal(outputRejection("The stress estimate is unavailable for 2026-10-15.",r3),null);
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
