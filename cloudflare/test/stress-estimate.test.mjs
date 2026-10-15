@@ -832,11 +832,13 @@ test("Codex7 natural date-led and unqualified numeric follow-ups cannot use reco
   // Matching value and date must reach ordinary vocabulary checks, not fail stress binding.
   for(const sentence of [
     "On the date 2026-10-13, it was 72.",
-    "On that date, this was 72.",
+    "As of the date 2026-10-13, this was 72.",
     "During 2026-10-13, the value was 72."
   ]){
     assert.notEqual(outputRejection("The stress estimate was 72 on 2026-10-13. "+sentence,r3)?.rule,"stress_claim",sentence);
   }
+  // An implied date is still insufficient for a historical estimate.
+  assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. On that date, this was 72.",r3)?.rule,"stress_claim");
   // An explicit change of metric breaks stress pronoun context.
   assert.notEqual(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. On the date 2026-10-13, it was 40.",r3)?.rule,"stress_claim");
 });
