@@ -816,6 +816,31 @@ test("Codex6 date-led pronoun continuations remain bound to stress",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. On 2026-10-13, it was 40.",r3),null);
 });
 
+test("Codex7 natural date-led and unqualified numeric follow-ups cannot use recovery values",()=>{
+  for(const sentence of [
+    "On the date 2026-10-13, it was 40.",
+    "On that date, it was 40.",
+    "During 2026-10-13, this was 40.",
+    "As of the date 2026-10-13, it was 40.",
+    "After the measurement on 2026-10-13, it was 40.",
+    "On the date 2026-10-13, the value was 40.",
+    "The number was 40 on 2026-10-13.",
+    "On 2026-10-15, the value was 72."
+  ]){
+    assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. "+sentence,r3)?.rule,"stress_claim",sentence);
+  }
+  // Matching value and date must reach ordinary vocabulary checks, not fail stress binding.
+  for(const sentence of [
+    "On the date 2026-10-13, it was 72.",
+    "On that date, this was 72.",
+    "During 2026-10-13, the value was 72."
+  ]){
+    assert.notEqual(outputRejection("The stress estimate was 72 on 2026-10-13. "+sentence,r3)?.rule,"stress_claim",sentence);
+  }
+  // An explicit change of metric breaks stress pronoun context.
+  assert.notEqual(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. On the date 2026-10-13, it was 40.",r3)?.rule,"stress_claim");
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
