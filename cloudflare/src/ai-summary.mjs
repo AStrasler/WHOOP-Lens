@@ -874,6 +874,41 @@ function stressNumbers(text){
   if(spelled===null)return null;
   return [...digits,...spelled.map(span=>span.value)];
 }
+// Interpret level terms against their own field. The band and confidence
+// can use overlapping adjectives but are NOT interchangeable.
+const STRESS_LEVEL_RE=/\b(?:low|typical|elevated|high|moderate)\b/gi;
+function stressLevelRejection(part,est){
+  const dates=part.match(DATE_RE)||[];
+  if(dates.some(d=>d!==est.estimate_date))return {rule:"stress_claim",category:"date"};
+  for(const level of part.matchAll(STRESS_LEVEL_RE)){
+    const value=level[0].toLowerCase(),at=level.index;
+    const before=part.slice(Math.max(0,at-60),at).toLowerCase();
+    const after=part.slice(at+level[0].length).toLowerCase();
+    let field="band";
+    if(/^\s+confidence\b/.test(after)||
+       /\bconfidence(?:\s+level)?\s+(?:(?:is|was|were|remained|stayed|at|of|the)\s+)*$/.test(before))
+      field="confidence";
+    else if(/^\s+(?:stress\s+)?band\b/.test(after)||
+       /\bband\s+(?:(?:is|was|were|remained|stayed|at|of|the)\s+)*$/.test(before))
+      field="band";
+    else if(/\bconfidence\b/.test(before)||/\bconfidence\b/.test(after))
+      return {rule:"stress_claim",category:"ambiguous_level"};
+    if(value!==String(est[field]||"").toLowerCase())
+      return {rule:"stress_claim",category:field+"_level"};
+  }
+  return null;
+}
+// A continuation can carry digits, spelled quantities, or qualitative levels.
+// Never silently fall back to recovery numbers merely because digits are absent.
+function hasStressQuantity(part){
+  const n=stressNumbers(part);
+  return n===null||n.length>0;
+}
+function inheritedStressRejection(part,est,needDate){
+  if(hasStressQuantity(part))return measurementRejection(part,est,needDate);
+  if(STRESS_LEVEL_RE.test(part))return stressLevelRejection(part,est);
+  return {rule:"stress_claim",category:"unqualified_continuation"};
+}
 // A measurement statement: exactly the value, matching level words, only
 // estimate_date, and estimate_date when it is not the newest requested date.
 function measurementRejection(part,est,needDate){
@@ -882,10 +917,7 @@ function measurementRejection(part,est,needDate){
   if(needDate&&!dates.includes(est.estimate_date))return {rule:"stress_claim",category:"date_missing"};
   const values=stressNumbers(part);
   if(!values||!values.length||values.some(v=>v!==est.value))return {rule:"stress_claim",category:"value"};
-  const allowedLevels=new Set([est.band,est.confidence].filter(Boolean).map(String));
-  for(const w of (part.toLowerCase().match(/[a-z]+/g)||[]))
-    if(LEVEL_WORDS.has(w)&&!allowedLevels.has(w))return {rule:"stress_claim",category:"level"};
-  return null;
+  return stressLevelRejection(part,est);
 }
 // An unavailability statement: tight wording, no stress number or level word,
 // and only requested dates that have no valid estimate.
@@ -958,15 +990,15 @@ function stressClaimRejection(text,stats){
           // value in the same clause. Dates alone are not measurements.
           const metricAt=EXPLICIT_OTHER_METRIC.exec(clause).index;
           const prefix=clause.slice(0,metricAt);
-          if(numberTokens(prefix).some(t=>t.kind==="number")){
-            const r=measurementRejection(prefix,est,needDate);
+          if(hasStressQuantity(prefix)||STRESS_LEVEL_RE.test(prefix)){
+            const r=inheritedStressRejection(prefix,est,needDate);
             if(r)return r;
             remaining=clause.slice(metricAt);
           }
         }
         if(precedingMetric==="stress"&&!otherMetric&&
-           (STRESS_FOLLOWUP.test(clause)||numberTokens(clause).some(t=>t.kind==="number"))){
-          const r=measurementRejection(clause,est,needDate);
+           (STRESS_FOLLOWUP.test(clause)||hasStressQuantity(clause)||STRESS_LEVEL_RE.test(clause))){
+          const r=inheritedStressRejection(clause,est,needDate);
           if(r)return r;
           continue;
         }
