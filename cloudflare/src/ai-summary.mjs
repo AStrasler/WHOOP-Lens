@@ -887,7 +887,7 @@ const STRESS_NEGATION=/\b(?:no|not|never|isn't|wasn't|weren't|aren't|doesn't|did
 const UNSUPPORTED_STRESS_SOURCE=/\b(?:WHOOP(?:'s)?\s+(?:(?:experimental|daily|physiological|derived|calculated|estimated|numeric|personalized)\s+){0,5}stress(?:\s+(?:estimate|index))?|stress\s+(?:estimate|index)\s+(?:(?:is|was)\s+)?(?:from|by|according\s+to|provided\s+by|reported\s+by)\s+WHOOP)\b/i;
 // The stats supply one selected date's value, not a mean, range, or trend.
 // Only accept aggregate claims if independently calculated and grounded.
-const UNSUPPORTED_STRESS_AGGREGATE=/\b(?:averaged?|mean|median|minimum|maximum|min|max|range|ranged|ranging|aggregate|aggregated|across|over\s+(?:the|this|last|past)\s+(?:week|days?|period)|total|sum|summed|typical\s+value)\b/i;
+const UNSUPPORTED_STRESS_AGGREGATE=/\b(?:averaged?|mean|median|minimum|maximum|min|max|range|ranged|ranging|aggregate|aggregated|across|over\s+(?:the|this|last|past)\s+(?:week|days?|period)|total(?:ed|ing|s)?|sum|summed|typical\s+value)\b/i;
 
 const STRESS_COMPARISON=/\b(?:below|above|under|over|less than|greater than|higher than|lower than|more than|at least|at most|between|compared to|versus|vs\.?|approximately|roughly|around|about|nearly|almost|rose|risen|rising|fell|fallen|falling|increased?|decreased?|declined?|dipped|climbed|dropped|spiked|jumped|trended|changed|change|shifted|worsened|improved|higher|lower|peaked|peaking|peak|stayed|stays|remaining|remained|remains|steady|steadily|stable|stabilized|unchanged|reached|reaching|topped|bottomed|highest|lowest)\b|[<>≈≠]/i;
 // The stress scale is a dimensionless index, not a rate or measurement unit.
