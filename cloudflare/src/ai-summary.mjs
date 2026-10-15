@@ -881,15 +881,27 @@ const STRESS_LEVEL_TEST=/\b(?:low|typical|elevated|high|moderate)\b/i;
 // Matching a value is insufficient if the grammar denies, compares, changes
 // units, or assigns that number to a categorical stress field. Fail closed;
 // truthful quantitative stress prose is intentionally narrow.
-const STRESS_NEGATION=/\b(?:not|never|isn't|wasn't|weren't|aren't|doesn't|didn't|without|neither|no longer)\b/i;
-const STRESS_COMPARISON=/\b(?:below|above|under|over|less than|greater than|higher than|lower than|more than|at least|at most|between|compared to|versus|vs\.?|approximately|roughly|around|about|nearly|almost)\b|[<>≈≠]/i;
-const STRESS_UNIT=/\b(?:percent|percentage|percentages|bpm|beats per minute|milliseconds?|millisec(?:onds?)?|points?|degrees|celsius)\b|%/i;
+const STRESS_NEGATION=/\b(?:no|not|never|isn't|wasn't|weren't|aren't|doesn't|didn't|without|neither|no longer)\b/i;
+const STRESS_COMPARISON=/\b(?:below|above|under|over|less than|greater than|higher than|lower than|more than|at least|at most|between|compared to|versus|vs\.?|approximately|roughly|around|about|nearly|almost|rose|risen|rising|fell|fallen|falling|increased?|decreased?|declined?|dipped|climbed|dropped|spiked|jumped|trended|changed|change|shifted|worsened|improved|higher|lower)\b|[<>≈≠]/i;
+// The stress scale is a dimensionless index, not a rate or measurement unit.
+const STRESS_UNIT=/\b(?:percent|percentage|percentages|bpm|beats|per|minute|minutes|hour|hours|seconds?|milliseconds?|millisec(?:onds?)?|points?|degrees|celsius|rate|ratio|units?)\b|%|\/\s*(?:min|s|h|day)\b/i;
 const STRESS_NUMERIC_CATEGORY=/\b(?:confidence|band)(?:\s+level)?\s+(?:(?:is|was|were|at|of|equals?|had|has)\s+)*(?:(?:about|approximately|around)\s+)?(?:-?\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/i;
 function stressSemanticRejection(part){
   if(STRESS_NEGATION.test(part))return {rule:"stress_claim",category:"negation"};
   if(STRESS_COMPARISON.test(part))return {rule:"stress_claim",category:"comparison"};
   if(STRESS_UNIT.test(part))return {rule:"stress_claim",category:"unit"};
-  if(STRESS_NUMERIC_CATEGORY.test(part))return {rule:"stress_claim",category:"numeric_category"};
+  // Numbers after "band" or "confidence" cannot describe either category.
+  // Strip ISO dates first so "The band was elevated on 2026-10-13" remains valid.
+  // This also catches "confidence value was 72" and "band reading was 72".
+  const dateFree=part.replace(DATE_RE," ");
+  const categories=/\b(?:confidence|band)\b/gi;
+  let category;
+  while((category=categories.exec(dateFree))){
+    const rest=dateFree.slice(category.index+category[0].length);
+    if(numberTokens(rest).some(t=>t.kind==="number")||
+       (spelledNumbers(rest)||[]).length>0)
+      return {rule:"stress_claim",category:"numeric_category"};
+  }
   return null;
 }
 function stressLevelRejection(part,est){
@@ -998,10 +1010,19 @@ function stressClaimRejection(text,stats){
   for(const sentence of text.split(/(?<=[.!?])\s+/)){
     const stressy=STRESS_CLAIM.test(sentence),missing=MISSING_TRIGGER.test(sentence);
     if(!stressy&&!missing){
+      // An explicit stress band or confidence claim is bound to the estimate,
+      // even if it appears BEFORE any numeric stress sentence.
+      // It cannot inherit a recovery value or a previous metric's context.
       // Analyze clauses in textual order. A valid recovery clause must never
       // mask a preceding false stress continuation in the SAME sentence.
       for(const clause of stressClauses(sentence)){
         const otherMetric=explicitlyNamesOtherMeasurement(clause);
+        if(!otherMetric&&/\b(?:band|confidence)(?:\s+(?:level|reading|value))?\b/i.test(clause)){
+          const r=stressLevelRejection(clause,est);
+          if(r)return r;
+          precedingMetric="stress";
+          continue;
+        }
         let remaining=clause;
         if(precedingMetric==="stress"&&otherMetric){
           // A conjunction not recognized by CLAUSE_SPLIT (e.g. "because")
