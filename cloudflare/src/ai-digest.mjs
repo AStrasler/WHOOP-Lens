@@ -118,7 +118,15 @@ async function generateDigest({db,userId,env,whoopRequest,now,period,weekEnding}
   if(!view)return null;
   // A template while summaries are on is a fallback (quota, analytics, or the
   // model). Caching it would keep that fallback for the whole week.
-  const cacheable=covered&&(summariesOn?view.status==="model":view.status==="template");
+  // The outer weekly history may be complete while the extra physiological
+  // baseline fetch is rate-limited or only partially retrieved. Do not persist
+  // transient stress failures as a ready digest: retry on the next request.
+  // A stable "insufficient_baseline" with fully fetched history may be cached.
+  const chart=view.chart_data?.stress_estimate;
+  const stressReady=!stressEstimateEnabled(env)||
+    (chart!=null&&chart.reason!=="rate_limited"&&chart.reason!=="incomplete_history"&&
+     chart.history?.complete===true);
+  const cacheable=covered&&stressReady&&(summariesOn?view.status==="model":view.status==="template");
   return {view,cacheable};
 }
 export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEnding}){
