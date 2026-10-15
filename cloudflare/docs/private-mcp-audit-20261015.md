@@ -30,9 +30,9 @@ Checked-in feature flags remain off to prevent accidental activation. The produc
 ## Open work and limits
 
 - PR #34 is already merged. Its requested stress/source/claim/cache corrections are covered by retained regression cases and the new bounded production selection contract. All 32 outstanding review threads were resolved after the 318-test suite and CI passed.
-- PR #21 is an unmerged legacy Supabase parity proposal with merge conflicts. Source inspection finds the same pre-write revocation gap and independent chunk writes in its proposed webhook/RPC path. It is not an approved production-ready replacement for the current Cloudflare integration and must not be merged or marked complete by this audit. Its proposed SQL is not applied.
-- Issue #23 includes research/user-evaluation criteria, experimental validity, provider retention assessment and a distinct three-person rollout proposal beyond functional delivery. Code activation alone does not establish those criteria. Keep the research issue open and record the implemented scope.
-- Issue #25's future aggregation/autoimmune concepts remain out of scope and unchanged.
+- PR #21 is a closed, unmerged legacy Supabase parity proposal with merge conflicts. Source inspection finds the same pre-write revocation gap and independent chunk writes in its proposed webhook/RPC path. It is not an approved production-ready replacement for the current Cloudflare integration and must not be merged or marked complete by this audit. Its proposed SQL is not applied.
+- Issue #23 includes research/user-evaluation criteria, experimental validity, provider retention assessment and a distinct three-person rollout proposal beyond functional delivery. Code activation alone does not establish those criteria. Historical note: #23 has since been closed and superseded by #53, a future autoimmune/flare proposal. This audit does not implement or validate that proposal.
+- Issue #25's future aggregation and improvement wishlist, and #53's flare concept, remain out of scope and unchanged.
 - The stress index is an experimental formula, not a validated stress measurement. No intraday WHOOP Stress Monitor API or zone durations are inferred.
 - Legacy unversioned phone records cannot establish freshness ordering across distinct retries; stable keys provide idempotence, not an invented modification timestamp.
 - Synthetic tests establish application boundaries, not proof about every third-party service or phone background scheduler. No destructive revocation or ingest-token rotation is performed on a real account for testing.
@@ -50,3 +50,9 @@ Checked-in feature flags remain off to prevent accidental activation. The produc
 - No real-account revocation, token rotation, ingestion writes, migration, membership edit or destructive data check was performed. Phone background delivery is covered at the endpoint contract level, not an on-device scheduler test.
 
 The tested implementation satisfies the scoped account-isolation, consent, integrity and grounded-output requirements. Operational evidence confirms private production access, existing WHOOP authorization and Health Connect reads; the live digest and phone-delivery limitations above prevent an unconditional end-to-end certification.
+
+## Current-state follow-up, 2026-10-15
+
+Two additional medium-severity digest defects were reproduced with synthetic data: an explicit window ending today was persisted before its last day ended, and malformed ready-cache bodies blocked regeneration indefinitely. Open windows now bypass cache reads and writes while preserving the existing query contract. Invalid ready entries are replaced with a unique pending lease only if the exact inspected body still matches. Concurrent repairs and other accounts remain untouched. Cache namespace v4 prevents replay of earlier premature snapshots; no data migration or deletion is required. Regression tests cover updated records during an open window, reuse after closure, invalid-cache recovery, account isolation and competing pending/ready replacements.
+
+The current chat still exposes no weekly-digest call, and plugin discovery found no alternate connection. This limits live authenticated execution, not production feature activation. HC Webhook is the deployed phone integration; the repository's optional Android manual-preview app remains unreleased and disabled. No background-scheduler conclusion follows from successful stored-record reads.
