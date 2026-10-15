@@ -1136,6 +1136,76 @@ test("Tenant isolation: two signed-in users keep distinct stress digest data and
   }finally{sqlite.close();}
 });
 
+test("Codex14 modified category claims and ungrounded trends reject in either order",()=>{
+  const actual="The stress estimate was 72 on 2026-10-13.";
+  const bad=[
+    "Overall confidence was high.",
+    "The overall confidence was high.",
+    "Current confidence remained high.",
+    "There was no overall elevated band.",
+    "There was no current elevated band.",
+    "The latest band was moderate.",
+    "The stress estimate peaked at 72 on 2026-10-13.",
+    "The stress estimate stayed at 72 on 2026-10-13.",
+    "The stress estimate remained at 72 on 2026-10-13.",
+    "The stress estimate was steady at 72 on 2026-10-13.",
+    "The stress estimate reached 72 on 2026-10-13.",
+    "The stress estimate was unchanged at 72 on 2026-10-13."
+  ];
+  for(const statement of bad){
+    for(const whole of [statement+" "+actual,actual+" "+statement]){
+      const result=outputRejection(whole,r3);
+      assert.equal(result?.rule,"stress_claim",whole);
+    }
+  }
+  for(const statement of [
+    "Overall confidence was moderate.",
+    "Current confidence was moderate.",
+    "The overall band was elevated.",
+    "The latest band was elevated."
+  ]){
+    assert.equal(outputRejection(statement+" "+actual,r3),null,statement);
+    assert.equal(outputRejection(actual+" "+statement,r3),null,statement);
+  }
+  // Similar words about ordinary recovery data must remain independent.
+  assert.equal(outputRejection("Recovery score median was 40.",r3),null);
+});
+test("Codex14 fully fetched sleep-only weeks cache without repeat AI quota",async()=>{
+  const sqlite=new DatabaseSync(":memory:");
+  for(const file of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+    sqlite.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));
+  const db={sqlite,...d1Database(sqlite)},week="2026-10-11";
+  const user=syntheticUser({prefix:"sleep-only14"});
+  user.recoveries=[];
+  const calls=[],whoopRequest=whoopFor({[A]:user},calls);
+  let modelCalls=0;
+  const AI={async run(_m,input){
+    modelCalls++;
+    const stats=JSON.parse(input.messages[1].content).stats;
+    return {response:`${stats.count} WHOOP records were returned.`};
+  }};
+  const env={AI,AI_SUMMARY_ENABLED:"true",STRESS_ESTIMATE_ENABLED:"true",WEEKLY_DIGEST_ENABLED:"true",
+    AI_ANALYTICS_ACCOUNT_ID:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    AI_ACCOUNT_ANALYTICS_TOKEN:"synthetic-analytics-token",
+    AI_ANALYTICS_QUERY:async()=>({neurons:0})};
+  const request=()=>buildWeeklyDigest({db,userId:A,env,whoopRequest,weekEnding:week,now:Date.parse("2026-10-12T08:00:00Z")});
+  try{
+    const first=await request();
+    assert.equal(first.ok,true);
+    assert.equal(first.cached,false);
+    assert.equal(first.status,"model");
+    assert.equal(first.chart_data.stress_estimate?.reason,"requires_recovery_data");
+    assert.ok(calls.some(c=>c.resource==="sleep"));
+    assert.equal(modelCalls,1);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS n FROM ai_weekly_digest WHERE state='ready'").get().n,1);
+    const second=await request();
+    assert.equal(second.ok,true);
+    assert.equal(second.cached,true);
+    assert.deepEqual(second.chart_data.stress_estimate,first.chart_data.stress_estimate);
+    assert.equal(modelCalls,1);
+  }finally{sqlite.close();}
+});
+
 test("Codex5 an explicit recovery sentence resets the pronoun referent; feature off is unchanged",()=>{
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-13. Recovery score median was 40. It was 40.",r3),null);
   const off={...plain,missing_dates:["2026-10-12"]};
