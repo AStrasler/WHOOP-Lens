@@ -1017,7 +1017,8 @@ function stressClaimRejection(text,stats){
       // mask a preceding false stress continuation in the SAME sentence.
       for(const clause of stressClauses(sentence)){
         const otherMetric=explicitlyNamesOtherMeasurement(clause);
-        if(!otherMetric&&/\b(?:band|confidence)(?:\s+(?:level|reading|value))?\b/i.test(clause)){
+        const categoryClaim=/^\s*(?:(?:the|its|this|that)\s+)?(?:(?:stress|estimate)\s+)?(?:band|confidence)\b|\bno\s+(?:low|typical|elevated|high|moderate)\s+band\b/i.test(clause);
+        if(!otherMetric&&categoryClaim){
           const r=stressLevelRejection(clause,est);
           if(r)return r;
           precedingMetric="stress";
