@@ -882,11 +882,22 @@ const STRESS_LEVEL_TEST=/\b(?:low|typical|elevated|high|moderate)\b/i;
 // units, or assigns that number to a categorical stress field. Fail closed;
 // truthful quantitative stress prose is intentionally narrow.
 const STRESS_NEGATION=/\b(?:no|not|never|isn't|wasn't|weren't|aren't|doesn't|didn't|without|neither|no longer)\b/i;
+// The index is computed by WHOOP Lens from WHOOP-sourced signals; it is
+// not an estimate calculated or published by WHOOP itself.
+const UNSUPPORTED_STRESS_SOURCE=new RegExp(
+  String.raw\`\bWHOOP(?:'s)?\s+(?:(?:experimental|daily|physiological|derived|calculated|estimated|numeric|personalized)\s+){0,5}stress(?:\s+(?:estimate|index))?\b\`+"|"+
+  String.raw\`\bstress\s+(?:estimate|index)\s+(?:(?:is|was)\s+)?(?:from|by|according\s+to|provided\s+by|reported\s+by)\s+WHOOP\b\`,"i"
+);
+// The stats supply one selected date's value, not a mean, range, or trend.
+// Only accept aggregate claims if independently calculated and grounded.
+const UNSUPPORTED_STRESS_AGGREGATE=/\b(?:averaged?|mean|median|minimum|maximum|min|max|range|ranged|ranging|aggregate|aggregated|across|over\s+(?:the|this|last|past)\s+(?:week|days?|period)|total|sum|summed|typical\s+value)\b/i;
+
 const STRESS_COMPARISON=/\b(?:below|above|under|over|less than|greater than|higher than|lower than|more than|at least|at most|between|compared to|versus|vs\.?|approximately|roughly|around|about|nearly|almost|rose|risen|rising|fell|fallen|falling|increased?|decreased?|declined?|dipped|climbed|dropped|spiked|jumped|trended|changed|change|shifted|worsened|improved|higher|lower|peaked|peaking|peak|stayed|stays|remaining|remained|remains|steady|steadily|stable|stabilized|unchanged|reached|reaching|topped|bottomed|highest|lowest)\b|[<>≈≠]/i;
 // The stress scale is a dimensionless index, not a rate or measurement unit.
 const STRESS_UNIT=/\b(?:percent|percentage|percentages|bpm|beats|per|minute|minutes|hour|hours|seconds?|milliseconds?|millisec(?:onds?)?|points?|degrees|celsius|rate|ratio|units?)\b|%|\/\s*(?:min|s|h|day)\b/i;
 const STRESS_NUMERIC_CATEGORY=/\b(?:confidence|band)(?:\s+level)?\s+(?:(?:is|was|were|at|of|equals?|had|has)\s+)*(?:(?:about|approximately|around)\s+)?(?:-?\d+(?:\.\d+)?|zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)\b/i;
 function stressSemanticRejection(part){
+  if(UNSUPPORTED_STRESS_AGGREGATE.test(part))return {rule:"stress_claim",category:"unsupported_aggregation"};
   if(STRESS_NEGATION.test(part))return {rule:"stress_claim",category:"negation"};
   if(STRESS_COMPARISON.test(part))return {rule:"stress_claim",category:"comparison"};
   if(STRESS_UNIT.test(part))return {rule:"stress_claim",category:"unit"};
@@ -993,6 +1004,10 @@ function stressClaimRejection(text,stats){
   const est=stats?.stress_estimate;
   if(!est)return null;
   if(UNSUPPORTED_STRESS.test(text))return {rule:"stress_claim",category:"unsupported"};
+  for(const sentence of text.split(/(?<=[.!?])\s+/)){
+    if(STRESS_CLAIM.test(sentence)&&UNSUPPORTED_STRESS_SOURCE.test(sentence))
+      return {rule:"stress_claim",category:"source_attribution"};
+  }
   const needDate=est.is_latest_requested_date!==true;
   // The estimate's own numbers ground only stress claims: every other clause
   // must be grounded by the summary stats without stress_estimate.
