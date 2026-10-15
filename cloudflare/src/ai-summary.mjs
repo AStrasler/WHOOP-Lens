@@ -951,13 +951,26 @@ function stressClaimRejection(text,stats){
       // mask a preceding false stress continuation in the SAME sentence.
       for(const clause of stressClauses(sentence)){
         const otherMetric=explicitlyNamesOtherMeasurement(clause);
+        let remaining=clause;
+        if(precedingMetric==="stress"&&otherMetric){
+          // A conjunction not recognized by CLAUSE_SPLIT (e.g. "because")
+          // must not let an explicit recovery value shield an earlier stress
+          // value in the same clause. Dates alone are not measurements.
+          const metricAt=EXPLICIT_OTHER_METRIC.exec(clause).index;
+          const prefix=clause.slice(0,metricAt);
+          if(numberTokens(prefix).some(t=>t.kind==="number")){
+            const r=measurementRejection(prefix,est,needDate);
+            if(r)return r;
+            remaining=clause.slice(metricAt);
+          }
+        }
         if(precedingMetric==="stress"&&!otherMetric&&
            (STRESS_FOLLOWUP.test(clause)||numberTokens(clause).some(t=>t.kind==="number"))){
           const r=measurementRejection(clause,est,needDate);
           if(r)return r;
           continue;
         }
-        if(!grounded(clause))return {rule:"stress_claim",category:"estimate_value_reused"};
+        if(!grounded(remaining))return {rule:"stress_claim",category:"estimate_value_reused"};
         // Only an explicitly named and grounded non-stress measurement
         // changes the referent. Neutral clauses preserve existing context.
         if(otherMetric)precedingMetric="other";
