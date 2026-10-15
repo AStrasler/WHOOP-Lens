@@ -885,7 +885,8 @@ test("Codex9 generic metric vocabulary cannot clear the stress referent",()=>{
 test("Codex9 explicit other measurements still switch context",()=>{
   const stress="The stress estimate was 72 on 2026-10-13.";
   assert.equal(outputRejection(stress+" Recovery score median was 40. It was 40 on 2026-10-13.",r3),null);
-  assert.equal(outputRejection(stress+" The records were returned at the same rate. Recovery score median was 40. It was 40 on 2026-10-13.",r3),null);
+  // Four sentences correctly fail the 3-sentence response contract, but must not fail stress grounding.
+  assert.notEqual(outputRejection(stress+" The records were returned at the same rate. Recovery score median was 40. It was 40 on 2026-10-13.",r3)?.rule,"stress_claim");
   assert.equal(outputRejection(stress+" Recovery score median was 40, and the records were returned at the same rate. It was 40 on 2026-10-13.",r3),null);
 });
 
