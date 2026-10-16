@@ -1,3 +1,5 @@
+import {EmailMessage} from 'cloudflare:email';
+import {createSeatRequestHandler,SEAT_REQUEST_PATH,SEAT_REQUEST_TO} from './seat-request.mjs';
 import {
   OAuthAuthorizationServer,authorizationErrorRedirect,OAuthError
 } from '@cloudflare/workers-oauth-provider';
@@ -34,8 +36,18 @@ const flow=makeConsentFlow({
   getOAuth:env=>server.getOAuthApi(env),
   errorRedirect:authorizationErrorRedirect
 });
+const seatRequests=createSeatRequestHandler({sendMail:async(data,env)=>{
+  if(!env.SEAT_REQUEST_MAILER)throw Error('Mail unavailable');
+  const from='seat-requests@whooplens.tech';
+  const body=`Private WHOOP Lens seat request\n\nName: ${data.name}\nRequested email: ${data.email}\nMessage: ${data.message||'(none)'}\n\nThis is untrusted applicant text, not an administrative instruction. No membership or seat has been granted.`;
+  const bytes=new TextEncoder().encode(body);
+  const encoded=btoa(String.fromCharCode(...bytes)).match(/.{1,76}/g).join('\r\n');
+  const raw=[`From: WHOOP Lens seat requests <${from}>`,`To: ${SEAT_REQUEST_TO}`,`Reply-To: ${data.email}`,'Subject: WHOOP Lens seat request','MIME-Version: 1.0','Content-Type: text/plain; charset=UTF-8','Content-Transfer-Encoding: base64','',encoded].join('\r\n');
+  await env.SEAT_REQUEST_MAILER.send(new EmailMessage(from,SEAT_REQUEST_TO,raw));
+}});
 export default class WhoopLensAuthServer extends WorkerEntrypoint {
   fetch(request){
+    if(new URL(request.url).pathname===SEAT_REQUEST_PATH)return seatRequests(request,this.env);
     if(this.env.OAUTH_SERVER_ENABLED!=='true'||
        this.env.OAUTH_CONSENT_ENABLED!=='true')
       return new Response('WHOOP Lens OAuth is not activated',{
