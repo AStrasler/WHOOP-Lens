@@ -4,6 +4,10 @@ Deployed and enabled on October 16, 2026. The request form is a public contact r
 
 The form asks for name, desired email and an optional short message, with explicit permission to contact the applicant. The auth Worker sends a plain-text email only to `whoop-lens@outlook.com` from `seat-requests@whooplens.tech`. Applicant content is untrusted and cannot choose the recipient or subject. Reply-To is the validated applicant address. The sender domain must be configured for Cloudflare email service and the destination verified.
 
+## Branding
+
+The request form and result pages share the teal card presentation in `cloudflare/oauth/auth-server/src/seat-request-page.mjs`. It includes reduced-motion support, visible keyboard focus, narrow-screen wrapping and a compact dark Turnstile widget. Google Fonts provides Inter and JetBrains Mono; system fallbacks remain available. The request-page CSP permits styles only from `fonts.googleapis.com` and font files from `fonts.gstatic.com`, alongside the existing inline CSS and Turnstile permissions. Browser requests to Google carry ordinary network metadata; the page uses `Referrer-Policy: no-referrer`. Form fields and consent semantics are unchanged.
+
 ## Protections and delivery behavior
 
 - Exact same-origin POSTs, streamed 8 KB body limit, bounded fields, duplicate/unknown-field rejection and a honeypot.
@@ -16,7 +20,7 @@ The form asks for name, desired email and an optional short message, with explic
 
 ## Deployment verification
 
-PR #59 merged as `ab448d8362b2144aa3daa91487b9300ea9cc44f5`. Auth Worker version `58916b72-0d25-4a1e-b464-2c229e0a5533` serves 100% of production traffic. The destination email is verified, Email Routing is ready, migration 0014 is applied, Turnstile and the destination-restricted mail binding are configured, and `SEAT_REQUEST_ENABLED=true`. The public form and human-verification widget render in a browser. The Access application identity-denial URL is configured and read back; its policies, audience and existing editable settings match their pre-change values. The resource Worker was not redeployed.
+PR #59 merged as `ab448d8362b2144aa3daa91487b9300ea9cc44f5`. Initial activation used auth Worker version `58916b72-0d25-4a1e-b464-2c229e0a5533` at 100% of production traffic. Subsequent presentation release versions are recorded on their pull requests. The destination email is verified, Email Routing is ready, migration 0014 is applied, Turnstile and the destination-restricted mail binding are configured, and `SEAT_REQUEST_ENABLED=true`. The public form and human-verification widget render in a browser. The Access application identity-denial URL is configured and read back; its policies, audience and existing editable settings match their pre-change values. The resource Worker was not redeployed.
 
 Validation: 346 synthetic tests passed; all three PR CI workflows passed; auth Worker normal and minified dry-run builds passed. Remaining live acceptance checks: complete a human-verified synthetic request and confirm actual receipt in Outlook; exercise denied and approved sign-ins interactively. Configuration readback is not an end-to-end sign-in or inbox-delivery test.
 
