@@ -25,42 +25,175 @@ The production resource Worker is version `6ae55a84-64f3-4369-aaaf-ebae3750a7e4`
 
 Flare predictions, automated flare notifications and unfinished importers remain outside the completed feature set. Global AI-budget visibility remains an operator-only permission; each member can read their own usage. Existing clients may need to refresh their MCP discovery to expose new tools. See the [flare release verification](cloudflare/docs/flare-journal.md#production-verification--2026-10-15) and [audit record](cloudflare/docs/private-mcp-audit-20261015.md).
 
-## Private connector
+## Install and connect: member setup guide
 
-Add WHOOP Lens in ChatGPT as a custom MCP connector:
+Start here if you are joining WHOOP Lens. You do not need to clone this repository, deploy a server, obtain an API key or enter a WHOOP client secret. The private server is already hosted. Complete step 1, then connect only the features you want.
 
-1. Name it **WHOOP Lens**. Server URL: `https://whooplens.tech/mcp`.
-2. Choose OAuth and leave client ID and client secret empty. ChatGPT registers itself with `https://auth.whooplens.tech`. The issuer accepts dynamic registration at `/oauth/register` and client-metadata documents. Scope is `mcp:read`. Protected resource metadata is `https://whooplens.tech/.well-known/oauth-protected-resource/mcp`.
-3. Sign in with the Cloudflare Access email one-time code. The Worker accepts that Access identity only when it is already linked to an active member.
-4. Approve the consent screen.
+### 1. Install the private plugin in ChatGPT
 
-ChatGPT keeps a connector's discovery result until that connector is removed. After a server discovery change, remove WHOOP Lens and add it again at the same URL.
+Before starting, ask the WHOOP Lens owner to invite and activate the email address you will use. Creating a plugin connection does not create a WHOOP Lens membership. Your ChatGPT account/workspace must also allow custom MCP plugins.
 
-An unauthenticated request receives an OAuth challenge. `https://whoop-lens.whoop-lens.workers.dev` stays disabled. WHOOP refresh tokens on this connector stay separate from the Supabase connector. The password form on the GitHub Pages site belongs to the Supabase connector.
+1. Open [ChatGPT Plugins](https://chatgpt.com/plugins). If the installation controls are missing in the mobile app, use ChatGPT in a browser.
+2. Select **+**, then **Add custom MCP server**.
+3. Enter the following connection settings:
 
-### Link WHOOP
+   | Setting | Value |
+   | --- | --- |
+   | Name | `WHOOP Lens` |
+   | Server URL | `https://whooplens.tech/mcp` |
+   | Authentication | OAuth |
+   | Client ID | Leave empty |
+   | Client secret | Leave empty |
 
-The WHOOP client id and secret are saved on the Worker, and WHOOP connect is on. In ChatGPT, call `connect_whoop` and open the authorization URL it returns. Approve read access on WHOOP's page. WHOOP redirects the browser to `https://whooplens.tech/api/whoop/callback`. The WHOOP app must allow that redirect. The callback stores the connection for the member who started `connect_whoop`. A connection exists only after that approval.
+4. Review the connection notice and create/install the plugin. When sign-in opens, use your invited email address and enter the Cloudflare Access code sent to that inbox. Approve the WHOOP Lens consent screen.
+5. Open a new chat, type `@`, and select **WHOOP Lens**. If you chose a different display name, select that name.
+6. Send this first check:
 
-### Health Connect file
+> Use WHOOP Lens get_capabilities. List all pages of available features and tell me which need my connection, consent or records.
 
-`import_health_connect_file` stores one WHOOP Lens Health Connect v2 JSON file for the signed-in account. The consent argument is `store-health-connect-file`. Production has `WEB_HEALTH_IMPORT_ENABLED=true` for all active members. Checked-in Wrangler configurations retain safe defaults; production bindings must be preserved during deployment. `get_health_connect` reads rows already stored for the account. `withdraw_health_connect_import` with confirm `delete-my-health-connect-records` deletes those rows, records the withdrawal, and revokes phone ingest tokens.
+**Success looks like:** a capability response from the private server. WHOOP may still need connecting; that is step 2. Menu labels can vary by client. The [official ChatGPT MCP installation guide](https://developers.openai.com/plugins/build/app-quickstart#connect-your-mcp-server-in-chatgpt) describes the current installation flow.
 
-### Phone sync
+**Already installed but missing new tools?** Refresh the connection from its [plugin detail page](https://chatgpt.com/plugins), then open a new chat and select it again. If your client has no refresh control, remove and re-add the same MCP connection. This refresh is separate from disconnecting WHOOP or deleting stored health records.
 
-Automatic delivery from the Health Connect Webhook app is deployed. On Oct 12, 2026, `cloudflare/migrations/0007_health_connect_ingest.sql` was applied to the production D1 database `whoop-lens-migration`, and `whoop-lens` version `3ce33b05` went live with `HEALTH_CONNECT_WEBHOOK_ENABLED=true`. The current production flag remains enabled for all active members. Deployments must preserve all verified production bindings; checked-in Wrangler defaults alone do not represent live settings.
+### 2. Connect your WHOOP account
 
-When that gate is open, the phone setup is:
+1. Select WHOOP Lens in the chat and send:
 
-1. Install the free FOSS app with Obtainium from [github.com/mcnaveen/health-connect-webhook](https://github.com/mcnaveen/health-connect-webhook). The release file is `app-foss-release.apk`. Package name: `com.hcwebhook.app`. This ingest was checked against v1.9.22.
-2. Grant every Health Connect permission the app requests, including background sync. Leave battery optimization as the phone already has it.
-3. Set the sync interval to 15 minutes.
-4. In ChatGPT, call `issue_health_connect_ingest_token` with consent `enable-health-connect-webhook`. The tool returns the `Authorization` value once. Issuing again replaces the previous token.
-5. Add exactly one webhook URL, `https://whooplens.tech/api/health-connect/webhook`, with one custom header: name `Authorization`, value `Bearer` plus the token from that tool.
+> Use WHOOP Lens connect_whoop to give me my WHOOP authorization link.
 
-The server stores steps, sleep, heart rate, and exercise. Every other enabled type is counted and omitted so the app can advance its sync marker. Details are in [HC Webhook setup](docs/HC_WEBHOOK_SETUP.md).
+2. Open the returned link, sign into your own WHOOP account, and approve the requested read access. Complete the redirect back to WHOOP Lens.
+3. Return to the chat and verify:
 
-WHOOP Stress Monitor history is not in the official WHOOP developer API. There is no measurement of low, medium, or high stress-zone duration, non-activity high stress, or a Stress Monitor timeline. Do not estimate those durations from cycle strain, average heart rate, HRV, resting heart rate, or workouts. If someone pastes their own Stress Trends summary, label it user-provided, keep it separate from synced WHOOP measurements, and do not store it.
+> Use WHOOP Lens get_profile and get_recovery. Confirm the profile is mine and show the dates of the returned recovery records.
+
+**Success looks like:** your profile and available measurements, or an explicit no-records result. Installing the plugin alone does not connect WHOOP. An existing connection on the older Supabase connector is separate and is not copied here.
+
+Once connected, these features require no additional accounts:
+
+| Feature | Copy-paste prompt |
+| --- | --- |
+| Body measurements | Use WHOOP Lens get_body_measurements. |
+| Recovery, HRV and resting heart rate | Use WHOOP Lens get_recovery with auto_page true and show the returned dates. |
+| Sleep | Use WHOOP Lens get_sleep with auto_page true. |
+| Workouts | Use WHOOP Lens get_workouts with auto_page true. |
+| Cycles and strain | Use WHOOP Lens get_cycles with auto_page true. |
+| Compare metrics | Compare my returned WHOOP recovery, sleep and strain records by date. Flag missing dates and separate observations from hypotheses. |
+
+History tools return pages. `auto_page: true` fetches up to four pages, not unlimited history; ask the host to follow any remaining continuation token when you need more.
+
+### 3. Use AI summaries, experimental stress and weekly digests
+
+These are already enabled for all active members. No separate AI account or API key is required.
+
+| Feature | Copy-paste prompt | What to expect |
+| --- | --- | --- |
+| AI summary and charts | Use WHOOP Lens get_recovery with auto_page true and summary true. Show the summary, chart_data and insights. | Your returned measurements with a model-selected or deterministic template summary. Charts depend on the chat client. |
+| Sleep summary | Use WHOOP Lens get_sleep with auto_page true and summary true. | Summary of your returned sleep records. |
+| Experimental stress estimate | Use WHOOP Lens get_recovery with summary true. Show chart_data.stress_estimate, including its date, value, band, confidence and missing-data explanation. | A WHOOP Lens experimental calculation when enough valid baseline data exists; it is not official WHOOP Stress Monitor. |
+| Personal AI usage | Use WHOOP Lens get_ai_usage. | Your allowance and usage for the current UTC day. |
+| Weekly digest | Use WHOOP Lens get_weekly_digest with no arguments, then show its charts and insights. | The latest completed Monday–Sunday UTC week. This is on demand, not an automatic notification subscription. |
+
+Stress requires at least 14 valid baseline days in the preceding 30-day window and sufficient current measurements. Missing data can make it unavailable even though the feature is enabled. A template summary is a supported fallback when model quota or service availability prevents a model call.
+
+### 4. Connect Android Health Connect automatic sync
+
+This is optional and separate from WHOOP authorization. Use your own Android phone and ingest token. The supported companion path is **HC Webhook**, not the unfinished Android app in this repository.
+
+1. On the phone, make sure your source app writes the records you want to Android Health Connect. Check Health Connect's app permissions and confirm records exist there.
+2. Install HC Webhook from its [official GitHub releases](https://github.com/mcnaveen/health-connect-webhook/releases), or add that repository in Obtainium. The integration was verified with the FOSS build `app-foss-release.apk`, package `com.hcwebhook.app`, version 1.9.22; this is a compatibility reference, not a claim about the latest release.
+3. Give HC Webhook permission to read the supported data types you want to send: steps, sleep, heart rate and exercise. Allow background reading if you want background sync. Set the sync interval to 15 minutes and leave sample resolution at the app default.
+4. In the WHOOP Lens chat, send:
+
+> I consent to storing my Health Connect webhook records. Use issue_health_connect_ingest_token with consent enable-health-connect-webhook.
+
+5. In HC Webhook, add **one** webhook with these settings:
+
+   | Setting | Value |
+   | --- | --- |
+   | URL | `https://whooplens.tech/api/health-connect/webhook` |
+   | Method / format | POST / JSON |
+   | Custom header name | `Authorization` |
+   | Custom header value | Paste the exact `header_value` returned by the tool, including `Bearer ` once |
+
+6. Run a manual sync and check the app's Webhook Logs. Then verify the stored data in chat:
+
+> Use WHOOP Lens get_health_connect. Show the returned record types, dates and sources, and follow pagination if needed.
+
+**Success looks like:** a successful delivery plus supported records returned for your account. HTTP 200 alone does not prove records were stored: unsupported types can be skipped and malformed records rejected. Check any stored/rejected/skipped counts in the response and the readback. Background delivery depends on Android permissions and scheduling.
+
+The token is shown once. Keep it private; do not post it in issues or screenshots. Issuing a new token replaces the old one, so update the phone header whenever you rotate it. For payload limits and retry details, see [HC Webhook setup](docs/HC_WEBHOOK_SETUP.md).
+
+### 5. Import a Health Connect file instead
+
+Skip phone-sync setup if you only want a one-time file import. This path accepts **WHOOP Lens Health Connect v2 JSON**, not an arbitrary Samsung export, CSV or medical document.
+
+1. Select a compatible file that contains your own records and attach it, or paste its JSON into the chat.
+2. Send:
+
+> I consent to storing this Health Connect file. Use import_health_connect_file with consent store-health-connect-file and the file's exact JSON as file_json. Report the import result.
+
+3. Verify with `get_health_connect`. You can request `summary: true` for a summary of the stored records. Importing a file does not enable background phone sync.
+
+### 6. Set up the autoimmune/flare journal
+
+This optional journal stores only what you explicitly provide. It does not infer a diagnosis from chat history. Storage and personal analysis are separate choices; read the [journal privacy and retention details](cloudflare/docs/flare-journal.md) before opting in.
+
+1. To enable **journal storage only**, send:
+
+> I consent to storing my private flare journal. Use set_flare_consent with storage_consent store-flare-journal.
+
+2. If you also want **personal WHOOP comparisons**, send this separate opt-in after connecting WHOOP:
+
+> I consent to storing my flare journal and analyzing its labels against my own WHOOP records. Use set_flare_consent with storage_consent store-flare-journal and analysis_consent analyze-flare-patterns.
+
+3. Provide only the context you want saved:
+
+> Help me use save_flare_context. Ask me for the condition names and optional medication context I want stored, then save only what I provide.
+
+4. Add a daily entry:
+
+> Help me use save_flare_entry. Ask me to confirm the UTC calendar date and my flare label: yes, no or unknown. Offer optional severity from 0 to 10, symptoms, confounders and notes. Do not infer a label for me.
+
+5. Read it back with `get_flare_journal`. When editing an existing entry or context, have the host read its latest revision before saving the replacement.
+6. Once you have explicit flare and non-flare labels and WHOOP measurements, request a comparison:
+
+> Use analyze_flare_patterns for my journal and WHOOP records. Ask me for start and end dates in UTC, no more than 90 days apart inclusively. Show coverage, missing data and descriptive comparisons. Do not present them as flare predictions.
+
+**Success looks like:** a saved-entry confirmation, then your own entry on readback. Analysis may have too little data for a comparison. Unknown or unlogged days are not non-flare controls. The feature reports insufficient evidence for a flare warning; there is no prediction or notification subscription to activate.
+
+### 7. Other record sources
+
+`get_samsung_health` reads separately stored Samsung Health uploads. `get_medical_context` reads reviewed medical-context entries already stored for your account. Neither tool connects a new source or imports a medical document. If they return no records, there is no completed self-service importer to enable for those tables. Samsung-origin records delivered through Health Connect are read using `get_health_connect` instead.
+
+### Pause, disconnect or delete
+
+Use these only when you intend the stated change. Removing the plugin from your chat client is not a request to delete server records.
+
+| Intended change | Prompt / tool |
+| --- | --- |
+| Disconnect WHOOP from WHOOP Lens | Use disconnect_whoop for my account. |
+| Stop Health Connect phone delivery but keep stored records | Use revoke_health_connect_ingest_token with confirm revoke-health-connect-ingest-token. |
+| Delete stored Health Connect records and stop delivery | Use withdraw_health_connect_import with confirm delete-my-health-connect-records. |
+| Pause flare analysis but retain the journal | Use pause_flare_analysis with confirm pause-flare-analysis. |
+| Delete one journal entry | Read my journal, confirm which date I want deleted, then use delete_flare_entry with that entry_key, its current expected_revision, and confirm delete-flare-entry. |
+| Delete the whole flare journal and context, withdrawing both consents | Use withdraw_flare_journal with confirm delete-my-flare-journal. |
+
+These operations apply only to the signed-in account. Deleting server records does not erase copies already returned in chat.
+
+### Setup troubleshooting
+
+| What you see | Next step |
+| --- | --- |
+| Custom-plugin installation is unavailable | Check the browser version of ChatGPT and your workspace's custom-MCP permissions. A WHOOP Lens invitation does not grant ChatGPT workspace permissions. |
+| Access denied or no usable sign-in | Use the invited email; ask the owner to confirm active membership. |
+| Plugin responds but WHOOP is disconnected | Complete step 2's returned authorization link, then read your profile. |
+| A new tool is missing | Refresh the plugin connection, open a new chat and select it again. |
+| HC Webhook returns 401/403 | Check the exact Authorization header, active membership and ingest consent. If the token was revoked/replaced, deliberately issue a replacement and update the phone. |
+| HC Webhook returns 413 | Reduce the upload window or sample detail; retrying the same oversized payload will not help. |
+| HC Webhook returns 503 | Retry the upload; do not rotate the token just for a transient server failure. |
+| HC delivery succeeds but the read is empty | Check source-app Health Connect permissions, supported types, response counts and the dates sent. |
+| Stress or flare comparisons lack data | Check the returned coverage. Feature activation cannot supply missing measurements or user labels. |
+
 
 ## Existing Supabase connector
 
