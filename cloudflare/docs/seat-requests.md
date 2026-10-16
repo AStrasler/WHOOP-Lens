@@ -1,6 +1,6 @@
 # Private seat requests
 
-Implemented but not activated. The request form is a public contact route at `https://auth.whooplens.tech/request-seat`; the MCP, WHOOP records and OAuth callback remain private. This does not change the owner's reserved seat or nine member slots. Submitting never enrolls a user, links an identity or reserves a seat.
+Deployed and enabled on October 16, 2026. The request form is a public contact route at `https://auth.whooplens.tech/request-seat`; the MCP, WHOOP records and OAuth callback remain private. This does not change the owner's reserved seat or nine member slots. Submitting never enrolls a user, links an identity or reserves a seat.
 
 The form asks for name, desired email and an optional short message, with explicit permission to contact the applicant. The auth Worker sends a plain-text email only to `whoop-lens@outlook.com` from `seat-requests@whooplens.tech`. Applicant content is untrusted and cannot choose the recipient or subject. Reply-To is the validated applicant address. The sender domain must be configured for Cloudflare email service and the destination verified.
 
@@ -14,10 +14,16 @@ The form asks for name, desired email and an optional short message, with explic
 - Confirmed send API success displays “Request received. Access requires the owner’s approval.” This confirms API acceptance, not inbox delivery or approval. Failures return 503 and permit retry. Concurrent duplicates get a processing message. A crash after email acceptance but before recording success can cause a duplicate on a later retry; email delivery is not exactly-once.
 - No health data is requested. No membership, identity, token, OAuth state, redirect target or seat table is read or written by this feature.
 
-## Activation prerequisites
+## Deployment verification
+
+PR #59 merged as `ab448d8362b2144aa3daa91487b9300ea9cc44f5`. Auth Worker version `58916b72-0d25-4a1e-b464-2c229e0a5533` serves 100% of production traffic. The destination email is verified, Email Routing is ready, migration 0014 is applied, Turnstile and the destination-restricted mail binding are configured, and `SEAT_REQUEST_ENABLED=true`. The public form and human-verification widget render in a browser. The Access application identity-denial URL is configured and read back; its policies, audience and existing editable settings match their pre-change values. The resource Worker was not redeployed.
+
+Validation: 346 synthetic tests passed; all three PR CI workflows passed; auth Worker normal and minified dry-run builds passed. Remaining live acceptance checks: complete a human-verified synthetic request and confirm actual receipt in Outlook; exercise denied and approved sign-ins interactively. Configuration readback is not an end-to-end sign-in or inbox-delivery test.
+
+## Activation / recovery runbook
 
 1. Verify `whoop-lens@outlook.com` using the Cloudflare verification email requested on October 16, 2026. Do not read or consume its verification link on the owner's behalf.
-2. Onboard `whooplens.tech` to Cloudflare Email Service. Inspect existing mail DNS before any changes; do not replace another mail provider's MX/SPF/DKIM records blindly. Inspection on October 16 found Email Routing unconfigured.
+2. Onboard `whooplens.tech` to Cloudflare Email Service. Inspect existing mail DNS before any changes; do not replace another mail provider's MX/SPF/DKIM records blindly. Inspection before activation on October 16 found no existing MX or SPF records; Email Routing was then enabled.
 3. Create a managed Turnstile widget restricted to `auth.whooplens.tech`. Add the public `SEAT_REQUEST_TURNSTILE_SITE_KEY` binding and secret `SEAT_REQUEST_TURNSTILE_SECRET` to the auth Worker. Never commit the secret or expose it to HTML.
 4. Apply additive migration `0014_seat_requests.sql` to the existing D1 database. It creates only request-abuse and delivery-metadata tables.
 5. Add an auth-Worker `send_email` binding named `SEAT_REQUEST_MAILER`, restricted with `destination_address: whoop-lens@outlook.com`. Preserve every existing binding, OAuth KV namespace, D1 binding, Access audience and issuer setting.
@@ -26,7 +32,7 @@ The form asks for name, desired email and an optional short message, with explic
 8. On the existing **WHOOP Lens browser identity** Access application for `auth.whooplens.tech/oauth/upstream/callback`, set `custom_deny_url` to `https://auth.whooplens.tech/request-seat`. This is the identity-rule denial redirect. Preserve the application domain, audience and policies exactly. Do not create an Access bypass policy or redirect API authentication failures. Leave non-identity denial behavior unchanged.
 9. Verify a denied browser sign-in reaches the form without forwarding OAuth state or credentials. A locally disabled/missing D1 member who passes Cloudflare Access still receives the existing OAuth failure; it is not silently enrolled.
 
-Until these checks pass, the flag and denial redirect remain off. Rollback removes the custom denial redirect first and disables the feature flag; it does not alter access policies or delete health data.
+For a new environment, keep activation off until its prerequisites are configured. Production is enabled with the remaining live acceptance checks recorded above. Rollback removes the custom denial redirect first and disables the feature flag; it does not alter access policies or delete health data.
 
 ## Regression checks
 
