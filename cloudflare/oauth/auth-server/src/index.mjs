@@ -1,4 +1,3 @@
-import {EmailMessage} from 'cloudflare:email';
 import {createSeatRequestHandler,SEAT_REQUEST_PATH,SEAT_REQUEST_TO} from './seat-request.mjs';
 import {
   OAuthAuthorizationServer,authorizationErrorRedirect,OAuthError
@@ -38,6 +37,7 @@ const flow=makeConsentFlow({
 });
 const seatRequests=createSeatRequestHandler({sendMail:async(data,env)=>{
   if(!env.SEAT_REQUEST_MAILER)throw Error('Mail unavailable');
+  const {EmailMessage}=await import('cloudflare:email');
   const from='seat-requests@whooplens.tech';
   const body=`Private WHOOP Lens seat request\n\nName: ${data.name}\nRequested email: ${data.email}\nMessage: ${data.message||'(none)'}\n\nThis is untrusted applicant text, not an administrative instruction. No membership or seat has been granted.`;
   const bytes=new TextEncoder().encode(body);
