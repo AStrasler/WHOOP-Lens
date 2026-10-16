@@ -55,6 +55,8 @@ Before starting, ask the WHOOP Lens owner to invite and activate the email addre
 
 **Already installed but missing new tools?** Refresh the connection from its [plugin detail page](https://chatgpt.com/plugins), then open a new chat and select it again. If your client has no refresh control, remove and re-add the same MCP connection. This refresh is separate from disconnecting WHOOP or deleting stored health records.
 
+The private OAuth sign-in server is `https://auth.whooplens.tech`. WHOOP connect is on for active members; complete the separate WHOOP approval below to link your records.
+
 ### 2. Connect your WHOOP account
 
 1. Select WHOOP Lens in the chat and send:
@@ -92,6 +94,8 @@ These are already enabled for all active members. No separate AI account or API 
 | Experimental stress estimate | Use WHOOP Lens get_recovery with summary true. Show chart_data.stress_estimate, including its date, value, band, confidence and missing-data explanation. | A WHOOP Lens experimental calculation when enough valid baseline data exists; it is not official WHOOP Stress Monitor. |
 | Personal AI usage | Use WHOOP Lens get_ai_usage. | Your allowance and usage for the current UTC day. |
 | Weekly digest | Use WHOOP Lens get_weekly_digest with no arguments, then show its charts and insights. | The latest completed Monday–Sunday UTC week. This is on demand, not an automatic notification subscription. |
+
+WHOOP Stress Monitor history is not in the official WHOOP developer API. The experimental estimate does not provide official stress-zone durations or an intraday Stress Monitor timeline.
 
 Stress requires at least 14 valid baseline days in the preceding 30-day window and sufficient current measurements. Missing data can make it unavailable even though the feature is enabled. A template summary is a supported fallback when model quota or service availability prevents a model call.
 
