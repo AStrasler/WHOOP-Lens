@@ -31,7 +31,7 @@ Start here if you are joining WHOOP Lens. You do not need to clone this reposito
 
 ### 1. Install the private plugin in ChatGPT
 
-**Need approval first?** A seat-request form is implemented but awaiting email verification and production activation. Until it is live, contact `whoop-lens@outlook.com` with the email address you want approved. A request never grants access or reserves a seat. See [seat-request setup and status](cloudflare/docs/seat-requests.md).
+**Need approval first?** Open [Request a WHOOP Lens seat](https://auth.whooplens.tech/request-seat), enter your name and the email you want approved, optionally add a short message, agree to be contacted, complete the human verification, and select **Request a seat**. Requests are sent to `whoop-lens@outlook.com` for owner review. Users denied by the Cloudflare email allowlist are directed to this page. A request never grants access or reserves a seat; wait for owner approval before installing. Do not include health information. See [seat-request setup and status](cloudflare/docs/seat-requests.md).
 
 Before starting, ask the WHOOP Lens owner to invite and activate the email address you will use. Creating a plugin connection does not create a WHOOP Lens membership. Your ChatGPT account/workspace must also allow custom MCP plugins.
 
