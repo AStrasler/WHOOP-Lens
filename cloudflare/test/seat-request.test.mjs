@@ -33,3 +33,19 @@ test('verification outage and oversized bodies fail closed',async()=>{const s=se
 test('mail failure is retryable and never reports received',async()=>{const s=setup();try{s.dependencies.sendMail=async()=>{throw Error('offline')};const r=await s.call(post());assert.equal(r.status,503);assert.doesNotMatch(await r.text(),/Request received/);s.dependencies.sendMail=async d=>s.sent.push(d);assert.equal((await s.call(post())).status,200);assert.equal(s.sent.length,1);}finally{s.sql.close();}});
 test('pending concurrent requests do not send a second email',async()=>{const s=setup();try{let release,entered;const started=new Promise(r=>entered=r);s.dependencies.sendMail=async d=>{s.sent.push(d);entered();await new Promise(r=>release=r)};const first=s.call(post());await started;assert.equal((await s.call(post())).status,202);assert.equal(s.sent.length,1);release();assert.equal((await first).status,200);}finally{s.sql.close();}});
 test('per-IP hourly limit and independent applicants',async()=>{const s=setup();try{for(let i=0;i<5;i++)assert.equal((await s.call(post({...fields,email:`person${i}@example.test`}))).status,200);assert.equal((await s.call(post())).status,429);assert.equal((await s.call(post(fields,{'cf-connecting-ip':'192.0.2.2'}))).status,200);s.advance(3600001);assert.equal((await s.call(post({...fields,email:'later@example.test'}))).status,200);}finally{s.sql.close();}});
+test('branded form retains submission contract and narrowly scoped font policy',async()=>{const s=setup();try{
+ const response=await s.call(new Request(origin+'/request-seat'));const html=await response.text();
+ assert.match(html,/<form method="post" action="\/request-seat">/);
+ for(const name of ['name','email','message','website','consent'])assert.match(html,new RegExp(`name="${name}"`));
+ assert.match(html,/name="consent" value="contact-me" required/);assert.doesNotMatch(html,/name="consent"[^>]*checked/);
+ assert.match(html,/data-sitekey="synthetic-site" data-action="seat-request" data-theme="dark" data-size="compact"/);
+ assert.match(html,/prefers-reduced-motion:reduce/);assert.match(html,/fonts.googleapis.com/);
+ const csp=response.headers.get('content-security-policy');
+ assert.match(csp,/style-src 'unsafe-inline' https:\/\/fonts.googleapis.com;/);assert.match(csp,/font-src https:\/\/fonts.gstatic.com;/);
+ assert.match(csp,/script-src https:\/\/challenges.cloudflare.com;/);assert.match(csp,/form-action 'self';/);
+ assert.doesNotMatch(csp,/unsafe-eval|script-src[^;]*unsafe-inline|\*/);
+ assert.equal(response.headers.get('referrer-policy'),'no-referrer');assert.equal(s.sent.length,0);
+ const failed=await s.call(post({...fields,consent:''}));const errorHtml=await failed.text();assert.equal(failed.status,400);
+ assert.match(errorHtml,/class="mark"/);assert.match(errorHtml,/class="result"/);assert.match(errorHtml,/Return to the request form/);assert.doesNotMatch(errorHtml,/<form|synthetic@example/);
+ const success=await s.call(post());assert.match(await success.text(),/Request received/);assert.equal(s.sent.length,1);
+}finally{s.sql.close();}});
