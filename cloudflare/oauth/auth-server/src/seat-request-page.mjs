@@ -25,10 +25,12 @@ h1 span{color:var(--teal)}
 .seats{margin:22px 0 6px;border:1px solid var(--card-edge);border-radius:14px;padding:14px}
 .seat-row{display:flex;gap:6px;justify-content:center;margin-bottom:12px}
 .seat{width:22px;height:22px;border-radius:7px;border:1.5px solid var(--teal-dim);background:rgba(79,216,207,.05)}
+.seat.reserved{background:var(--teal-dim);border-color:var(--teal)}
 .seat.owner{background:var(--teal);border-color:var(--teal);box-shadow:0 0 10px var(--teal-glow)}
 .seat-legend{display:flex;flex-wrap:wrap;justify-content:center;gap:8px 18px;font-size:12.5px;color:var(--muted)}
 .seat-legend b{color:var(--text);font-weight:600}
 .seat-legend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1.5px solid var(--teal-dim)}
+.seat-legend .sw.reserved{background:var(--teal-dim);border-color:var(--teal)}
 .seat-legend .sw.owner{background:var(--teal);border-color:var(--teal)}
 .notice{margin-top:12px;text-align:center;font-size:12.5px;color:var(--faint);line-height:1.5}
 form{margin-top:22px}
@@ -72,8 +74,8 @@ ${body}
 export const seatRequestForm = siteKey => `
 <p class="lede">WHOOP Lens is private. Only the owner can approve access.</p>
 <div class="seats">
-<div class="seat-row" aria-hidden="true"><i class="seat owner"></i>${'<i class="seat"></i>'.repeat(9)}</div>
-<div class="seat-legend"><span><i class="sw owner"></i><b>1</b> owner/developer</span><span><i class="sw"></i>up to <b>9</b> members</span></div>
+<div class="seat-row" aria-hidden="true"><i class="seat owner"></i>${'<i class="seat reserved"></i>'.repeat(2)}${'<i class="seat"></i>'.repeat(7)}</div>
+<div class="seat-legend"><span><i class="sw owner"></i><b>1</b> owner/developer</span><span><i class="sw reserved"></i><b>2</b> reserved</span><span><i class="sw"></i><b>7</b> open</span></div>
 </div>
 <p class="notice">A request does not reserve a seat or create an account.</p>
 <form method="post" action="/request-seat">

@@ -4,6 +4,8 @@ Deployed and enabled on October 16, 2026. The request form is a public contact r
 
 The form asks for name, desired email and an optional short message, with explicit permission to contact the applicant. The auth Worker sends a plain-text email only to `whoop-lens@outlook.com` from `seat-requests@whooplens.tech`. Applicant content is untrusted and cannot choose the recipient or subject. Reply-To is the validated applicant address. The sender domain must be configured for Cloudflare email service and the destination verified.
 
+The public seat illustration shows one owner/developer seat, two owner-reserved member seats and seven open member seats. These are owner-declared reservations, not a live membership count. The display creates no membership, identity or access permission. Update the illustration when the owner changes allocations.
+
 ## Branding
 
 The request form and result pages share the teal card presentation in `cloudflare/oauth/auth-server/src/seat-request-page.mjs`. It includes reduced-motion support, visible keyboard focus, narrow-screen wrapping and a compact dark Turnstile widget. Google Fonts provides Inter and JetBrains Mono; system fallbacks remain available. The request-page CSP permits styles only from `fonts.googleapis.com` and font files from `fonts.gstatic.com`, alongside the existing inline CSS and Turnstile permissions. Browser requests to Google carry ordinary network metadata; the page uses `Referrer-Policy: no-referrer`. Form fields and consent semantics are unchanged.
