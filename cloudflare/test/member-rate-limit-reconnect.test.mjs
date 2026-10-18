@@ -515,3 +515,30 @@ test("rollback and re-apply of 0016: cursors from before the drop or while it wa
     assert.equal(content(await h.call(d,A,"get_sleep",{auto_page:true,next_token:fresh.next_token})).records.length,100);
   }finally{d.close();}
 });
+
+test("limits: a cursor that expires before the wait gets restart advice, not \"retry the same call\" (Codex P2 on 6dd5bb4)",async()=>{
+  const d=await db();
+  try{
+    const {CURSOR_TTL_MS}=await import("../src/history-pagination.mjs");
+    const cursorFor=(id,resource,ageMs)=>sealCursor({env:baseEnv,userId:id,resource,query:{start:null,end:null},
+      whoopToken:btoa(resource+":25"),depth:1,generation:rawGeneration(d,id),now:()=>Date.now()-ageMs});
+    // Member minute limit: 50 s left in the window (T0 is 10 s into a minute).
+    const w=fakeWhoop(),h=harness(w,{t:T0},{WHOOP_MEMBER_LIMIT_PER_MINUTE:"1"});
+    await h.call(d,B,"get_cycles",{limit:25});
+    const text=async args=>(await quietly(()=>h.call(d,B,"get_cycles",args))).body.result.content[0].text;
+    for(const auto of [false,true]){
+      const extra=auto?{auto_page:true}:{limit:25};
+      const nearExpiry=await text({...extra,next_token:await cursorFor(B,"cycles",CURSOR_TTL_MS-10_000)});
+      assert.match(nearExpiry,/request the first page again without next_token/);
+      assert.doesNotMatch(nearExpiry,/retry the same call/);
+      const plenty=await text({...extra,next_token:await cursorFor(B,"cycles",0)});
+      assert.match(plenty,/retry the same call/);
+    }
+    // WHOOP's own 429 (Retry-After 30) gets the same treatment.
+    const limited=new Response("{}",{status:429,headers:{"retry-after":"30"}});
+    const wl=fakeWhoop({fail:()=>limited.clone()}),hw=harness(wl);
+    const whoop=async age=>(await quietly(()=>hw.call(d,A,"get_sleep",{limit:25,next_token:age}))).body.result.content[0].text;
+    assert.match(await whoop(await cursorFor(A,"sleep",CURSOR_TTL_MS-5_000)),/WHOOP is rate limiting.*request the first page again without next_token/);
+    assert.match(await whoop(await cursorFor(A,"sleep",0)),/WHOOP is rate limiting.*retry the same call/);
+  }finally{d.close();}
+});

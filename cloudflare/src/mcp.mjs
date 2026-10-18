@@ -283,7 +283,9 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       return toolError(id,memberLimitMessage(error),modern);
     if(error?.status===429&&!flareTools.some(t=>t.name===name)){
       const wait=Number.isSafeInteger(error.retryAfter)?` Wait about ${Math.max(1,error.retryAfter)} seconds,`:" Wait a minute,";
-      return toolError(id,`WHOOP is rate limiting requests right now.${wait} then retry the same call. Any next_token you hold stays valid for up to one hour.`,modern);
+      return toolError(id,error?.cursorOutlived===true?
+        `WHOOP is rate limiting requests right now.${wait} then request the first page again without next_token; the next_token you sent will have expired by then.`:
+        `WHOOP is rate limiting requests right now.${wait} then retry the same call. Any next_token you hold stays valid for up to one hour.`,modern);
     }
     if(flareTools.some(t=>t.name===name))return toolError(id,'Flare journal request could not be completed. Verify consent, active membership, the current entry revision, and WHOOP connection for analysis. No medical data or internal error details are included.',modern);
     const safe=publicImportError(error);

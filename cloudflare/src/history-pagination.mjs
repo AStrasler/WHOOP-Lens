@@ -177,15 +177,29 @@ function pageOk(batch,max){
 // verified identity; nothing in the request arguments can select a member.
 export async function readHistoryPages({db,userId,resource,env,whoopRequest,limit,cursor,auto,now=Date.now}){
   const query={start:null,end:null};
-  let token=null,depth=0;
+  let token=null,depth=0,cursorExpiresAt=null;
   // Read once before any WHOOP request; rechecked after every page.
   const state=await connectionState(db,userId);
   const generation=state.generation;
   if(cursor!=null){
     const opened=await openCursor({env,userId,resource,query,cursor,now});
     assertCurrent(state,opened);
-    token=opened.whoopToken;depth=opened.depth;
+    token=opened.whoopToken;depth=opened.depth;cursorExpiresAt=opened.issuedAt+CURSOR_TTL_MS;
   }
+  // A rate limit before any page is returned as an error and the caller keeps
+  // the cursor it sent. Mark when that cursor expires before the advertised
+  // wait (60 s when none is given), so the message advises a restart instead
+  // of retrying the same call.
+  const request=async(...args)=>{
+    try{return await whoopRequest(...args);}
+    catch(error){
+      if(error?.status===429&&cursorExpiresAt!==null&&error&&typeof error==="object"){
+        const wait=Number.isSafeInteger(error.retryAfter)?Math.max(1,error.retryAfter):60;
+        error.cursorOutlived=now()+wait*1000>=cursorExpiresAt;
+      }
+      throw error;
+    }
+  };
   // A disconnect or reconnect that commits while a page is in flight is
   // visible here: the marker/generation and the credential change are one D1
   // batch. Such a page may already come from the next connection.
@@ -193,14 +207,14 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
     try{return sameState(await connectionState(db,userId),state);}
     catch(error){if(error instanceof CursorError)return false;throw error;}
   };
-  if(!auto)return readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,generation,now,unchanged});
+  if(!auto)return readOnePage({db,userId,resource,env,whoopRequest:request,limit,token,depth,query,generation,now,unchanged});
   const records=[];
   const seen=new Set(token?[token]:[]);
   let pages=0,reason=null,retryAfter=null,scope=null;
   while(pages<AUTO_PAGE_MAX_PAGES){
     if(depth>=SEQUENCE_MAX_PAGES){reason="page_limit";break;}
     let batch;
-    try{batch=await whoopRequest(db,userId,resource,env,{limit:AUTO_PAGE_SIZE,next_token:token});}
+    try{batch=await request(db,userId,resource,env,{limit:AUTO_PAGE_SIZE,next_token:token});}
     catch(error){
       // Nothing retrieved yet: surface the failure exactly as before.
       if(pages===0)throw error;

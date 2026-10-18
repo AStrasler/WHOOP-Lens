@@ -113,7 +113,8 @@ export function memberLimitMessage(error){
   const per=error?.window==="day"?"day (UTC)":"minute";
   const head=`This account reached its WHOOP Lens request limit (${error?.limit??"the configured number of"} WHOOP requests per ${per}). `+
     `No WHOOP request was made. Wait about ${wait} seconds, then `;
-  // History cursors live one hour from issue (history-pagination.mjs).
-  return wait>=3600?head+"request the first page again without next_token; any next_token you hold will have expired by then.":
+  // History cursors live one hour from issue (history-pagination.mjs);
+  // cursorOutlived: the next_token in this request expires before the wait ends.
+  return wait>=3600||error?.cursorOutlived===true?head+"request the first page again without next_token; any next_token you hold will have expired by then.":
     head+"retry the same call. A next_token stays valid for one hour after it was issued.";
 }
