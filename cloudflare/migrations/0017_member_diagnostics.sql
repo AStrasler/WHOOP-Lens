@@ -49,3 +49,12 @@ CREATE TABLE IF NOT EXISTS issue_reports (
 CREATE INDEX IF NOT EXISTS issue_reports_member ON issue_reports(user_id,updated_at DESC);
 CREATE INDEX IF NOT EXISTS issue_reports_status ON issue_reports(status,updated_at DESC);
 CREATE INDEX IF NOT EXISTS issue_reports_day ON issue_reports(day_key);
+-- One row per preview: the member must approve the exact cleaned text before
+-- submit. Only a SHA-256 digest of the random approval token is stored.
+CREATE TABLE IF NOT EXISTS issue_report_approvals (
+  token_hash TEXT PRIMARY KEY CHECK(length(token_hash)=64 AND token_hash NOT GLOB '*[^0-9a-f]*'),
+  user_id TEXT NOT NULL REFERENCES identity_links(user_id) ON DELETE CASCADE,
+  dedupe_key TEXT NOT NULL CHECK(length(dedupe_key)=64 AND dedupe_key NOT GLOB '*[^0-9a-f]*'),
+  expires_at INTEGER NOT NULL CHECK(expires_at>0)
+);
+CREATE INDEX IF NOT EXISTS issue_report_approvals_member ON issue_report_approvals(user_id,expires_at);

@@ -10,7 +10,7 @@ import {createStagingRouter} from '../src/router.mjs';
 import {handleMcpRpc,validateMcpTransport} from '../src/mcp.mjs';
 import {ISSUE_CONSENT} from '../src/health-connect-webhook.mjs';
 import {capture,sanitizeEvent,classifyToolError,newRequestId,BUCKET_MS,RETENTION_DAYS} from '../src/diagnostics.mjs';
-import {sanitizeDescription,SUBMIT_CONFIRM,LIMITS,reportIssue} from '../src/issue-reports.mjs';
+import {sanitizeDescription,LIMITS,reportIssue,APPROVAL_TTL_MS,REPORT_RETENTION_DAYS} from '../src/issue-reports.mjs';
 import {hostInstructionsFor} from '../src/host-instructions.mjs';
 import {FeatureDisabled} from '../src/member-guidance.mjs';
 
@@ -64,6 +64,18 @@ async function webhook(db,token,body){
 }
 const envelope=extra=>({timestamp:'2026-10-18T21:00:00.000Z',app_version:'1.9.22',...extra});
 const HEALTH='4321';
+const FAKE_TOKEN='ira_'+'A'.repeat(43);
+// Preview, then submit with the returned approval token (the member-approved path).
+async function approved(db,who,args,opts){
+  const preview=await reportIssue(db,who,args,{...opts,now:opts.now});
+  return reportIssue(db,who,{...args,approval_token:preview.approval_token},opts);
+}
+async function previewToken(db,who,args,env=ON){
+  return JSON.parse((await call(db,who,'report_issue',args,env)).result.content[0].text).approval_token;
+}
+async function callApproved(db,who,args,env=ON,rid){
+  return call(db,who,'report_issue',{...args,approval_token:await previewToken(db,who,args,env)},env,rid);
+}
 
 // ------------------------------------------------------------ capture
 
@@ -141,7 +153,7 @@ test('unauthenticated and non-member requests are captured without a member id a
   const db=await fixture();try{
     const anon=await viaRouter(db,null,'report_issue',{category:'other',description:'it broke again'});
     assert.equal(anon.status,401);
-    const outsider=await viaRouter(db,OUTSIDER,'report_issue',{category:'other',description:'it broke again',confirm:SUBMIT_CONFIRM});
+    const outsider=await viaRouter(db,OUTSIDER,'report_issue',{category:'other',description:'it broke again',approval_token:FAKE_TOKEN});
     assert.equal(outsider.status,403);
     const r=rows(db);
     assert.deepEqual(r.map(x=>[x.category,x.code,x.user_key]),[['auth','unauthenticated',''],['authorization','membership_inactive',OUTSIDER]]);
@@ -188,7 +200,7 @@ test('approved report is bound to the authenticated member, carries the request 
     await capture(ON,db,{category:'whoop_api',subsystem:'whoop_api',code:'whoop_upstream_error',outcome:'fail',retryable:true,requestId:newRequestId(),userId:AMYLIKE});
     await capture(ON,db,{category:'auth',subsystem:'mcp',code:'other_member_event',outcome:'fail',requestId:newRequestId(),userId:KIMLIKE});
     const rid='req_00112233445566aa';
-    const r=data(await call(db,AMYLIKE,'report_issue',{category:'backend_failure',description:'Recovery keeps failing to load',confirm:SUBMIT_CONFIRM},ON,rid));
+    const r=data(await callApproved(db,AMYLIKE,{category:'backend_failure',description:'Recovery keeps failing to load'},ON,rid));
     assert.equal(r.submitted,true);assert.match(r.reference,/^WL-[A-Z0-9]{8}$/);assert.equal(r.duplicate,false);
     const row=db.sqlite.prepare('SELECT * FROM issue_reports').get();
     assert.equal(row.reference,r.reference);assert.equal(row.user_id,AMYLIKE);assert.equal(row.request_id,rid);
@@ -199,20 +211,65 @@ test('approved report is bound to the authenticated member, carries the request 
   }finally{db.close();}
 });
 
+test('submission needs a server-issued approval for this member and this exact text, used once, before it expires',async()=>{
+  const db=await fixture();try{
+    const t0=Date.parse('2026-10-18T12:00:00Z'),rid=newRequestId(),opts={requestId:rid,env:ON,now:t0};
+    const args={category:'other',description:'Charts stopped loading today'};
+    const count=()=>db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports').get().n;
+    // A made-up token (the client skipped the preview) is refused.
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approval_token:FAKE_TOKEN},opts),/fresh preview.*no reference was created/);
+    const preview=await reportIssue(db,AMYLIKE,args,opts);
+    assert.match(preview.approval_token,/^ira_[A-Za-z0-9_-]{43}$/);
+    // Only a digest is stored.
+    assert.ok(!JSON.stringify(db.sqlite.prepare('SELECT * FROM issue_report_approvals').all()).includes(preview.approval_token));
+    // Another member cannot use it, and different text cannot use it.
+    await assert.rejects(reportIssue(db,KIMLIKE,{...args,approval_token:preview.approval_token},opts),/fresh preview/);
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,description:'Something else entirely broke',approval_token:preview.approval_token},opts),/fresh preview/);
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,category:'temporary',approval_token:preview.approval_token},opts),/fresh preview/);
+    // Expired approvals are refused.
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},{...opts,now:t0+APPROVAL_TTL_MS+1}),/fresh preview/);
+    assert.equal(count(),0);
+    const ok=await reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},opts);
+    assert.equal(ok.submitted,true);
+    // Used once.
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},{...opts,now:t0+120000}),/fresh preview/);
+    assert.equal(count(),1);
+    // A rate-limited submission does not burn the approval.
+    const second=await reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},{...opts,now:t0+1000});
+    await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+1000}),/Too many reports/);
+    assert.equal((await reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+62000})).submitted,true);
+    // Open previews are capped per member.
+    for(let i=0;i<10;i++)await reportIssue(db,KIMLIKE,{category:'other',description:'Preview number '+'abcdefghijk'[i]+' only'},opts).catch(()=>{});
+    await assert.rejects(reportIssue(db,KIMLIKE,{category:'other',description:'One preview too many'},opts),/Too many reports/);
+  }finally{db.close();}
+});
+
+test('retention runs on any diagnostic write, independent of new reports',async()=>{
+  const db=await fixture();try{
+    const t0=Date.parse('2026-01-01T00:00:00Z'),rid=newRequestId();
+    const r=await approved(db,AMYLIKE,{category:'other',description:'An old resolved problem'},{requestId:rid,env:ON,now:t0});
+    db.sqlite.prepare("UPDATE issue_reports SET status='resolved'").run();
+    const later=t0+(REPORT_RETENTION_DAYS+1)*86400000;
+    await capture(ON,db,{category:'auth',subsystem:'mcp',code:'unauthenticated',outcome:'fail',requestId:rid},{now:later});
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports WHERE reference=?').get(r.reference).n,0);
+  }finally{db.close();}
+});
+
 test('a failed write never returns a reference or claims submission',async()=>{
   const db=await fixture();try{
     const broken={...db,batch:async()=>{throw Error('D1 down');}};
-    const r=await call(broken,AMYLIKE,'report_issue',{category:'other',description:'Something is wrong here',confirm:SUBMIT_CONFIRM});
+    const args={category:'other',description:'Something is wrong here'};
+    const r=await call(broken,AMYLIKE,'report_issue',{...args,approval_token:await previewToken(db,AMYLIKE,args)});
     assert.equal(r.result.isError,true);
     assert.match(text(r),/was not submitted and no reference was created/);
     assert.doesNotMatch(text(r),/WL-/);
     // A write that reports success but cannot be read back is also not confirmed.
     const ghost={...db,batch:async()=>[{success:true,meta:{changes:1}},{success:true}]};
-    const g=await call(ghost,AMYLIKE,'report_issue',{category:'other',description:'Something is wrong here',confirm:SUBMIT_CONFIRM});
+    const g=await call(ghost,AMYLIKE,'report_issue',{...args,approval_token:await previewToken(db,AMYLIKE,args)});
     assert.equal(g.result.isError,true);assert.doesNotMatch(text(g),/WL-/);
     // Without the migration the tool fails closed with the same message.
     const old=await fixture({upTo:'0016_whoop_connection_generations.sql'});
-    try{const o=await call(old,AMYLIKE,'report_issue',{category:'other',description:'Something is wrong here',confirm:SUBMIT_CONFIRM});
+    try{const o=await call(old,AMYLIKE,'report_issue',{category:'other',description:'Something is wrong here'});
       assert.equal(o.result.isError,true);assert.match(text(o),/no reference was created/);}finally{old.close();}
   }finally{db.close();}
 });
@@ -220,13 +277,13 @@ test('a failed write never returns a reference or claims submission',async()=>{
 test('duplicates update the same reference; a resolved report that recurs is marked recurring',async()=>{
   const db=await fixture();try{
     const t0=Date.parse('2026-10-18T20:00:00Z'),rid=newRequestId();
-    const args={category:'temporary',description:'Sync keeps timing out',confirm:SUBMIT_CONFIRM};
-    const a=await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0});
-    const b=await reportIssue(db,AMYLIKE,{...args,description:'  sync KEEPS timing   out '},{requestId:rid,env:ON,now:t0+120000});
+    const args={category:'temporary',description:'Sync keeps timing out'};
+    const a=await approved(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0});
+    const b=await approved(db,AMYLIKE,{...args,description:'  sync KEEPS timing   out '},{requestId:rid,env:ON,now:t0+120000});
     assert.equal(b.reference,a.reference);assert.equal(b.duplicate,true);
     assert.equal(db.sqlite.prepare('SELECT occurrences FROM issue_reports').get().occurrences,2);
     db.sqlite.prepare("UPDATE issue_reports SET status='resolved'").run();
-    const c=await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+240000});
+    const c=await approved(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+240000});
     assert.equal(c.reference,a.reference);assert.equal(c.status,'recurring');
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports').get().n,1);
   }finally{db.close();}
@@ -235,7 +292,7 @@ test('duplicates update the same reference; a resolved report that recurs is mar
 test('rate limits: one per minute, a daily cap per member, and a server-wide cap',async()=>{
   const db=await fixture();try{
     const t0=Date.parse('2026-10-18T10:00:00Z'),rid=newRequestId();
-    const send=(who,i,now)=>reportIssue(db,who,{category:'other',description:'Problem number '+'abcdefghij'[i]+' happened',confirm:SUBMIT_CONFIRM},{requestId:rid,env:ON,now});
+    const send=(who,i,now)=>approved(db,who,{category:'other',description:'Problem number '+'abcdefghij'[i]+' happened'},{requestId:rid,env:ON,now});
     await send(AMYLIKE,0,t0);
     await assert.rejects(send(AMYLIKE,1,t0+1000),/Too many reports.*no reference was created/);
     for(let i=1;i<LIMITS.perMemberPerDay;i++)await send(AMYLIKE,i,t0+i*61000);
@@ -255,13 +312,13 @@ test('rate limits: one per minute, a daily cap per member, and a server-wide cap
 test('duplicate submissions count toward the per-member and server daily limits; owner status changes do not',async()=>{
   const db=await fixture();try{
     const t0=Date.parse('2026-10-18T01:00:00Z'),rid=newRequestId();
-    const args={category:'other',description:'Same problem again today',confirm:SUBMIT_CONFIRM};
-    for(let i=0;i<LIMITS.perMemberPerDay;i++)await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+i*61000});
-    await assert.rejects(reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+10*61000}),/Too many reports/);
+    const args={category:'other',description:'Same problem again today'};
+    for(let i=0;i<LIMITS.perMemberPerDay;i++)await approved(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+i*61000});
+    await assert.rejects(approved(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+10*61000}),/Too many reports/);
     const row=db.sqlite.prepare('SELECT occurrences,day_submissions FROM issue_reports').get();
     assert.equal(row.occurrences,LIMITS.perMemberPerDay);assert.equal(row.day_submissions,LIMITS.perMemberPerDay);
     // The next UTC day starts a fresh count on the same row.
-    const next=await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+86400000});
+    const next=await approved(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+86400000});
     assert.equal(next.duplicate,true);
     assert.equal(db.sqlite.prepare('SELECT day_submissions FROM issue_reports').get().day_submissions,1);
     // An owner status change neither consumes nor resets the member's budget.
@@ -290,7 +347,7 @@ test('descriptions are redacted: numbers, links, addresses, ids and credentials 
 
 test('a too-short or all-redacted description is not submitted',async()=>{
   const db=await fixture();try{
-    const r=await call(db,AMYLIKE,'report_issue',{category:'other',description:'45 52 a@b.co',confirm:SUBMIT_CONFIRM});
+    const r=await call(db,AMYLIKE,'report_issue',{category:'other',description:'45 52 a@b.co'});
     assert.equal(r.result.isError,true);assert.match(text(r),/no reference was created/);
   }finally{db.close();}
 });
@@ -298,7 +355,7 @@ test('a too-short or all-redacted description is not submitted',async()=>{
 test('member isolation and owner-only oversight',async()=>{
   const db=await fixture();try{
     const rid=newRequestId(),t0=Date.parse('2026-10-18T10:00:00Z');
-    const amy=await reportIssue(db,AMYLIKE,{category:'unavailable_data',description:'Amy private wording here',confirm:SUBMIT_CONFIRM},{requestId:rid,env:ON,now:t0});
+    const amy=await approved(db,AMYLIKE,{category:'unavailable_data',description:'Amy private wording here'},{requestId:rid,env:ON,now:t0});
     // Members do not see or reach owner tools.
     const list=(await handleMcpRpc({jsonrpc:'2.0',id:1,method:'tools/list'},{db,userId:KIMLIKE,env:ON},{...transport,modern:false})).result.tools.map(t=>t.name);
     assert.ok(list.includes('report_issue'));assert.ok(!list.includes('review_issue_reports'));assert.ok(!list.includes('update_issue_report'));
@@ -319,7 +376,7 @@ test('member isolation and owner-only oversight',async()=>{
     const missing=await call(db,OWNER,'update_issue_report',{reference:'WL-ZZZZZZZZ',status:'resolved'});
     assert.equal(missing.result.isError,true);
     // A member cannot report on behalf of someone else: no id argument exists.
-    const spoof=await call(db,KIMLIKE,'report_issue',{category:'other',description:'on behalf of Amy',user_id:AMYLIKE,confirm:SUBMIT_CONFIRM});
+    const spoof=await call(db,KIMLIKE,'report_issue',{category:'other',description:'on behalf of Amy',user_id:AMYLIKE});
     assert.equal(spoof.error.message,'Invalid tool arguments');
     // The owner setting alone decides; a developer seat row elsewhere does not.
     const noOwner={...ON};delete noOwner.WHOOP_LENS_DEVELOPER_USER_ID;
@@ -347,7 +404,7 @@ test('with the flag off the tools are not listed and cannot be called; guidance 
 test('member-facing report responses contain no internal detail or health data',async()=>{
   const db=await fixture();try{
     await capture(ON,db,{category:'infrastructure',subsystem:'mcp',code:'db_error',outcome:'fail',requestId:newRequestId(),userId:AMYLIKE});
-    const r=await call(db,AMYLIKE,'report_issue',{category:'backend_failure',description:'My HRV of 45 vanished',confirm:SUBMIT_CONFIRM});
+    const r=await callApproved(db,AMYLIKE,{category:'backend_failure',description:'My HRV of 45 vanished'});
     const out=text(r);
     assert.ok(!out.includes('45')&&!out.includes('db_error')&&!out.includes('req_')&&!out.includes(AMYLIKE));
     assert.match(data(r).message,/^Report WL-[A-Z0-9]{8} was saved/);
@@ -365,7 +422,7 @@ test('0017 applies after 0001-0016, rolls back and re-applies; existing rows unt
     sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(AMYLIKE,AMYLIKE);
     sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(AMYLIKE);
     sqlite.prepare("INSERT INTO health_import_consent(user_id,purpose,granted_at) VALUES(?,'health_connect_file','2026-10-01')").run(AMYLIKE);
-    const objects=()=>JSON.stringify(sqlite.prepare("SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('diagnostic_events','issue_reports') ORDER BY name").all());
+    const objects=()=>JSON.stringify(sqlite.prepare("SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('diagnostic_events','issue_reports','issue_report_approvals') ORDER BY name").all());
     const data=()=>JSON.stringify(['identity_links','whoop_members','health_import_consent'].map(t=>sqlite.prepare('SELECT * FROM '+t).all()));
     const before=[objects(),data()];
     const up=sqlOf('0017_member_diagnostics.sql');
@@ -374,13 +431,13 @@ test('0017 applies after 0001-0016, rolls back and re-applies; existing rows unt
     sqlite.exec(up); // idempotent
     assert.deepEqual([objects(),data()],before);
     const down=readFileSync(new URL('../migration/rollback/0017_member_diagnostics.down.sql',import.meta.url),'utf8');
-    assert.deepEqual(down.match(/DROP TABLE IF EXISTS \w+/g),['DROP TABLE IF EXISTS issue_reports','DROP TABLE IF EXISTS diagnostic_events']);
+    assert.deepEqual(down.match(/DROP TABLE IF EXISTS \w+/g),['DROP TABLE IF EXISTS issue_report_approvals','DROP TABLE IF EXISTS issue_reports','DROP TABLE IF EXISTS diagnostic_events']);
     sqlite.exec(down);
-    assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('diagnostic_events','issue_reports')").get().n,0);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('diagnostic_events','issue_reports','issue_report_approvals')").get().n,0);
     assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM d1_migrations WHERE name='0017_member_diagnostics.sql'").get().n,0);
     assert.deepEqual([objects(),data()],before);
     sqlite.exec(up);
-    assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('diagnostic_events','issue_reports')").get().n,2);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM sqlite_master WHERE name IN ('diagnostic_events','issue_reports','issue_report_approvals')").get().n,3);
     // Constraints reject free text in code fields.
     assert.throws(()=>sqlite.prepare("INSERT INTO diagnostic_events(user_key,category,subsystem,code,outcome,retryable,bucket,first_at,last_at,request_id) VALUES('','auth','mcp','Free Text 45','fail',0,0,'a','a','req_0011223344556677')").run());
   }finally{sqlite.close();}

@@ -15,13 +15,13 @@ Sources: MCP tool errors and invalid arguments, WHOOP API, auth and 429s, AI sum
 Retention: 30 days. Each write sweeps at most 50 expired rows.
 
 ## Member reports (`src/issue-reports.mjs`)
-- `report_issue` takes `{category, description, confirm?}`. There is no member id argument; the member is the authenticated one.
-- The first call (no `confirm`) only returns the cleaned text. The host must show it, and send `confirm: "submit-issue-report"` only after the member approves.
+- `report_issue` takes `{category, description, approval_token?}`. There is no member id argument; the member is the authenticated one.
+- The first call (no `approval_token`) returns the cleaned text and a random `approval_token`. Only its SHA-256 is stored, bound to this member and the exact cleaned text and category, for 10 minutes, with at most 10 open per member. Submitting requires that token. It is checked again inside the insert and consumed only if this submission was stored. The server cannot tell whether a person or the AI host approved, but it guarantees that the exact text was previewed first.
 - Cleaning removes every number in any script (health values, dates, phone numbers), labeled secrets ("password: …", "my pin is …"), email addresses, links, UUIDs, bearer, JWT and other token-like strings, and markup. 500 characters max.
 - The write is one conditional `INSERT … ON CONFLICT` that also checks active membership and the limits: 1 per minute and 5 per UTC day per member, 100 per UTC day server-wide. Duplicates count as submissions, and owner status changes never touch the counters. Duplicates update the same reference. A resolved report that comes back becomes `recurring`.
 - A `WL-XXXXXXXX` reference is returned only after the row is read back for this member and request. Every failure says "not submitted and no reference was created."
 - Evidence attached: up to 10 of this member's own sanitized events from the last 24 hours.
-- Resolved reports are purged 180 days after their last update.
+- Resolved reports are purged 180 days after their last update. Expired approvals are purged too. Retention runs on every diagnostic write, preview, submission and owner review, so it does not depend on new reports. There is no cron trigger: if the server gets no traffic at all, nothing runs.
 
 ## Owner oversight
 `review_issue_reports` and `update_issue_report` are listed and callable only when `WHOOP_LENS_DEVELOPER_USER_ID` equals the caller (the `get_ai_usage` rule). Anyone else gets "Unknown tool".

@@ -18,6 +18,17 @@ const REQUEST_ID=/^[a-z0-9_]{8,40}$/;
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const BUCKET_MS=10*60*1000;
 export const RETENTION_DAYS=30;
+export const REPORT_RETENTION_DAYS=180;
+// Retention for the report queue (issue-reports.mjs). Kept here so every
+// diagnostic write can run it without an import cycle.
+export const PURGE_REPORTS='DELETE FROM issue_reports WHERE reference IN (SELECT reference FROM issue_reports '+
+  "WHERE status='resolved' AND updated_at<?1 ORDER BY updated_at LIMIT 20)";
+export const PURGE_APPROVALS='DELETE FROM issue_report_approvals WHERE token_hash IN '+
+  '(SELECT token_hash FROM issue_report_approvals WHERE expires_at<=?1 LIMIT 50)';
+export function retentionStatements(db,now){
+  return [db.prepare(PURGE_REPORTS).bind(new Date(now-REPORT_RETENTION_DAYS*86400000).toISOString()),
+    db.prepare(PURGE_APPROVALS).bind(now)];
+}
 
 export function diagnosticsEnabled(env){return env?.DIAGNOSTICS_CAPTURE_ENABLED==='true';}
 export function newRequestId(){
@@ -52,7 +63,9 @@ export async function capture(env,db,event,{now=Date.now()}={}){
     const results=await db.batch([
       db.prepare(UPSERT).bind(clean.user_key,clean.category,clean.subsystem,clean.code,clean.outcome,
         clean.retryable?1:0,clean.bucket,clean.at,clean.request_id),
-      db.prepare(SWEEP).bind(cutoff)
+      db.prepare(SWEEP).bind(cutoff),
+      // Report retention also runs here, so it does not depend on new reports.
+      ...retentionStatements(db,now)
     ]);
     return Array.isArray(results)&&results[0]?.success===true;
   }catch{return false;}

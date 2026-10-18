@@ -5,13 +5,15 @@
 // a status; nothing here runs commands, changes infrastructure, rotates
 // credentials, or changes permissions.
 import {ACTIVE_MEMBER_SQL,activeMembership} from './storage.mjs';
-import {KINDS,validRequestId} from './diagnostics.mjs';
+import {KINDS,validRequestId,retentionStatements,REPORT_RETENTION_DAYS} from './diagnostics.mjs';
+export {REPORT_RETENTION_DAYS};
 
-export const SUBMIT_CONFIRM='submit-issue-report';
+export const APPROVAL_TTL_MS=10*60*1000;
+const APPROVAL_RE=/^ira_[A-Za-z0-9_-]{43}$/;
+const MAX_OPEN_APPROVALS=10;
 export const STATUSES=Object.freeze(['new','acknowledged','resolved','recurring']);
 // Per UTC day; duplicates count as submissions.
 export const LIMITS=Object.freeze({perMemberPerDay:5,perMemberIntervalMs:60_000,serverPerDay:100});
-export const REPORT_RETENTION_DAYS=180;
 const MAX_INPUT=1000,MAX_STORED=500,MIN_WORDS=2;
 
 export function issueReportsEnabled(env){return env?.ISSUE_REPORTS_ENABLED==='true';}
@@ -26,7 +28,8 @@ export class ReportNotSubmitted extends Error{
     const text={rate_limited:'Too many reports were sent recently. Wait a while and try again.',
       unavailable:'Issue reporting is not available right now.',
       too_short:'Describe the problem in a few plain words first.',
-      not_found:'No report with that reference was found.'}[reason]??'The report could not be saved.';
+      not_found:'No report with that reference was found.',
+      approval_invalid:'This report needs a fresh preview, and the member must approve that exact text.'}[reason]??'The report could not be saved.';
     super(`${text} The report was not submitted and no reference was created.`);
     this.name='ReportNotSubmitted';this.reason=reason;
   }
@@ -91,7 +94,8 @@ const INSERT='INSERT INTO issue_reports(reference,user_id,category,severity,stat
   "SELECT ?2,?1,?3,?4,'new',?5,?6,?7,?8,?9,1,?11,1,?10,?10,?10 WHERE "+MEMBER_EXISTS+
   ' AND (SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE user_id=?1 AND day_key=?11)<?13'+
   ' AND NOT EXISTS (SELECT 1 FROM issue_reports WHERE user_id=?1 AND last_submitted_at>?12)'+
-  ' AND (SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE day_key=?11)<?14 '+
+  ' AND (SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE day_key=?11)<?14'+
+  ' AND EXISTS (SELECT 1 FROM issue_report_approvals WHERE token_hash=?15 AND user_id=?1 AND dedupe_key=?6 AND expires_at>?16) '+
   'ON CONFLICT(user_id,dedupe_key) DO UPDATE SET occurrences=occurrences+1,'+
   'day_submissions=CASE WHEN day_key=excluded.day_key THEN day_submissions+1 ELSE 1 END,'+
   'day_key=excluded.day_key,last_submitted_at=excluded.last_submitted_at,'+
@@ -100,8 +104,15 @@ const INSERT='INSERT INTO issue_reports(reference,user_id,category,severity,stat
   'subsystems=excluded.subsystems,severity=excluded.severity';
 const CONFIRM_SQL='SELECT reference,occurrences,status,created_at FROM issue_reports '+
   'WHERE user_id=?1 AND dedupe_key=?2 AND request_id=?3 AND last_submitted_at=?4 LIMIT 1';
-const PURGE='DELETE FROM issue_reports WHERE reference IN (SELECT reference FROM issue_reports '+
-  "WHERE status='resolved' AND updated_at<?1 ORDER BY updated_at LIMIT 20)";
+const PREVIEW='INSERT INTO issue_report_approvals(token_hash,user_id,dedupe_key,expires_at) SELECT ?2,?1,?3,?4 WHERE '+
+  `EXISTS (${ACTIVE_MEMBER_SQL})`+' AND (SELECT COUNT(*) FROM issue_report_approvals WHERE user_id=?1 AND expires_at>?5)<?6';
+const APPROVAL_OK='SELECT 1 AS ok FROM issue_report_approvals WHERE token_hash=?1 AND user_id=?2 AND dedupe_key=?3 AND expires_at>?4';
+const CONSUME='DELETE FROM issue_report_approvals WHERE token_hash=?1 AND user_id=?2 AND EXISTS '+
+  '(SELECT 1 FROM issue_reports WHERE user_id=?2 AND dedupe_key=?3 AND request_id=?4 AND last_submitted_at=?5)';
+function approvalToken(){
+  const bytes=crypto.getRandomValues(new Uint8Array(32));
+  return 'ira_'+btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
+}
 
 export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}={}){
   if(!issueReportsEnabled(env))throw new ReportNotSubmitted('unavailable');
@@ -110,24 +121,45 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
   if(!clean||clean.words<MIN_WORDS)throw new ReportNotSubmitted('too_short');
   const kind=args.category;
   const since=new Date(now-86400000).toISOString();
-  if(args.confirm!==SUBMIT_CONFIRM){
-    // Preview only: nothing is written until the member approves this text.
+  const key=await sha256Hex(userId+'\n'+kind+'\n'+clean.text.toLowerCase());
+  if(args.approval_token===undefined){
+    // Preview: store only a digest of a random approval token bound to this
+    // member and this exact cleaned text. No report exists yet.
+    const token=approvalToken();
+    let run;
+    try{
+      const results=await db.batch([
+        db.prepare(PREVIEW).bind(userId,await sha256Hex(token),key,now+APPROVAL_TTL_MS,now,MAX_OPEN_APPROVALS),
+        ...retentionStatements(db,now)
+      ]);
+      run=results?.[0];
+    }catch{throw new ReportNotSubmitted('unavailable');}
+    if(!run?.success)throw new ReportNotSubmitted('unavailable');
+    if((run.meta?.changes??0)!==1)throw new ReportNotSubmitted('rate_limited');
     return {submitted:false,approval_required:true,category:kind,sanitized_description:clean.text,removed:clean.removed,
+      approval_token:token,approval_expires_in_seconds:APPROVAL_TTL_MS/1000,
       will_attach:['this request id','up to 10 recent sanitized diagnostic codes for this account (no health data)'],
-      next_step:`Show sanitized_description to the member. Only if they approve it, call report_issue again with the same category and description and confirm "${SUBMIT_CONFIRM}". No report exists yet.`};
+      next_step:'Show sanitized_description to the member. Only if they approve it, call report_issue again with the same category and description and this approval_token. No report exists yet.'};
   }
+  if(typeof args.approval_token!=='string'||!APPROVAL_RE.test(args.approval_token))throw new ReportNotSubmitted('approval_invalid');
+  const tokenHash=await sha256Hex(args.approval_token);
+  let approved;
+  try{approved=await db.prepare(APPROVAL_OK).bind(tokenHash,userId,key,now).first();}catch{throw new ReportNotSubmitted('unavailable');}
+  if(!approved)throw new ReportNotSubmitted('approval_invalid');
   if(!await activeMembership(db,userId))throw new ReportNotSubmitted('unavailable');
   const evidence=await memberEvidence(db,userId,since);
   const subsystems=[...new Set(evidence.map(e=>e.subsystem))].join(',').slice(0,200);
-  const key=await sha256Hex(userId+'\n'+kind+'\n'+clean.text.toLowerCase());
   const at=new Date(now).toISOString();
   let run;
   try{
+    // One transaction: the insert re-checks the approval, the approval is
+    // consumed only if this exact submission was stored, then retention runs.
     const results=await db.batch([
       db.prepare(INSERT).bind(userId,newReference(),kind,severityFor(kind,evidence),clean.text,key,requestId,
         JSON.stringify(evidence),subsystems,at,at.slice(0,10),new Date(now-LIMITS.perMemberIntervalMs).toISOString(),
-        LIMITS.perMemberPerDay,LIMITS.serverPerDay),
-      db.prepare(PURGE).bind(new Date(now-REPORT_RETENTION_DAYS*86400000).toISOString())
+        LIMITS.perMemberPerDay,LIMITS.serverPerDay,tokenHash,now),
+      db.prepare(CONSUME).bind(tokenHash,userId,key,requestId,at),
+      ...retentionStatements(db,now)
     ]);
     run=results?.[0];
   }catch{throw new ReportNotSubmitted('unavailable');}
@@ -150,6 +182,7 @@ const DIAG_SQL='SELECT category,subsystem,code,outcome,SUM(count) AS n,MAX(last_
   'WHERE last_at>?1 AND outcome<>\'success\' GROUP BY category,subsystem,code,outcome ORDER BY n DESC LIMIT 25';
 export async function reviewIssueReports(db,userId,args,{env,now=Date.now()}={}){
   if(!issueReportsEnabled(env)||!isOwner(env,userId))throw new ReportNotSubmitted('unavailable');
+  try{await db.batch(retentionStatements(db,now));}catch{/* retention is retried on the next write */}
   const rows=(await db.prepare(LIST_SQL).bind(args.status??null,args.category??null,args.limit??10,args.offset??0).all())?.results??[];
   const counts=Object.fromEntries(STATUSES.map(s=>[s,0]));
   for(const r of (await db.prepare(COUNTS_SQL).all())?.results??[])if(Object.hasOwn(counts,r.status))counts[r.status]=r.n;
@@ -171,11 +204,11 @@ export async function updateIssueReport(db,userId,args,{env,now=Date.now()}={}){
 }
 export const reportIssueTool=Object.freeze({
   name:'report_issue',
-  description:'Report a problem with WHOOP Lens to the server owner. First call without confirm to get the cleaned text; show it to the member and call again with confirm only if they approve. Numbers, links, addresses and credentials are removed. A reference is returned only after the report is saved.',
+  description:'Report a problem with WHOOP Lens to the server owner. First call without approval_token to get the cleaned text and an approval_token; show the text to the member and call again with the same category, description and approval_token only if they approve. Numbers, links, addresses and credentials are removed. A reference is returned only after the report is saved.',
   inputSchema:{type:'object',properties:{
     category:{type:'string',enum:[...KINDS]},
     description:{type:'string',minLength:1,maxLength:MAX_INPUT,description:'What went wrong, in plain words. Do not include health values or personal details.'},
-    confirm:{type:'string',enum:[SUBMIT_CONFIRM],description:'Only after the member approved the cleaned text.'}
+    approval_token:{type:'string',pattern:'^ira_[A-Za-z0-9_-]{43}$',description:'From the preview call, only after the member approved that cleaned text. Expires after 10 minutes.'}
   },required:['category','description'],additionalProperties:false},
   annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}
 });
@@ -199,11 +232,11 @@ export function issueArguments(name,args){
   const keys=Object.keys(args);
   const only=allowed=>keys.every(k=>allowed.includes(k));
   if(name==='report_issue'){
-    if(!only(['category','description','confirm']))return null;
+    if(!only(['category','description','approval_token']))return null;
     if(!KINDS.includes(args.category))return null;
     if(typeof args.description!=='string'||args.description.length<1||args.description.length>MAX_INPUT)return null;
-    if(args.confirm!==undefined&&args.confirm!==SUBMIT_CONFIRM)return null;
-    return {category:args.category,description:args.description,confirm:args.confirm};
+    if(args.approval_token!==undefined&&(typeof args.approval_token!=='string'||!APPROVAL_RE.test(args.approval_token)))return null;
+    return {category:args.category,description:args.description,approval_token:args.approval_token};
   }
   if(name==='review_issue_reports'){
     if(!only(['status','category','limit','offset']))return null;
