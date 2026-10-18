@@ -63,12 +63,18 @@ function boundaries(seatRole,owner){
   return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...(owner?[ROLE_BOUNDARIES.ownerUsage]:[])];
 }
 const ROLE_SQL='SELECT seat_role FROM whoop_connections WHERE user_id=?1 LIMIT 1';
-const TOKEN_SQL='SELECT created_at,window_started_at FROM health_connect_ingest_tokens '+
-  'WHERE user_id=?1 AND revoked_at IS NULL LIMIT 1';
-const ANY_TOKEN_SQL='SELECT COUNT(*) AS n FROM health_connect_ingest_tokens WHERE user_id=?1';
-const RECORDS_SQL='SELECT COUNT(*) AS n,MAX(created_at) AS latest_created,MAX(updated_at) AS latest_updated '+
-  'FROM health_connect_records WHERE user_id=?1';
-const CONSENT_SQL='SELECT granted_at,withdrawn_at FROM health_import_consent WHERE user_id=?1 LIMIT 1';
+// One statement, so token, consent and record fields come from one consistent
+// database snapshot (a concurrent issue, revoke or withdrawal cannot split it).
+const HC_STATUS_SQL='SELECT '+
+  '(SELECT created_at FROM health_connect_ingest_tokens WHERE user_id=?1 AND revoked_at IS NULL LIMIT 1) AS token_created,'+
+  '(SELECT window_started_at FROM health_connect_ingest_tokens WHERE user_id=?1 AND revoked_at IS NULL LIMIT 1) AS token_window,'+
+  '(SELECT COUNT(*) FROM health_connect_ingest_tokens WHERE user_id=?1 AND revoked_at IS NULL) AS active_tokens,'+
+  '(SELECT COUNT(*) FROM health_connect_ingest_tokens WHERE user_id=?1) AS all_tokens,'+
+  '(SELECT COUNT(*) FROM health_connect_records WHERE user_id=?1) AS records,'+
+  '(SELECT MAX(created_at) FROM health_connect_records WHERE user_id=?1) AS latest_created,'+
+  '(SELECT MAX(updated_at) FROM health_connect_records WHERE user_id=?1) AS latest_updated,'+
+  '(SELECT COUNT(*) FROM health_import_consent WHERE user_id=?1) AS consent_rows,'+
+  '(SELECT withdrawn_at FROM health_import_consent WHERE user_id=?1 LIMIT 1) AS consent_withdrawn';
 // Stored timestamps are UTC (D1 CURRENT_TIMESTAMP or ISO). Report ISO-8601 Z.
 function utc(value){
   if(typeof value!=='string'||!value)return null;
@@ -90,21 +96,18 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   const seat_role=owner?'developer':role==='developer'||role==='public'?role:null;
   const seat_role_source=owner?'Server owner setting.':roleRow===UNREAD?'Could not be read right now.':seat_role?
     'This account\'s WHOOP connection record.':'No WHOOP connection record yet, so the seat role is not recorded.';
-  const token=await read(db,TOKEN_SQL,userId);
-  const issued=await read(db,ANY_TOKEN_SQL,userId);
-  const records=await read(db,RECORDS_SQL,userId);
-  const consent=await read(db,CONSENT_SQL,userId);
-  if([token,issued,records,consent].includes(UNREAD))return {
+  const hc=await read(db,HC_STATUS_SQL,userId);
+  if(hc===UNREAD||!hc)return {
     as_of:new Date(now).toISOString(),seat_role:seat_role??'unknown',seat_role_source,
     role_boundaries:boundaries(seat_role,owner),
     whoop_connected:roleRow===UNREAD?'unknown':!!roleRow,
     health_connect:{status:'unknown',summary:'Health Connect status could not be read right now. Treat it as unverified.'}
   };
-  const everIssued=Number(issued?.n??0)>0;
-  const count=Number(records?.n??0);
-  const tokenState=token?'active':everIssued?'revoked':'none';
+  const count=Number(hc.records??0);
+  const active=Number(hc.active_tokens??0)>0;
+  const tokenState=active?'active':Number(hc.all_tokens??0)>0?'revoked':'none';
   const flag=on(env,'HEALTH_CONNECT_WEBHOOK_ENABLED')?'enabled':'disabled';
-  const latest=[utc(records?.latest_created),utc(records?.latest_updated)].filter(Boolean).sort().pop()??null;
+  const latest=[utc(hc.latest_created),utc(hc.latest_updated)].filter(Boolean).sort().pop()??null;
   let summary;
   if(count>0)summary=`${count} Health Connect record(s) are stored for this account. Read them with get_health_connect.`;
   else if(tokenState==='active')summary='An ingest token is issued, but no Health Connect records are stored for this account yet. '+
@@ -119,13 +122,13 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
     health_connect:{
       phone_ingest_feature:flag,
       ingest_token:tokenState,
-      token_issued_at:token?utc(token.created_at):null,
+      token_issued_at:active?utc(hc.token_created):null,
       // Set when a request authenticated with the active token opened a new
       // 15-minute rate window. It says nothing about whether records were stored.
-      latest_authenticated_delivery_window_at:token?utc(token.window_started_at):null,
+      latest_authenticated_delivery_window_at:active?utc(hc.token_window):null,
       records_stored:count,
       latest_record_stored_at:latest,
-      storage_consent:consent?(consent.withdrawn_at?'withdrawn':'granted'):'none',
+      storage_consent:Number(hc.consent_rows??0)>0?(hc.consent_withdrawn?'withdrawn':'granted'):'none',
       summary,
       evidence:'Counts and timestamps for this account only, read at as_of. No record content.',
       not_verifiable_here:['Whether the phone app has Health Connect permissions, ran a sync, or which types it sent.',
