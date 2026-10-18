@@ -149,20 +149,23 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
   if(reason)out.incomplete_reason=reason;
   return out;
 }
-// One page, as before: the WHOOP response passes through unchanged except that
-// its next_token is replaced by a sealed cursor (or null when it is unusable).
+// One page, as before: the WHOOP response passes through except that its
+// next_token is replaced by a sealed cursor (or null when it is unusable) and
+// complete says whether the sequence has ended.
 async function readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,now}){
   if(depth>=SEQUENCE_MAX_PAGES)return {records:[],next_token:null,complete:false,incomplete_reason:"page_limit"};
   const batch=await whoopRequest(db,userId,resource,env,{limit,next_token:token});
   if(batch===null||typeof batch!=="object"||Array.isArray(batch))throw Error("Unexpected WHOOP page");
   const next=batch.next_token??null;
-  if(next===null)return batch;
   const out={...batch};
+  // Same completion signal as auto_page, so "paginate until complete is true" works.
+  if(next===null){out.next_token=null;out.complete=true;return out;}
   if(!validWhoopToken(next)||next===token||depth+1>=SEQUENCE_MAX_PAGES){
     out.next_token=null;out.complete=false;
     out.incomplete_reason=depth+1>=SEQUENCE_MAX_PAGES&&validWhoopToken(next)&&next!==token?"page_limit":"invalid_upstream_cursor";
     return out;
   }
   out.next_token=await sealCursor({env,userId,resource,query,whoopToken:next,depth:depth+1,now});
+  out.complete=false;
   return out;
 }

@@ -169,7 +169,7 @@ test("WHOOP routes are disabled separately, bounded and read-only even when stag
     const enabled={...base,WHOOP_READS_ENABLED:"true"};
     const allowed=await router(apiReq("/v1/whoop/recovery?limit=25&user_id="+B),enabled);
     assert.equal(allowed.status,200);assert.equal(count,1);assert.equal(category,"recovery");
-    assert.deepEqual((await allowed.json()).data,{sample:42});
+    assert.deepEqual((await allowed.json()).data,{sample:42,next_token:null,complete:true});
     const malformed=await router(apiReq("/v1/whoop/recovery?limit=999"),enabled);
     assert.equal(malformed.status,400);
     const notAllowed=await router(new Request("https://staging.invalid/v1/whoop/recovery",{method:"POST"}),enabled);

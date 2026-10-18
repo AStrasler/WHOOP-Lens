@@ -122,6 +122,8 @@ test("manual paging with limit continues past 100 on all four endpoints and can 
         if(cursor===null)delete args.next_token;
         const out=content(await call(db,A,name,args));
         got.push(...ids(out.records));cursor=out.next_token;i++;
+        // Both modes report completion the same way.
+        assert.equal(out.complete,cursor===null);
       }while(cursor&&i<20);
       assert.deepEqual(got,expected(A,resource));
     }
@@ -133,7 +135,11 @@ test("null and empty optional fields are accepted; identity fields and unknown k
   try{
     const whoop=fakeWhoop(),call=setup(whoop);
     const ok=content(await call(db,B,"get_sleep",{limit:null,auto_page:null,next_token:null}));
-    assert.equal(ok.records.length,10);
+    assert.equal(ok.records.length,10);assert.equal(ok.complete,false);
+    // Manual paging to the last page reports complete: true (Codex P2 on 657649a).
+    let manual=ok;
+    while(manual.next_token)manual=content(await call(db,B,"get_sleep",{limit:25,next_token:manual.next_token}));
+    assert.equal(manual.complete,true);assert.equal(manual.next_token,null);
     const empty=content(await call(db,B,"get_sleep",{auto_page:true,next_token:""}));
     assert.equal(empty.records.length,100);
     const summaryNull=content(await call(db,B,"get_sleep",{summary:null},{AI_SUMMARY_ENABLED:"true"}));
