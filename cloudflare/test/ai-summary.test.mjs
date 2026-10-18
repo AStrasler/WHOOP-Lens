@@ -77,6 +77,8 @@ test("migration 0009 stores only daily counters",()=>{
 
 test("flag off keeps read responses byte-identical and does not touch quota",async()=>{
   const upstream={records:[{score:{recovery_score:40}}],next_token:null};
+  // History reads add the completion flag; the summary flag changes nothing else.
+  const returned={...upstream,complete:true};
   let calls=0,analytics=0;
   const originalFetch=globalThis.fetch;
   globalThis.fetch=(...args)=>{analytics++;return originalFetch(...args);};
@@ -85,9 +87,9 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
   const db={prepare(){throw Error("quota storage must stay unused");}};
   const message=rpc("get_recovery",{limit:10});
   const expected={jsonrpc:"2.0",id:1,result:{
-    content:[{type:"text",text:JSON.stringify(upstream)}],
+    content:[{type:"text",text:JSON.stringify(returned)}],
     resultType:"complete",
-    structuredContent:upstream
+    structuredContent:returned
   }};
   for(const flag of [undefined,"false","FALSE","0","true "]){
     const env={};
@@ -188,7 +190,7 @@ test("summary is additive, isolated, and the model never receives record text",a
     const plain=await handleMcpRpc(rpc("get_recovery",{limit:10}),{
       db,userId:A,env,whoopRequest:async()=>pageA
     },modern);
-    assert.equal(plain.result.content[0].text,JSON.stringify(pageA));
+    assert.equal(plain.result.content[0].text,JSON.stringify({...pageA,complete:true}));
   }finally{db.close();}
 });
 
@@ -718,7 +720,8 @@ test("summaries use only WHOOP and Health Connect allowlisted fields",async()=>{
 
 test("the reserved input cap covers the call and over-cap usage is kept",async()=>{
   const records=[];
-  for(let day=1;day<=25;day++)records.push(recovery(40+day,`2026-01-${String(day).padStart(2,"0")}`));
+  // One full WHOOP page (25 records): a page larger than its limit is rejected.
+  for(let day=1;day<=24;day++)records.push(recovery(40+day,`2026-01-${String(day).padStart(2,"0")}`));
   records.push(recovery(70,"2026-09-15"));
   const db=openDb();
   try{
@@ -728,7 +731,7 @@ test("the reserved input cap covers the call and over-cap usage is kept",async()
       return {response:'{"selected":[0]}',
         usage:{prompt_tokens:100,completion_tokens:20}};
     }}});
-    const body=await handleMcpRpc(rpc("get_recovery",{summary:true}),{
+    const body=await handleMcpRpc(rpc("get_recovery",{summary:true,limit:25}),{
       db,userId:A,env,whoopRequest:async()=>({records,next_token:null})
     },modern);
     assert.equal(summaryOf(body).status,"model");

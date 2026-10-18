@@ -83,7 +83,7 @@ Once connected, these features require no additional accounts:
 | Cycles and strain | Use WHOOP Lens get_cycles with auto_page true. |
 | Compare metrics | Compare my returned WHOOP recovery, sleep and strain records by date. Flag missing dates and separate observations from hypotheses. |
 
-History tools return pages. `auto_page: true` fetches up to four pages, not unlimited history; ask the host to follow any remaining continuation token when you need more.
+History tools return pages. `auto_page: true` fetches up to four pages (100 records) per call, not unlimited history. To continue, call the same tool again with the returned `next_token`, with or without `auto_page`, until `complete` is true. On the Cloudflare server `next_token` is an opaque cursor sealed to your account and that history category; it expires after one hour and cannot be used by another member or on another category.
 
 ### 3. Use AI summaries, experimental stress and weekly digests
 

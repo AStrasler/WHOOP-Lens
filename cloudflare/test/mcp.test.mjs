@@ -29,7 +29,8 @@ function db({member=true}={}){
 }
 const data={records:[{test:"synthetic"}],next_token:null};
 const fakeIdentity=async()=>A;
-const enabled=(database)=>({DB:database,MIGRATION_API_ENABLED:"true",WHOOP_READS_ENABLED:"true",MCP_ENABLED:"true"});
+const enabled=(database)=>({DB:database,MIGRATION_API_ENABLED:"true",WHOOP_READS_ENABLED:"true",MCP_ENABLED:"true",
+  WHOOP_TOKEN_AES256_KEY:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"});
 function router(args={}){return createStagingRouter({verifyIdentity:fakeIdentity,whoopRequest:async()=>data,...args});}
 
 test("MCP body limit stays small except for a Health Connect file import",async()=>{
@@ -161,7 +162,7 @@ test("Caller cannot choose another user, unknown tool or inject extra arguments"
     payload("tools/call",1,{name:"get_recovery",arguments:{limit:26}}),
     payload("tools/call",1,{name:"get_sleep",arguments:{auto_page:"yes"}}),
     payload("tools/call",1,{name:"get_profile",arguments:{next_token:"q"}}),
-    payload("tools/call",1,{name:"get_sleep",arguments:{auto_page:true,next_token:"cursor"}}),
+    payload("tools/call",1,{name:"get_sleep",arguments:{auto_page:true,next_token:"raw-whoop-cursor"}}),
     payload("tools/call",1,{name:"get_recovery",arguments:{next_token:"../../admin"}})
   ];
   for(const p of invalid){
@@ -180,7 +181,10 @@ test("Autopagination is bounded to 4 pages, stops on empty continuation",async()
   const body=await response.json();
   assert.equal(body.result.structuredContent.records.length,4);
   assert.equal(body.result.structuredContent.complete,false);
-  assert.equal(body.result.structuredContent.next_token,"next4");
+  // The WHOOP cursor is sealed, never returned raw.
+  assert.match(body.result.structuredContent.next_token,/^wlc1\.k1\./);
+  assert.doesNotMatch(JSON.stringify(body),/next4/);
+  assert.equal(body.result.structuredContent.pages_fetched,4);
   assert.equal(requests,4);
 });
 

@@ -5,6 +5,7 @@ import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
 import { callWhoop } from "./whoop-api.mjs";
 import { createWhoopAuthorization, acceptWhoopCallback } from "./whoop-oauth.mjs";
 import { handleMcpRpc, validateMcpTransport } from "./mcp.mjs";
+import { CursorError, cursorShapeOk, readHistoryPages } from "./history-pagination.mjs";
 import { healthConnectHttp } from "./health-import.mjs";
 import { healthConnectWebhook, WEBHOOK_PATH } from "./health-connect-webhook.mjs";
 
@@ -146,12 +147,24 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
         if (env?.WHOOP_READS_ENABLED !== "true")
           return json({error:"WHOOP Cloudflare reads not activated"},503);
         const nextToken=url.searchParams.get("next_token");
-        if (nextToken != null && nextToken.length > 512)
-          return json({error:"Invalid cursor"},400);
         const category=whoopRoutes[url.pathname];
-        const data=await whoopRequest(env.DB,userId,category,env,{
-          limit:rawLimit == null?10:Number(rawLimit),next_token:nextToken
-        });
+        const limit=rawLimit == null?10:Number(rawLimit);
+        if (category==="profile"||category==="measurements") {
+          if (nextToken != null) return json({error:"Invalid cursor"},400);
+          const data=await whoopRequest(env.DB,userId,category,env,{limit});
+          return json({category,data,source:"whoop-cloudflare-staging"});
+        }
+        // History cursors are sealed to this member and category, same as MCP.
+        if (nextToken != null && !cursorShapeOk(nextToken))
+          return json({error:"Invalid cursor"},400);
+        let data;
+        try {
+          data=await readHistoryPages({db:env.DB,userId,resource:category,env,whoopRequest,
+            limit,cursor:nextToken,auto:false});
+        } catch (error) {
+          if (error instanceof CursorError) return json({error:"Invalid cursor"},400);
+          throw error;
+        }
         return json({category,data,source:"whoop-cloudflare-staging"});
       }
       const category = url.pathname === "/v1/recovery" ? "recovery" : "sleep";
