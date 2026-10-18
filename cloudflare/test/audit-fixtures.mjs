@@ -48,7 +48,8 @@ export function fakeWhoop({fail=()=>null,delay=0}={}){
     const offset=raw==null?0:Number(atob(raw).split(":")[1]);
     calls.push({bearer,resource,offset,limit});
     if(delay)await new Promise(r=>setTimeout(r,Math.random()*delay));
-    const forced=fail({bearer,resource,offset,call:calls.length});
+    // fail may be async (for example, to finish a simulated reconnect first).
+    const forced=await fail({bearer,resource,offset,call:calls.length});
     if(forced)return forced;
     const records=[];
     for(let i=offset;i<Math.min(offset+limit,TOTAL);i++)records.push({id:`${bearer}|${resource}|${i}`,account:bearer});
