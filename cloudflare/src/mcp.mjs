@@ -5,6 +5,7 @@ import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
 import {buildWeeklyDigest,parseWeekEnding,weeklyDigestEnabled} from './ai-digest.mjs';
 import {readOwnUsage,utcDay} from './ai-quota.mjs';
 import {revokeWhoopConnection} from './whoop-oauth.mjs';
+import {FeatureDisabled} from './member-guidance.mjs';
 import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
 import {hostInstructionsFor,serverInfo} from './host-instructions.mjs';
@@ -220,26 +221,26 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     if(flareTools.some(t=>t.name===name)){
       data=await runFlareTool(name,args,{db,userId,env,whoopRequest});
     }else if(name==='connect_whoop'){
-      if(env.WHOOP_OAUTH_ENABLED!=='true'||typeof whoopAuthorize!=='function')throw Error('Connection disabled');
+      if(env.WHOOP_OAUTH_ENABLED!=='true'||typeof whoopAuthorize!=='function')throw new FeatureDisabled('whoop_connection');
       const result=await whoopAuthorize(db,userId,env);
       const content={content:[{type:'text',text:result.authorization_url}]};
       if(modern){content.resultType='complete';content.structuredContent=result;}
       return ok(id,content);
     }else if(name==='disconnect_whoop'){
-      if(env.WHOOP_OAUTH_ENABLED!=='true')throw Error('Connection disabled');
+      if(env.WHOOP_OAUTH_ENABLED!=='true')throw new FeatureDisabled('whoop_connection');
       data=await revokeWhoopConnection(db,userId);
     }else if(name==='import_health_connect_file'){
-      if(env.WEB_HEALTH_IMPORT_ENABLED!=='true')throw Error('Connection disabled');
+      if(env.WEB_HEALTH_IMPORT_ENABLED!=='true')throw new FeatureDisabled('health_connect_file_import');
       data=await importHealthConnectFile(db,userId,args.file_json,args.consent);
     }else if(name==='withdraw_health_connect_import'){
       if(env.WEB_HEALTH_IMPORT_ENABLED!=='true'&&env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')
-        throw Error('Connection disabled');
+        throw new FeatureDisabled('health_connect_withdraw');
       data=await withdrawHealthConnectImport(db,userId,args.confirm);
     }else if(name==='issue_health_connect_ingest_token'){
-      if(env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')throw Error('Connection disabled');
+      if(env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')throw new FeatureDisabled('health_connect_phone_ingest');
       data=await issueIngestToken(db,userId,args.consent);
     }else if(name==='revoke_health_connect_ingest_token'){
-      if(env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')throw Error('Connection disabled');
+      if(env.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')throw new FeatureDisabled('health_connect_phone_ingest');
       data=await revokeIngestTokens(db,userId,args.confirm);
     }else if(name==="get_ai_usage"){
       const usage=await readOwnUsage(db,{
@@ -275,6 +276,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     // No details about secrets, token status, providers, account existence or SQL.
     // File-import validation messages are safe to show; everything else stays generic.
     if(error instanceof SeatsFull)return toolError(id,error.message,modern);
+    if(error instanceof FeatureDisabled)return toolError(id,error.message,modern);
     if(error instanceof CursorError)return toolError(id,error.reason==="expired"?
       "This next_token has expired. Request the first page again without next_token.":
       "This next_token is not valid for this account and history category. Request the first page again without next_token.",modern);
