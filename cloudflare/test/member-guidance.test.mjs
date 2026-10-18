@@ -168,6 +168,18 @@ test('reissuing for an account with stored records keeps them and is scoped to t
   }finally{db.close();}
 });
 
+test('a developer seat row without the owner setting gets no server-wide AI total claim, matching get_ai_usage',async()=>{
+  const db=await fixture();try{
+    const env={...flagsOn};delete env.WHOOP_LENS_DEVELOPER_USER_ID;
+    const account=parse(await call(db,OWNER,'get_capabilities',{},env)).account;
+    assert.equal(account.seat_role,'developer');
+    assert.ok(account.role_boundaries.some(s=>/owner\/developer seat/.test(s)));
+    assert.ok(!account.role_boundaries.some(s=>/server-wide AI summary total/.test(s)));
+    const other=parse(await call(db,OWNER,'get_capabilities',{},{...env,WHOOP_LENS_DEVELOPER_USER_ID:AMYLIKE})).account;
+    assert.ok(!other.role_boundaries.some(s=>/server-wide AI summary total/.test(s)));
+  }finally{db.close();}
+});
+
 test('member without a WHOOP connection: seat role reported as unknown, with the reason',async()=>{
   const db=await fixture();try{
     const account=parse(await call(db,NEWBIE,'get_capabilities')).account;
@@ -201,6 +213,8 @@ test('feature states: enabled, disabled and not_configured come from flags and b
   assert.equal(half.health_connect_file_import,'disabled');
   const analytics={AI_ANALYTICS_ACCOUNT_ID:'0123456789abcdef0123456789abcdef',AI_ACCOUNT_ANALYTICS_TOKEN:'synthetic-analytics-token-0001'};
   const full=byId({...flagsOn,AI_SUMMARY_ENABLED:'true',AI:{run(){}},STRESS_ESTIMATE_ENABLED:'true',...analytics});
+  // An unsupported model name means every summary is a template.
+  assert.equal(byId({AI_SUMMARY_ENABLED:'true',AI:{run(){}},...analytics,AI_SUMMARY_MODEL:'not-a-model'}).ai_summaries,'not_configured');
   // Binding present but the budget settings missing or malformed: template-only, not enabled.
   for(const drop of ['AI_ANALYTICS_ACCOUNT_ID','AI_ACCOUNT_ANALYTICS_TOKEN']){
     const env={AI_SUMMARY_ENABLED:'true',STRESS_ESTIMATE_ENABLED:'true',AI:{run(){}},...analytics};delete env[drop];

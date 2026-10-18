@@ -4,6 +4,7 @@
 // timestamps only; never a secret value, another member, or record content.
 import {whoopConnectConfigured} from './whoop-oauth.mjs';
 import {analyticsConfigured} from './ai-account.mjs';
+import {selectModel} from './ai-summary.mjs';
 import {memberLimits,memberLimitEnabled} from './member-rate-limit.mjs';
 
 // A listed tool whose server flag is off throws this, so the member is told the
@@ -23,7 +24,8 @@ export function featureStates(env){
   const whoopConfigured=whoopConnectConfigured(env);
   // Summaries need the AI binding and the account analytics budget settings;
   // without the budget settings every summary falls back to a template.
-  const ai=!!env?.AI&&analyticsConfigured(env);
+  // An unsupported AI_SUMMARY_MODEL also means template-only.
+  const ai=!!env?.AI&&analyticsConfigured(env)&&selectModel(env)!==null;
   const features=[
     {id:'whoop_connection',tools:['connect_whoop','disconnect_whoop'],
       state:state(on(env,'WHOOP_OAUTH_ENABLED'),whoopConfigured)},
@@ -49,11 +51,15 @@ export function featureStates(env){
 export const ROLE_BOUNDARIES=Object.freeze({
   shared:['Every seat, including the owner, reads, imports, connects and deletes only its own account data.',
     'No MCP tool approves members, changes seats or roles, rotates another account\'s token, or reads another account.'],
-  developer:['This is the owner/developer seat. get_ai_usage also returns a server-wide AI summary total with no per-member breakdown.',
-    'Member approval and seat changes happen outside this MCP, by the owner.'],
+  developer:['This is the owner/developer seat.','Member approval and seat changes happen outside this MCP, by the owner.'],
+  // Only when the owner setting names this account: the same rule get_ai_usage uses.
+  ownerUsage:'get_ai_usage also returns a server-wide AI summary total with no per-member breakdown.',
   public:['This is an approved member seat. get_ai_usage shows this account only.',
     'To change membership or seats, ask the server owner; this MCP cannot do it.']
 });
+function boundaries(seatRole,owner){
+  return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...(owner?[ROLE_BOUNDARIES.ownerUsage]:[])];
+}
 const ROLE_SQL='SELECT seat_role FROM whoop_connections WHERE user_id=?1 LIMIT 1';
 const TOKEN_SQL='SELECT created_at,window_started_at FROM health_connect_ingest_tokens '+
   'WHERE user_id=?1 AND revoked_at IS NULL LIMIT 1';
@@ -86,7 +92,7 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   const consent=await read(db,CONSENT_SQL,userId);
   if([token,issued,records,consent].includes(UNREAD))return {
     as_of:new Date(now).toISOString(),seat_role:seat_role??'unknown',
-    role_boundaries:[...ROLE_BOUNDARIES.shared,...(seat_role?ROLE_BOUNDARIES[seat_role]:[])],
+    role_boundaries:boundaries(seat_role,owner),
     whoop_connected:roleRow===UNREAD?'unknown':!!roleRow,
     health_connect:{status:'unknown',summary:'Health Connect status could not be read right now. Treat it as unverified.'}
   };
@@ -104,7 +110,7 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
     as_of:new Date(now).toISOString(),
     seat_role:seat_role??'unknown',
     seat_role_source:owner?'Server owner setting.':roleRow===UNREAD?'Could not be read right now.':seat_role?'This account\'s WHOOP connection record.':'No WHOOP connection record yet, so the seat role is not recorded.',
-    role_boundaries:[...ROLE_BOUNDARIES.shared,...(seat_role?ROLE_BOUNDARIES[seat_role]:[])],
+    role_boundaries:boundaries(seat_role,owner),
     whoop_connected:roleRow===UNREAD?'unknown':!!roleRow,
     health_connect:{
       phone_ingest_feature:flag,
