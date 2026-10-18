@@ -22,7 +22,10 @@ function db({member=true}={}){
   let count=0;
   return {
     count:()=>count,
-    prepare(query){count++;return {bind(...values){assert.equal(values[0],A);return this;},async first(){
+    prepare(query){
+      // History reads check the member's disconnect marker; none exists here.
+      if(/whoop_credential_revocations/.test(query))return {bind(...values){assert.equal(values[0],A);return this;},async first(){return null;}};
+      count++;return {bind(...values){assert.equal(values[0],A);return this;},async first(){
       assert.match(query,/whoop_members/);return member?{user_id:A}:null;
     }};}
   };

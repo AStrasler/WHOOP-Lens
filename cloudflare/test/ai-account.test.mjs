@@ -22,6 +22,7 @@ const modern={modern:true};
 function openDb(){
   const sqlite=new DatabaseSync(":memory:");
   sqlite.exec(readFileSync(new URL("../migrations/0009_ai_usage.sql",import.meta.url),"utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0008_whoop_credential_revocations.sql",import.meta.url),"utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0010_ai_account_snapshot.sql",import.meta.url),"utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0012_ai_usage_event.sql",import.meta.url),"utf8"));
   return {sqlite,...d1Database(sqlite),close(){sqlite.close();}};

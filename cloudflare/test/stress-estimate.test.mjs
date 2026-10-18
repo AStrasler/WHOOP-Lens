@@ -400,7 +400,7 @@ test("F2 missing sleep: sleep inputs are missing, no date is added",async()=>{
 
 test("F2 weekly digest: boundary dates, no fabricated target dates, cached output identical",async()=>{
   const sqlite=new DatabaseSync(":memory:");
-  for(const f of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+  for(const f of ["0008_whoop_credential_revocations.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
     sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0001_initial.sql",import.meta.url),"utf8"));
   sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(A,A);
@@ -598,7 +598,7 @@ test("R2-2 no sleep recorded (complete retrieval, zero records) is none_recorded
 // ---------- round 2, finding 3: both flags, consistent everywhere ----------
 test("R2-3 all four flag combinations agree across capabilities, host instructions and tool output",async()=>{
   const sqlite=new DatabaseSync(":memory:");
-  for(const f of ["0001_initial.sql","0004_medical_context_review.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+  for(const f of ["0001_initial.sql","0008_whoop_credential_revocations.sql","0004_medical_context_review.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
     sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
   sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(A,A);
   sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(A);
@@ -1016,7 +1016,7 @@ test("Codex12 reject false stress semantics despite matching numeric and label t
 test("Codex12 transient baseline failures cannot poison a weekly digest cache",async()=>{
   for(const [failedResource,failStatus] of [["recovery",429],["sleep",429],["sleep",500]]){
     const sqlite=new DatabaseSync(":memory:");
-    for(const f of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+    for(const f of ["0008_whoop_credential_revocations.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
       sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
     const db={sqlite,...d1Database(sqlite)},week="2026-10-11";
     const u=syntheticUser({prefix:"transient12"});
@@ -1101,7 +1101,7 @@ test("Codex13 valid categorical claims remain valid in either order",()=>{
 
 test("Tenant isolation: two signed-in users keep distinct stress digest data and caches",async()=>{
   const sqlite=new DatabaseSync(":memory:");
-  for(const file of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+  for(const file of ["0008_whoop_credential_revocations.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
     sqlite.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));
   const db={sqlite,...d1Database(sqlite)},week="2026-10-11",calls=[];
   const alpha=syntheticUser({prefix:"tenant-alpha"});
@@ -1213,7 +1213,7 @@ test("Codex14 modified category claims and ungrounded trends reject in either or
 });
 test("Codex14 fully fetched sleep-only weeks cache without repeat AI quota",async()=>{
   const sqlite=new DatabaseSync(":memory:");
-  for(const file of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+  for(const file of ["0008_whoop_credential_revocations.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
     sqlite.exec(readFileSync(new URL("../migrations/"+file,import.meta.url),"utf8"));
   const db={sqlite,...d1Database(sqlite)},week="2026-10-11";
   const user=syntheticUser({prefix:"sleep-only14"});
@@ -1255,7 +1255,7 @@ test("Codex5 an explicit recovery sentence resets the pronoun referent; feature 
 
 test("Codex5 weekly digest caches never cross AI/stress feature states, including legacy cached results",async()=>{
   const sqlite=new DatabaseSync(":memory:");
-  for(const f of ["0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
+  for(const f of ["0008_whoop_credential_revocations.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
     sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
   const db={sqlite,...d1Database(sqlite)},week="2026-10-11";
   const user=syntheticUser({prefix:"cache5"});
