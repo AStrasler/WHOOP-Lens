@@ -5,6 +5,7 @@ import { openWithKeyring, sealWithKeyring, needsReseal, tokenKeyring } from "./t
 import { migrateConnection, migrateAllTokens } from "./token-migration.mjs";
 import { activeMembership } from "./storage.mjs";
 import { validWhoopToken } from "./history-pagination.mjs";
+import { reserveWhoopRequest } from "./member-rate-limit.mjs";
 
 const API="https://api.prod.whoop.com/developer/v2/";
 const TOKEN_ENDPOINT="https://api.prod.whoop.com/oauth/oauth2/token";
@@ -189,6 +190,10 @@ export async function callWhoop(db,userId,resource,env,opts={},deps={}){
     }
   }
   const url=API+spec.path+(search.size?"?"+search:"");
+  // Per-member share of WHOOP's app-wide limit, after the member and the
+  // connection are verified and immediately before the outbound request.
+  // Over budget throws a 429 (MemberRateLimited) and nothing is sent to WHOOP.
+  await reserveWhoopRequest(db,userId,env,{now:deps.now});
   const response=await (deps.fetcher||fetch)(url,{
     method:"GET",headers:{authorization:"Bearer "+token,"accept":"application/json"},
     redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()

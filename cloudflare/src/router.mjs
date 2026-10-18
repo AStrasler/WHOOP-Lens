@@ -3,6 +3,7 @@ import { resolveSecrets } from "./secrets.mjs";
 import { AccessDenied } from "./access-denied.mjs";
 import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
 import { callWhoop } from "./whoop-api.mjs";
+import { memberLimitMessage } from "./member-rate-limit.mjs";
 import { createWhoopAuthorization, acceptWhoopCallback } from "./whoop-oauth.mjs";
 import { handleMcpRpc, validateMcpTransport } from "./mcp.mjs";
 import { CursorError, cursorShapeOk, readHistoryPages } from "./history-pagination.mjs";
@@ -173,7 +174,9 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
     } catch (error) {
       if (error instanceof AccessDenied) return json({error:"Unauthorized"},error.status);
       if (error?.status === 429) {
-        const response=json({error:"WHOOP rate limited this request. Retry later."},429);
+        const response=error.memberLimit===true?
+          json({error:memberLimitMessage(error),rate_limit_scope:"member"},429):
+          json({error:"WHOOP rate limited this request. Retry later."},429);
         if (Number.isSafeInteger(error.retryAfter)) response.headers.set("retry-after",String(error.retryAfter));
         return response;
       }

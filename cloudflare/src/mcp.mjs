@@ -9,6 +9,7 @@ import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} f
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
 import {hostInstructionsFor,serverInfo} from './host-instructions.mjs';
 import {CursorError,cursorShapeOk,readHistoryPages,CURSOR_MAX_LENGTH} from './history-pagination.mjs';
+import {memberLimitMessage} from './member-rate-limit.mjs';
 // Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
 // this module. Do not copy WHOOP refresh tokens from Supabase.
@@ -277,6 +278,9 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       "This next_token is not valid for this account and history category. Request the first page again without next_token.",modern);
     // WHOOP throttles the whole app (100 requests/minute by default). Say so,
     // instead of implying the member's connection is broken.
+    // This account's own share of the WHOOP limit (member-rate-limit.mjs).
+    if(error?.status===429&&error?.memberLimit===true&&!flareTools.some(t=>t.name===name))
+      return toolError(id,memberLimitMessage(error),modern);
     if(error?.status===429&&!flareTools.some(t=>t.name===name)){
       const wait=Number.isSafeInteger(error.retryAfter)?` Wait about ${Math.max(1,error.retryAfter)} seconds,`:" Wait a minute,";
       return toolError(id,`WHOOP is rate limiting requests right now.${wait} then retry the same call. Any next_token you hold stays valid for up to one hour.`,modern);
