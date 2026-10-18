@@ -79,7 +79,7 @@ ${body}
 // enforced by the Cloudflare Access allow rule, manual member approval and the
 // resource Worker's WHOOP_LENS_SEAT_LIMIT. Update it when the owner changes
 // allocations (docs/seat-requests.md).
-export const SEAT_ALLOCATION = Object.freeze({max:3, owner:1, members:1, reserved:1});
+export const SEAT_ALLOCATION = Object.freeze({max:3, owner:1, members:2, reserved:0});
 export function seatCounts(a=SEAT_ALLOCATION){
   const used=a.owner+a.members+a.reserved;
   if(![a.max,a.owner,a.members,a.reserved].every(n=>Number.isSafeInteger(n)&&n>=0)||used>a.max)
