@@ -52,7 +52,7 @@ export function featureStates(env){
 }
 export const ROLE_BOUNDARIES=Object.freeze({
   shared:['Every seat, including the owner, reads, imports, connects and deletes only its own account data.',
-    'No MCP tool approves members, changes seats or roles, rotates another account\'s token, or reads another account.'],
+    'No MCP tool approves members, changes seats or roles, rotates another account\'s token, or reads another account\'s data.'],
   developer:['This is the owner/developer seat.','Member approval and seat changes happen outside this MCP, by the owner.'],
   // Only when the owner setting names this account: the same rule get_ai_usage uses.
   ownerUsage:'get_ai_usage also returns a server-wide AI summary total with no per-member breakdown.',
@@ -60,9 +60,16 @@ export const ROLE_BOUNDARIES=Object.freeze({
   // Only while get_ai_usage is listed (AI_SUMMARY_ENABLED).
   memberUsage:'get_ai_usage shows this account only.'
 });
+// Issue reports (ISSUE_REPORTS_ENABLED) are the one cross-account view: the
+// owner reads every member's sanitized reports. Say so on both sides.
+const REPORT_BOUNDARIES=Object.freeze({
+  member:'Issue reports this account submits with report_issue are visible to the server owner (sanitized text and diagnostic codes, no health data).',
+  owner:'review_issue_reports shows every member\'s sanitized issue reports and diagnostic codes, without account ids or health data. It is the only cross-account view.'
+});
 function boundaries(seatRole,owner,env){
   const usage=aiSummaryEnabled(env)?[owner?ROLE_BOUNDARIES.ownerUsage:ROLE_BOUNDARIES.memberUsage]:[];
-  return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...usage];
+  const reports=env?.ISSUE_REPORTS_ENABLED==='true'?[owner?REPORT_BOUNDARIES.owner:REPORT_BOUNDARIES.member]:[];
+  return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...usage,...reports];
 }
 const ROLE_SQL='SELECT seat_role FROM whoop_connections WHERE user_id=?1 LIMIT 1';
 // One statement, so token, consent and record fields come from one consistent

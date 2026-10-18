@@ -25,8 +25,10 @@ Retention: 30 days. Each write sweeps at most 50 expired rows.
 
 ## Owner oversight
 `review_issue_reports` and `update_issue_report` are listed and callable only when `WHOOP_LENS_DEVELOPER_USER_ID` equals the caller (the `get_ai_usage` rule). Anyone else gets "Unknown tool".
-- `review_issue_reports` shows severity, category, status, subsystems, occurrences, sanitized evidence and server-wide event counts for the last day, without member ids.
+- `review_issue_reports` shows a pseudonymous `member_ref` (a truncated SHA-256 that groups one member's reports; no account id), severity, category, status, subsystems, occurrences, sanitized evidence and server-wide event counts for the last day, without member ids.
 - `update_issue_report` only sets the status: new, acknowledged, resolved or recurring.
+
+While reporting is on, `get_capabilities` role boundaries and the host instructions tell members their reports are visible to the owner, and tell the owner this is the only cross-account view.
 
 Nothing in this feature runs commands, deploys, rotates credentials or changes permissions.
 

@@ -369,7 +369,9 @@ test('member isolation and owner-only oversight',async()=>{
     assert.ok(ownerList.includes('review_issue_reports'));
     const review=data(await call(db,OWNER,'review_issue_reports',{status:'new'}));
     assert.equal(review.counts.new,1);assert.equal(review.reports[0].reference,amy.reference);
-    assert.equal(review.reports[0].member_id,AMYLIKE);
+    assert.match(review.reports[0].member_ref,/^m_[0-9a-f]{12}$/);
+    assert.ok(!JSON.stringify(review).includes(AMYLIKE),'no account id in owner review');
+    assert.ok(!('member_id' in review.reports[0]));
     const upd=data(await call(db,OWNER,'update_issue_report',{reference:amy.reference,status:'acknowledged'}));
     assert.equal(upd.updated,true);
     assert.equal(db.sqlite.prepare('SELECT status FROM issue_reports').get().status,'acknowledged');
@@ -381,6 +383,20 @@ test('member isolation and owner-only oversight',async()=>{
     // The owner setting alone decides; a developer seat row elsewhere does not.
     const noOwner={...ON};delete noOwner.WHOOP_LENS_DEVELOPER_USER_ID;
     assert.equal((await call(db,OWNER,'review_issue_reports',{},noOwner)).error.message,'Unknown tool');
+  }finally{db.close();}
+});
+
+test('role boundaries disclose owner report access only while reporting is on',async()=>{
+  const db=await fixture();try{
+    const {accountStatus}=await import('../src/member-guidance.mjs');
+    const member=(await accountStatus(db,AMYLIKE,ON)).role_boundaries;
+    const owner=(await accountStatus(db,OWNER,ON)).role_boundaries;
+    assert.ok(member.some(s=>/visible to the server owner/.test(s)));
+    assert.ok(owner.some(s=>/only cross-account view/.test(s)));
+    const off={...ON,ISSUE_REPORTS_ENABLED:'false'};
+    for(const who of [AMYLIKE,OWNER])
+      assert.ok(!(await accountStatus(db,who,off)).role_boundaries.some(s=>/issue report/i.test(s)));
+    assert.match(hostInstructionsFor({ISSUE_REPORTS_ENABLED:'true'}),/visible to the server owner/);
   }finally{db.close();}
 });
 

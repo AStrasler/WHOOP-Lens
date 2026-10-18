@@ -67,6 +67,8 @@ async function sha256Hex(text){
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
+// Stable, non-reversible handle that groups one member's reports for the owner.
+export async function memberRef(userId){return 'm_'+(await sha256Hex('issue-report-member\n'+userId)).slice(0,12);}
 const ALPHABET='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 export function newReference(){
   const bytes=crypto.getRandomValues(new Uint8Array(8));
@@ -189,11 +191,13 @@ export async function reviewIssueReports(db,userId,args,{env,now=Date.now()}={})
   let diagnostics=[];
   try{diagnostics=((await db.prepare(DIAG_SQL).bind(new Date(now-86400000).toISOString()).all())?.results??[])
     .map(r=>({category:r.category,subsystem:r.subsystem,code:r.code,outcome:r.outcome,count:r.n,last_at:r.last_at}));}catch{}
-  return {counts,reports:rows.map(r=>({reference:r.reference,member_id:r.user_id,category:r.category,severity:r.severity,
+  const refs=new Map();
+  for(const r of rows)if(!refs.has(r.user_id))refs.set(r.user_id,await memberRef(r.user_id));
+  return {counts,reports:rows.map(r=>({reference:r.reference,member_ref:refs.get(r.user_id),category:r.category,severity:r.severity,
     status:r.status,subsystems:r.subsystems?r.subsystems.split(','):[],occurrences:r.occurrences,description:r.description,
     request_id:r.request_id,evidence:JSON.parse(r.evidence_json),created_at:r.created_at,updated_at:r.updated_at})),
     diagnostics_last_24h:diagnostics,
-    note:'Sanitized reports and codes only. Status changes are manual; nothing here fixes, deploys, rotates or changes permissions.'};
+    note:'Sanitized reports and codes only. member_ref groups reports from the same member without exposing the account id. Status changes are manual; nothing here fixes, deploys, rotates or changes permissions.'};
 }
 export async function updateIssueReport(db,userId,args,{env,now=Date.now()}={}){
   if(!issueReportsEnabled(env)||!isOwner(env,userId))throw new ReportNotSubmitted('unavailable');
