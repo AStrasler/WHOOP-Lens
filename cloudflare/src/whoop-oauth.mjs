@@ -21,13 +21,15 @@ function requireConfig(env) {
   return env;
 }
 // Same check connect_whoop runs, for capability reporting. Never returns a value.
-// Also checks the client credential and token key formats (SECRET_RULES): an invalid current or next key makes every
-// callback fail when sealing, so that is not configured either.
+// Also checks the client credential formats and the format of the key a callback seals with (SECRET_RULES).
+// tokenKeyring seals with NEXT whenever it is set, so a malformed NEXT is not configured, while an older key that
+// a callback never uses does not block reconnecting.
 export function whoopConnectConfigured(env){
   try{requireConfig(env);}catch{return false;}
   if(!SECRET_RULES.WHOOP_CLIENT_ID(env.WHOOP_CLIENT_ID)||!SECRET_RULES.WHOOP_CLIENT_SECRET(env.WHOOP_CLIENT_SECRET))return false;
-  const keys=["WHOOP_TOKEN_AES256_KEY","WHOOP_TOKEN_AES256_KEY_NEXT"].filter(name=>env?.[name]!=null&&env[name]!=="");
-  return keys.length>0&&keys.every(name=>SECRET_RULES[name](env[name]));
+  let keys;try{keys=tokenKeyring(env);}catch{return false;}
+  const name=keys.current==="k2"?"WHOOP_TOKEN_AES256_KEY_NEXT":"WHOOP_TOKEN_AES256_KEY";
+  return SECRET_RULES[name](keys[keys.current]);
 }
 function validateUser(userId) {
   if(typeof userId!=="string"||!UUID.test(userId))throw Error("Invalid user");
