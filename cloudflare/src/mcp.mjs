@@ -12,6 +12,8 @@ import {hostInstructionsFor,serverInfo} from './host-instructions.mjs';
 import {CursorError,cursorShapeOk,readHistoryPages,CURSOR_MAX_LENGTH} from './history-pagination.mjs';
 import {SeatsFull} from './seat-limit.mjs';
 import {memberLimitMessage} from './member-rate-limit.mjs';
+import {capture,classifyToolError,newRequestId,validRequestId,toolSubsystem} from './diagnostics.mjs';
+import {issueToolsFor,issueArguments,reportIssue,reviewIssueReports,updateIssueReport,ReportNotSubmitted} from './issue-reports.mjs';
 // Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
 // this module. Do not copy WHOOP refresh tokens from Supabase.
@@ -73,7 +75,11 @@ const weeklyDigestTool=Object.freeze({
   },additionalProperties:false},
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
 });
-function listedTools(env){
+function listedTools(env,userId){
+  const issueTools=issueToolsFor(env,userId);
+  return issueTools.length?[...baseListedTools(env),...issueTools]:baseListedTools(env);
+}
+function baseListedTools(env){
   const summaryOn=aiSummaryEnabled(env);
   const digestOn=weeklyDigestEnabled(env);
   if(!summaryOn&&!digestOn&&!flareEnabled(env))return mcpTools;
@@ -86,7 +92,8 @@ function listedTools(env){
   if(flareEnabled(env))tools=[...tools,...flareTools];
   return tools;
 }
-function optionalTool(name,env){
+function optionalTool(name,env,userId){
+  if(issueToolsFor(env,userId).some(t=>t.name===name))return true;
   if(flareTools.some(t=>t.name===name))return flareEnabled(env);
   if(name==="get_ai_usage")return aiSummaryEnabled(env);
   if(name==="get_weekly_digest")return weeklyDigestEnabled(env);
@@ -109,8 +116,9 @@ function toolError(id,message,modern) {
   if(modern)result.resultType="complete";
   return ok(id,result);
 }
-function checkArguments(name,args,env) {
+function checkArguments(name,args,env,userId) {
   if(!isObject(args))return null;
+  if(issueToolsFor(env,userId).some(t=>t.name===name))return issueArguments(name,args);
   if(flareTools.some(t=>t.name===name))return flareEnabled(env)?flareArguments(name,args):null;
   if(name==="get_ai_usage"){
     if(!aiSummaryEnabled(env))return null;
@@ -173,7 +181,8 @@ export function validateMcpTransport(request,message){
   }
   return {version:version||PROTOCOL_LEGACY,modern};
 }
-export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuthorize},transport){
+export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuthorize,requestId:givenRequestId},transport){
+  const requestId=validRequestId(givenRequestId)?givenRequestId:newRequestId();
   const modern=transport.modern;
   if(!isObject(message)||message.jsonrpc!=="2.0")
     return fail(-32600,"Invalid JSON-RPC request",null);
@@ -204,17 +213,21 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }
   if(message.method==="ping")return ok(id,{});
   if(message.method==="tools/list"){
-    const tools=listedTools(env);
+    const tools=listedTools(env,userId);
     return ok(id,modern?
       {resultType:"complete",tools,ttlMs:300000,cacheScope:"private"}:
       {tools});
   }
   if(message.method!=="tools/call")return fail(-32601,"Method not found",id);
   const name=params.name;
-  if(typeof name!=="string"||(!toolsByName.has(name)&&!optionalTool(name,env)))
+  if(typeof name!=="string"||(!toolsByName.has(name)&&!optionalTool(name,env,userId)))
     return fail(-32602,"Unknown tool",id);
-  const args=checkArguments(name,params.arguments??{},env);
-  if(args===null)return fail(-32602,"Invalid tool arguments",id);
+  const args=checkArguments(name,params.arguments??{},env,userId);
+  if(args===null){
+    await capture(env,db,{category:"mcp_validation",subsystem:toolSubsystem(name),code:"invalid_arguments",
+      outcome:"fail",retryable:false,requestId,userId});
+    return fail(-32602,"Invalid tool arguments",id);
+  }
   try {
     const resource=toolToResource[name];
     let data;
@@ -256,6 +269,12 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       data={kind:digest.kind,week_ending:digest.week_ending,period:digest.period,
         text:digest.text,chart_data:digest.chart_data,insights:digest.insights,
         status:digest.status,cached:digest.cached===true};
+    }else if(name==="report_issue"){
+      data=await reportIssue(db,userId,args,{requestId,env});
+    }else if(name==="review_issue_reports"){
+      data=await reviewIssueReports(db,userId,args,{env});
+    }else if(name==="update_issue_report"){
+      data=await updateIssueReport(db,userId,args,{env});
     }else if(extraTools.some(t=>t.name===name)){
       data=await readExtraTool(db,userId,name,queryArgs(args),env);
     }else if(!historyTools.has(name)){
@@ -266,13 +285,28 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
         limit:args.limit,cursor:args.next_token,auto:args.auto_page===true});
     }
     if(args.summary===true&&aiSummaryEnabled(env)){
-      try{data=await attachSummary(data,{db,userId,env,tool:name,whoopRequest});}
-      catch{/* Authorized records stay available when a summary fails. */}
+      try{
+        data=await attachSummary(data,{db,userId,env,tool:name,whoopRequest});
+        const reason=data?.summary?.status==="template"?data.summary.fallback_reason:null;
+        if(typeof reason==="string"&&/^[a-z_]{1,30}$/.test(reason))
+          await capture(env,db,{category:"ai_summary",subsystem:"ai_summary",code:"summary_fallback_"+reason,
+            outcome:"partial",retryable:true,requestId,userId});
+      }catch{
+        /* Authorized records stay available when a summary fails. */
+        await capture(env,db,{category:"ai_summary",subsystem:"ai_summary",code:"summary_failed",
+          outcome:"partial",retryable:true,requestId,userId});
+      }
     }
     const result={content:[{type:"text",text:JSON.stringify(data)}]};
     if(modern){result.resultType="complete";result.structuredContent=data;}
     return ok(id,result);
   }catch(error){
+    const kind=classifyToolError(error,name);
+    if(!(error instanceof ReportNotSubmitted))
+      await capture(env,db,{...kind,outcome:"fail",requestId,userId});
+    else await capture(env,db,{category:"mcp_tool",subsystem:"issue_reports",code:"report_not_submitted_"+error.reason,
+      outcome:"fail",retryable:error.reason!=="too_short",requestId,userId});
+    if(error instanceof ReportNotSubmitted)return toolError(id,error.message,modern);
     // No details about secrets, token status, providers, account existence or SQL.
     // File-import validation messages are safe to show; everything else stays generic.
     if(error instanceof SeatsFull)return toolError(id,error.message,modern);

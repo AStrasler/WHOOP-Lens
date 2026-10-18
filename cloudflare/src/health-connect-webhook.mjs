@@ -295,7 +295,9 @@ export async function revokeIngestTokens(db,userId,confirm){
   if(!result?.success) throw Error('Import unavailable');
   return {revoked:result.meta?.changes??0};
 }
-export async function healthConnectWebhook(request,env,{now=Date.now(),maxBody=DEFAULT_MAX_BODY,maxHits=DEFAULT_MAX_HITS,maxStored=DEFAULT_MAX_STORED}={}){
+// observe (optional) receives the authenticated member id and the counts only,
+// for sanitized diagnostics. It never receives the token, body or records.
+export async function healthConnectWebhook(request,env,{now=Date.now(),maxBody=DEFAULT_MAX_BODY,maxHits=DEFAULT_MAX_HITS,maxStored=DEFAULT_MAX_STORED,observe=null}={}){
   if(env?.HEALTH_CONNECT_WEBHOOK_ENABLED!=='true')
     return fail(503,'Health Connect webhook is not activated');
   if(request.method!=='POST') return fail(405,'POST required');
@@ -311,6 +313,7 @@ export async function healthConnectWebhook(request,env,{now=Date.now(),maxBody=D
     'SELECT user_id FROM health_connect_ingest_tokens WHERE token_hash=?1 AND revoked_at IS NULL'
   ).bind(hash).first();}catch{return fail(503,'Health Connect webhook is unavailable');}
   if(!owner?.user_id) return fail(401,'Unauthorized');
+  if(observe)observe.userId=owner.user_id;
   let member,consent;
   try{
     member=await activeMembership(env.DB,owner.user_id);
@@ -318,7 +321,10 @@ export async function healthConnectWebhook(request,env,{now=Date.now(),maxBody=D
       'SELECT granted_at,withdrawn_at FROM health_import_consent WHERE user_id=?1 AND purpose=?2'
     ).bind(owner.user_id,CONSENT_PURPOSE).first();
   }catch{return fail(503,'Health Connect webhook is unavailable');}
-  if(!member||!consent?.granted_at||consent.withdrawn_at) return fail(403,'Not authorized');
+  if(!member||!consent?.granted_at||consent.withdrawn_at){
+    if(observe)observe.reason=member?'consent':'membership';
+    return fail(403,'Not authorized');
+  }
   let allowed;
   try{allowed=await consumeRate(env.DB,hash,now,maxHits);}catch{return fail(503,'Health Connect webhook is unavailable');}
   if(!allowed) return fail(429,'Too many requests');
@@ -356,5 +362,6 @@ export async function healthConnectWebhook(request,env,{now=Date.now(),maxBody=D
     }
     written=Math.min(changed,mapped.rows.length);
   }catch{return fail(503,'Health Connect webhook is unavailable');}
+  if(observe)observe.result={stored:mapped.rows.length,skipped:mapped.skipped,rejected:mapped.rejected};
   return httpJson({ok:true,stored:mapped.rows.length,written,unchanged:mapped.rows.length-written,skipped:mapped.skipped,skipped_types:mapped.skipped_types,rejected:mapped.rejected});
 }

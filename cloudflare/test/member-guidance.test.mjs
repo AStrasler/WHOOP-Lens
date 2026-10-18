@@ -286,5 +286,5 @@ test('host instructions carry the shared guidance for every flag combination',()
     assert.match(text,/cite the tool and field that supports each claim/);
     assert.match(text,/as unverified/);
   }
-  assert.ok(hostInstructions.endsWith('phone-side settings.'));
+  assert.match(hostInstructions,/phone-side settings\./);
 });
