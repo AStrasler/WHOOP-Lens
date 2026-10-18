@@ -37,9 +37,15 @@ CREATE TABLE IF NOT EXISTS issue_reports (
   evidence_json TEXT NOT NULL CHECK(json_valid(evidence_json) AND length(evidence_json)<=4000),
   subsystems TEXT NOT NULL DEFAULT '' CHECK(length(subsystems)<=200),
   occurrences INTEGER NOT NULL DEFAULT 1 CHECK(occurrences>=1),
+  -- Rate limiting counts every submission, duplicates included, per UTC day.
+  -- Owner status changes never touch these.
+  day_key TEXT NOT NULL CHECK(day_key GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  day_submissions INTEGER NOT NULL DEFAULT 1 CHECK(day_submissions>=1),
+  last_submitted_at TEXT NOT NULL,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   UNIQUE(user_id,dedupe_key)
 );
 CREATE INDEX IF NOT EXISTS issue_reports_member ON issue_reports(user_id,updated_at DESC);
 CREATE INDEX IF NOT EXISTS issue_reports_status ON issue_reports(status,updated_at DESC);
+CREATE INDEX IF NOT EXISTS issue_reports_day ON issue_reports(day_key);

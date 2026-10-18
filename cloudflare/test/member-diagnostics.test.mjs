@@ -244,11 +244,30 @@ test('rate limits: one per minute, a daily cap per member, and a server-wide cap
     assert.equal((await send(KIMLIKE,0,t0+20*61000)).submitted,true);
     // Server-wide cap: synthetic rows from another account fill the day's quota.
     const at=new Date(t0+21*61000).toISOString();
-    const insert=db.sqlite.prepare("INSERT INTO issue_reports(reference,user_id,category,severity,description,dedupe_key,request_id,evidence_json,created_at,updated_at) VALUES(?,?,'other','low','x',?,?,'[]',?,?)");
-    const used=db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports WHERE updated_at>?').get(new Date(t0+30*61000-86400000).toISOString()).n;
-    for(let i=used;i<LIMITS.serverPerDay;i++)insert.run('WL-'+i.toString(36).toUpperCase().padStart(8,'A'),OUTSIDER,i.toString(16).padStart(64,'0'),rid,at,at);
+    const insert=db.sqlite.prepare("INSERT INTO issue_reports(reference,user_id,category,severity,description,dedupe_key,request_id,evidence_json,day_key,day_submissions,last_submitted_at,created_at,updated_at) VALUES(?,?,'other','low','x',?,?,'[]',?,1,?,?,?)");
+    const used=db.sqlite.prepare('SELECT SUM(day_submissions) n FROM issue_reports WHERE day_key=?').get(at.slice(0,10)).n;
+    for(let i=used;i<LIMITS.serverPerDay;i++)insert.run('WL-'+i.toString(36).toUpperCase().padStart(8,'A'),OUTSIDER,i.toString(16).padStart(64,'0'),rid,at.slice(0,10),at,at,at);
     assert.equal(db.sqlite.prepare("SELECT COUNT(*) n FROM issue_reports WHERE user_id=?").get(OWNER).n,0);
     await assert.rejects(send(OWNER,0,t0+30*61000),/not submitted/);
+  }finally{db.close();}
+});
+
+test('duplicate submissions count toward the per-member and server daily limits; owner status changes do not',async()=>{
+  const db=await fixture();try{
+    const t0=Date.parse('2026-10-18T01:00:00Z'),rid=newRequestId();
+    const args={category:'other',description:'Same problem again today',confirm:SUBMIT_CONFIRM};
+    for(let i=0;i<LIMITS.perMemberPerDay;i++)await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+i*61000});
+    await assert.rejects(reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+10*61000}),/Too many reports/);
+    const row=db.sqlite.prepare('SELECT occurrences,day_submissions FROM issue_reports').get();
+    assert.equal(row.occurrences,LIMITS.perMemberPerDay);assert.equal(row.day_submissions,LIMITS.perMemberPerDay);
+    // The next UTC day starts a fresh count on the same row.
+    const next=await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+86400000});
+    assert.equal(next.duplicate,true);
+    assert.equal(db.sqlite.prepare('SELECT day_submissions FROM issue_reports').get().day_submissions,1);
+    // An owner status change neither consumes nor resets the member's budget.
+    const ref=next.reference;
+    await call(db,OWNER,'update_issue_report',{reference:ref,status:'acknowledged'});
+    assert.equal(db.sqlite.prepare('SELECT day_submissions FROM issue_reports').get().day_submissions,1);
   }finally{db.close();}
 });
 
@@ -258,6 +277,14 @@ test('descriptions are redacted: numbers, links, addresses, ids and credentials 
   assert.deepEqual(r.removed,['credential','email','id','link','number']);
   assert.match(r.text,/HRV \[number\] and RHR \[number\]/);
   assert.ok(sanitizeDescription('x'.repeat(5000)).text.length<=500);
+  // Labeled credentials of any shape, and numbers in any script.
+  for(const [input,bad] of [['password: huntertwo','huntertwo'],['token: abcd.efgh.ijkl','abcd'],['my pin is swordfish','swordfish'],
+    ['api key = letmein','letmein'],['HRV \u0664\u0665 and recovery \u0667\u0662','\u0664'],['RHR \u096a\u096b','\u096a'],['score \uff17\uff12','\uff17']]){
+    const out=sanitizeDescription(input).text;
+    assert.ok(!out.includes(bad),input+' -> '+out);
+  }
+  // Ordinary sentences about tokens survive.
+  assert.match(sanitizeDescription('the token was issued but nothing synced').text,/the token was issued but nothing synced/);
   assert.equal(sanitizeDescription('<script>alert(1)</script>').text.includes('<'),false);
 });
 

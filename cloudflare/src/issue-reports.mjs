@@ -9,6 +9,7 @@ import {KINDS,validRequestId} from './diagnostics.mjs';
 
 export const SUBMIT_CONFIRM='submit-issue-report';
 export const STATUSES=Object.freeze(['new','acknowledged','resolved','recurring']);
+// Per UTC day; duplicates count as submissions.
 export const LIMITS=Object.freeze({perMemberPerDay:5,perMemberIntervalMs:60_000,serverPerDay:100});
 export const REPORT_RETENTION_DAYS=180;
 const MAX_INPUT=1000,MAX_STORED=500,MIN_WORDS=2;
@@ -45,7 +46,14 @@ export function sanitizeDescription(input){
     ['credential',/\beyJ[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]+)*/g,'[credential]'],
     ['id',/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,'[id]'],
     ['credential',/\b[A-Za-z0-9_+/=-]{24,}\b/g,'[credential]'],
-    ['number',/\d[\d.,:/%-]*/g,'[number]']
+    // A labeled value ("password: x", "api key = y", "my pin is z") is removed
+    // whatever its shape. "is/was" only counts for secret-only labels, so
+    // ordinary sentences such as "the token was issued" survive.
+    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|token|secret|api[\s_-]?key|access[\s_-]?key|private[\s_-]?key|auth(?:orization)?|cookie|session(?:[\s_-]?id)?|credentials?|code)\s*[:=]\s*\S+/giu,'[credential]'],
+    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|secret)\s+(?:is|was)\s+\S+/giu,'[credential]'],
+    ['credential',/\S+\.\S+\.\S+/gu,'[credential]'],
+    // Every number in any script (health values, dates, phone numbers).
+    ['number',/\p{N}[\p{N}.,:/%-]*/gu,'[number]']
   ];
   for(const [kind,re,mark] of rules)text=text.replace(re,()=>{removed.add(kind);return mark;});
   text=text.replace(/[<>`{}\\]/g,' ').replace(/\s+/g,' ').trim().slice(0,MAX_STORED).trim();
@@ -76,18 +84,22 @@ async function memberEvidence(db,userId,since){
   }catch{return [];}
 }
 const MEMBER_EXISTS=`EXISTS (${ACTIVE_MEMBER_SQL})`;
+// Limits count submissions (duplicates included) for the current UTC day, and
+// the per-minute check uses the member's own last submission time.
 const INSERT='INSERT INTO issue_reports(reference,user_id,category,severity,status,description,dedupe_key,request_id,'+
-  'evidence_json,subsystems,occurrences,created_at,updated_at) '+
-  "SELECT ?2,?1,?3,?4,'new',?5,?6,?7,?8,?9,1,?10,?10 WHERE "+MEMBER_EXISTS+
-  ' AND (SELECT COUNT(*) FROM issue_reports WHERE user_id=?1 AND updated_at>?11)<?13'+
-  ' AND NOT EXISTS (SELECT 1 FROM issue_reports WHERE user_id=?1 AND updated_at>?12)'+
-  ' AND (SELECT COUNT(*) FROM issue_reports WHERE updated_at>?11)<?14 '+
+  'evidence_json,subsystems,occurrences,day_key,day_submissions,last_submitted_at,created_at,updated_at) '+
+  "SELECT ?2,?1,?3,?4,'new',?5,?6,?7,?8,?9,1,?11,1,?10,?10,?10 WHERE "+MEMBER_EXISTS+
+  ' AND (SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE user_id=?1 AND day_key=?11)<?13'+
+  ' AND NOT EXISTS (SELECT 1 FROM issue_reports WHERE user_id=?1 AND last_submitted_at>?12)'+
+  ' AND (SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE day_key=?11)<?14 '+
   'ON CONFLICT(user_id,dedupe_key) DO UPDATE SET occurrences=occurrences+1,'+
+  'day_submissions=CASE WHEN day_key=excluded.day_key THEN day_submissions+1 ELSE 1 END,'+
+  'day_key=excluded.day_key,last_submitted_at=excluded.last_submitted_at,'+
   "status=CASE WHEN status='resolved' THEN 'recurring' ELSE status END,"+
   'updated_at=excluded.updated_at,request_id=excluded.request_id,evidence_json=excluded.evidence_json,'+
   'subsystems=excluded.subsystems,severity=excluded.severity';
 const CONFIRM_SQL='SELECT reference,occurrences,status,created_at FROM issue_reports '+
-  'WHERE user_id=?1 AND dedupe_key=?2 AND request_id=?3 AND updated_at=?4 LIMIT 1';
+  'WHERE user_id=?1 AND dedupe_key=?2 AND request_id=?3 AND last_submitted_at=?4 LIMIT 1';
 const PURGE='DELETE FROM issue_reports WHERE reference IN (SELECT reference FROM issue_reports '+
   "WHERE status='resolved' AND updated_at<?1 ORDER BY updated_at LIMIT 20)";
 
@@ -113,7 +125,7 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
   try{
     const results=await db.batch([
       db.prepare(INSERT).bind(userId,newReference(),kind,severityFor(kind,evidence),clean.text,key,requestId,
-        JSON.stringify(evidence),subsystems,at,since,new Date(now-LIMITS.perMemberIntervalMs).toISOString(),
+        JSON.stringify(evidence),subsystems,at,at.slice(0,10),new Date(now-LIMITS.perMemberIntervalMs).toISOString(),
         LIMITS.perMemberPerDay,LIMITS.serverPerDay),
       db.prepare(PURGE).bind(new Date(now-REPORT_RETENTION_DAYS*86400000).toISOString())
     ]);

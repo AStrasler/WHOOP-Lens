@@ -17,8 +17,8 @@ Retention: 30 days. Each write sweeps at most 50 expired rows.
 ## Member reports (`src/issue-reports.mjs`)
 - `report_issue` takes `{category, description, confirm?}`. There is no member id argument; the member is the authenticated one.
 - The first call (no `confirm`) only returns the cleaned text. The host must show it, and send `confirm: "submit-issue-report"` only after the member approves.
-- Cleaning removes every number (health values, dates, phone numbers), email addresses, links, UUIDs, bearer, JWT and other token-like strings, and markup. 500 characters max.
-- The write is one conditional `INSERT … ON CONFLICT` that also checks active membership and the limits: 1 per minute and 5 per day per member, 100 per day server-wide. Duplicates update the same reference. A resolved report that comes back becomes `recurring`.
+- Cleaning removes every number in any script (health values, dates, phone numbers), labeled secrets ("password: …", "my pin is …"), email addresses, links, UUIDs, bearer, JWT and other token-like strings, and markup. 500 characters max.
+- The write is one conditional `INSERT … ON CONFLICT` that also checks active membership and the limits: 1 per minute and 5 per UTC day per member, 100 per UTC day server-wide. Duplicates count as submissions, and owner status changes never touch the counters. Duplicates update the same reference. A resolved report that comes back becomes `recurring`.
 - A `WL-XXXXXXXX` reference is returned only after the row is read back for this member and request. Every failure says "not submitted and no reference was created."
 - Evidence attached: up to 10 of this member's own sanitized events from the last 24 hours.
 - Resolved reports are purged 180 days after their last update.
