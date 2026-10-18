@@ -26,8 +26,15 @@ const T0=Date.parse("2026-10-18T19:00:10Z");
 async function db(users=[[A,"public"],[B,"public"],[DEV,"developer"]],{budget=true,generations=true}={}){
   const d=await fixture(users);
   if(budget)d.sqlite.exec(migration(BUDGET));
-  if(generations)d.sqlite.exec(migration(GENERATIONS));
+  if(generations)applyGenerations(d);
   return d;
+}
+// 0016 seeds every existing member with a large generation (apply time in ms).
+// Tests count generations relative to that seed.
+const seeds=new WeakMap();
+function applyGenerations(d){
+  d.sqlite.exec(migration(GENERATIONS));
+  seeds.set(d,new Map(d.sqlite.prepare("SELECT user_id,generation FROM whoop_connection_generations").all().map(r=>[r.user_id,r.generation])));
 }
 // MCP caller with a controllable clock for the budget windows.
 function harness(whoop,clock={t:T0},extraEnv={}){
@@ -49,11 +56,12 @@ function harness(whoop,clock={t:T0},extraEnv={}){
   return {call,rest,clock};
 }
 const budgetRow=(d,id)=>({...d.sqlite.prepare("SELECT minute_count,day_count FROM whoop_member_request_budget WHERE user_id=?").get(id)});
-const generation=(d,id)=>d.sqlite.prepare("SELECT generation FROM whoop_connection_generations WHERE user_id=?").get(id)?.generation??0;
+const rawGeneration=(d,id)=>d.sqlite.prepare("SELECT generation FROM whoop_connection_generations WHERE user_id=?").get(id)?.generation??0;
+const generation=(d,id)=>rawGeneration(d,id)-(seeds.get(d)?.get(id)??0);
 
 // ---------------------------------------------------------------- migrations
 
-test("migrations 0015/0016: apply in order after 0001-0014, roll back, re-apply; existing rows untouched",()=>{
+test("migrations 0015/0016: apply in order after 0001-0014, roll back, re-apply; existing rows untouched",async()=>{
   const files=readdirSync(new URL("../migrations/",import.meta.url)).filter(f=>f.endsWith(".sql")).sort();
   assert.deepEqual(files.slice(-2),[BUDGET,GENERATIONS],"next migration numbers");
   const sqlite=new DatabaseSync(":memory:");
@@ -69,19 +77,28 @@ test("migrations 0015/0016: apply in order after 0001-0014, roll back, re-apply;
     sqlite.prepare("INSERT INTO whoop_recovery(user_id,whoop_id,date,raw_json) VALUES(?,?,?,?)").run(A,"w1","2026-10-01","{}");
     const snapshot=()=>JSON.stringify(["identity_links","whoop_members","whoop_connections","whoop_recovery"].map(t=>sqlite.prepare("SELECT * FROM "+t).all()));
     const before=snapshot();
+    const applied=Date.now();
     apply(BUDGET);apply(GENERATIONS);
     assert.equal(snapshot(),before,"existing rows unchanged");
-    // No backfill: existing members have no counters (full budget) and generation 0.
+    // Existing members have no counters (full budget). Each gets a generation
+    // seeded at the apply time in ms, above anything a cursor could carry.
     assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM whoop_member_request_budget").get().n,0);
-    assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM whoop_connection_generations").get().n,0);
+    const gen=()=>sqlite.prepare("SELECT generation g FROM whoop_connection_generations WHERE user_id=?").get(A)?.g;
+    assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM whoop_connection_generations").get().n,1);
+    const seeded=gen();
+    assert.ok(seeded>=Math.floor(applied/1000)*1000&&seeded<=Date.now(),"seeded at apply time");
     assert.deepEqual(sqlite.prepare("PRAGMA table_info(whoop_member_request_budget)").all().map(c=>c.name),
       ["user_id","minute_start","minute_count","day_start","day_count","updated_at"]);
     assert.deepEqual(sqlite.prepare("PRAGMA table_info(whoop_connection_generations)").all().map(c=>c.name),
       ["user_id","generation","updated_at"]);
     // No health data, tokens or identifiers beyond the member id.
     for(const f of [BUDGET,GENERATIONS])assert.doesNotMatch(migration(f).replace(/^--.*$/gm,""),/token|raw_json|score|hrv|email/i);
-    // Re-running is a no-op (IF NOT EXISTS).
+    // Re-running keeps the tables (IF NOT EXISTS) and only bumps generations.
     sqlite.exec(migration(BUDGET));sqlite.exec(migration(GENERATIONS));
+    assert.ok(gen()>seeded);
+    // A member who reconnected many times keeps increasing, never resets.
+    sqlite.prepare("UPDATE whoop_connection_generations SET generation=generation+500 WHERE user_id=?").run(A);
+    const high=gen();
     // Down, in reverse order, then up again.
     sqlite.exec(rollback("0016_whoop_connection_generations.down.sql"));
     sqlite.exec(rollback("0015_member_whoop_request_budget.down.sql"));
@@ -89,8 +106,11 @@ test("migrations 0015/0016: apply in order after 0001-0014, roll back, re-apply;
     assert.ok(!tables().includes("whoop_member_request_budget")&&!tables().includes("whoop_connection_generations"));
     assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM d1_migrations WHERE name IN (?,?)").get(BUDGET,GENERATIONS).n,0);
     assert.equal(snapshot(),before,"rollback leaves existing rows unchanged");
+    await new Promise(r=>setTimeout(r,1100));
     apply(BUDGET);apply(GENERATIONS);
     assert.ok(tables().includes("whoop_member_request_budget")&&tables().includes("whoop_connection_generations"));
+    // Re-applied after a rollback: the new seed exceeds the dropped history.
+    assert.ok(gen()>high,"no generation from before the drop can match again");
   }finally{sqlite.close();}
 });
 
@@ -330,7 +350,7 @@ test("reconnect: a callback that stores nothing (seat limit, revoked state) does
     d.sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(B);
     await assert.rejects(reconnect(d,B,"access-"+B),/save failed|seats/i);
     assert.equal(generation(d,B),0);
-    assert.equal(d.sqlite.prepare("SELECT COUNT(*) n FROM whoop_connection_generations").get().n,0);
+    assert.equal(d.sqlite.prepare("SELECT COUNT(*) n FROM whoop_connection_generations WHERE user_id=?").get(B).n,0);
     // Revoked between authorize and callback: nothing stored, no bump.
     const start=await createWhoopAuthorization(d,A,oauthEnv);
     d.sqlite.prepare("INSERT INTO whoop_credential_revocations(user_id,revoked_at) VALUES(?,?)").run(A,"2099-01-01 00:00:00");
@@ -406,7 +426,7 @@ test("rollout: cursors issued before 0016, and reconnects by pre-0016 code, cann
     // This branch's code without the table seals cursors without a generation.
     const early=content(await h.call(d,A,"get_recovery",{auto_page:true}));
     const old=await sealCursor({env:baseEnv,userId:A,resource:"sleep",query:{start:null,end:null},whoopToken:btoa("sleep:100"),depth:4});
-    d.sqlite.exec(migration(GENERATIONS));
+    applyGenerations(d);
     // A reconnect that bypasses the bump (pre-0016 code): credentials replaced, no row.
     await connect(d.sqlite,A,"public","access2-"+A);
     assert.equal(generation(d,A),0);
@@ -434,7 +454,7 @@ test("rollout: the bump is always in the credential batch; without the table the
     assert.equal(seen.length,3);assert.equal(seen[1],seen[2]+1);
     assert.equal(d.sqlite.prepare("SELECT encrypted_access_token<>'' ok FROM whoop_connections WHERE user_id=?").get(A).ok,1);
     // Once the table exists, one batch with the bump.
-    d.sqlite.exec(migration(GENERATIONS));seen.length=0;
+    applyGenerations(d);seen.length=0;
     await new Promise(r=>setTimeout(r,5));
     assert.equal((await reconnect(d,A,"access3-"+A)).connected,true);
     assert.equal(seen.length,2,"authorize + one callback batch");assert.equal(generation(d,A),1);
@@ -466,5 +486,32 @@ test("limits: a daily limit returns no cursor it would outlive, and says to rest
     const m=harness(w,clock,{WHOOP_MEMBER_LIMIT_PER_MINUTE:"1"});
     const minute=await quietly(()=>m.call(d,B,"get_cycles",{limit:25}).then(()=>m.call(d,B,"get_cycles",{limit:25})));
     assert.match(minute.body.result.content[0].text,/retry the same call\. A next_token stays valid for one hour after it was issued\./);
+  }finally{d.close();}
+});
+
+test("rollback and re-apply of 0016: cursors from before the drop or while it was absent stay rejected (Codex P2 on 172cf62)",async()=>{
+  const d=await db();
+  try{
+    const w=fakeWhoop(),h=harness(w);
+    const before=content(await h.call(d,A,"get_sleep",{auto_page:true}));
+    d.sqlite.exec("CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)");
+    d.sqlite.exec(rollback("0016_whoop_connection_generations.down.sql"));
+    // While the table is absent: a reconnect without disconnect leaves no bump,
+    // and new cursors carry no generation.
+    assert.equal((await reconnect(d,A,"access2-"+A)).connected,true);
+    const absent=content(await h.call(d,A,"get_cycles",{auto_page:true}));
+    assert.ok(absent.records.every(r=>r.account==="access2-"+A));
+    await new Promise(r=>setTimeout(r,1100));
+    d.sqlite.exec(migration(GENERATIONS));
+    const n=w.calls.length;
+    for(const [name,cursor] of [["get_sleep",before.next_token],["get_cycles",absent.next_token]]){
+      const stale=await h.call(d,A,name,{auto_page:true,next_token:cursor});
+      assert.equal(stale.body.result.isError,true,name);
+      assert.match(stale.body.result.content[0].text,/not valid/);
+    }
+    assert.equal(w.calls.length,n,"rejected before any WHOOP request");
+    const fresh=content(await h.call(d,A,"get_sleep",{auto_page:true}));
+    assert.ok(fresh.records.every(r=>r.account==="access2-"+A));
+    assert.equal(content(await h.call(d,A,"get_sleep",{auto_page:true,next_token:fresh.next_token})).records.length,100);
   }finally{d.close();}
 });

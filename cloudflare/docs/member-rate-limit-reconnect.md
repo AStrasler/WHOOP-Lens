@@ -55,6 +55,12 @@ are rejected, with no WHOOP request, once it changes. The connection state (revo
 generation, one combined read) is re-read after every WHOOP page; a page fetched across a change is
 dropped (`connection_changed`).
 
+Applying 0016 seeds every existing member with a generation equal to the apply time in
+milliseconds, so it is above every generation any cursor could carry, including generations from an
+earlier copy of the table that was dropped by the rollback and applied again (bumps are +1 per
+reconnect). A cursor sealed before the apply, or while the table was absent, therefore never
+matches. Members created later start without a row (generation 0) and have no older cursors.
+
 Once the table exists, a cursor without a generation is rejected. Such a cursor was sealed by
 pre-0016 code (live 04e4499d) or by this code before the table existed, and a reconnect made by old
 code in that window leaves no bump, so its generation cannot be trusted. Members simply start the
@@ -68,14 +74,16 @@ retried once without the bump; any other failure (for example a seat-limit abort
 ## Migration SQL, rollback and compatibility
 
 - Up: `migrations/0015_member_whoop_request_budget.sql`, `migrations/0016_whoop_connection_generations.sql`
-  (CREATE TABLE IF NOT EXISTS only; no ALTER, no backfill, no change to existing rows).
+  (CREATE TABLE IF NOT EXISTS; no ALTER, no change to existing rows. 0016 also inserts one
+  generation row per `identity_links` member: member id and a counter only).
 - Down: `migration/rollback/0016_...down.sql` then `migration/rollback/0015_...down.sql`
   (DROP TABLE + remove the `d1_migrations` row). Kept outside `migrations/` so wrangler never runs them.
 - Old code (main 90a5277 / live 04e4499d) with the new schema: main's full suite plus an
   old-code paging/callback/disconnect scenario pass; old code never touches the new tables.
 - New code with the old schema: both features degrade to today's behaviour (tested).
-- Tested in `test/member-rate-limit-reconnect.test.mjs`: up after 0001-0014, idempotent re-run,
-  down, re-up, existing rows byte-identical.
+- Tested in `test/member-rate-limit-reconnect.test.mjs`: up after 0001-0014, re-run (tables kept,
+  generations bumped), down, re-up above the dropped generations, existing rows byte-identical, and
+  stale cursors from before a drop or from while the table was absent rejected after re-apply.
 
 ### Production apply (needs Aaron's approval; not done)
 
@@ -88,15 +96,12 @@ npx wrangler d1 execute whoop-lens-migration --remote --file=migrations/0016_who
 npx wrangler d1 execute whoop-lens-migration --remote --command="INSERT INTO d1_migrations(name) VALUES('0015_member_whoop_request_budget.sql'),('0016_whoop_connection_generations.sql')"
 ```
 
-Order: either order is safe. Every cursor issued before 0016 exists stops being accepted when 0016
-is applied, so in-flight paging restarts once. The recommended order is to deploy this code, then
-apply 0015 and 0016. Old code never writes generations, so if old code serves traffic again after
-0016 (a rollback that keeps the tables), bump every member before redeploying this code. This
-invalidates all outstanding cursors:
-
-```
-npx wrangler d1 execute whoop-lens-migration --remote --command="INSERT INTO whoop_connection_generations(user_id,generation) SELECT user_id,1 FROM identity_links WHERE true ON CONFLICT(user_id) DO UPDATE SET generation=generation+1,updated_at=CURRENT_TIMESTAMP"
-```
+Order: either order is safe. Every cursor issued before 0016 is applied stops being accepted, so
+in-flight paging restarts once. The recommended order is to deploy this code, then apply 0015 and
+0016. Old code never writes generations, so if old code serves traffic again while the table
+exists (a rollback that keeps the tables), re-run the 0016 file before redeploying this code (skip
+the `d1_migrations` insert). That bumps every member and invalidates all outstanding cursors. After
+a full rollback (down files), applying 0016 again does the same.
 
 Rollback: redeploy the previous version, then (optionally) run the down files.
 
