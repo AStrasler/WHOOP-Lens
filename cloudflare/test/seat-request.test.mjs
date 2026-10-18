@@ -4,6 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync} from 'node:fs';
 import {d1Database} from './d1-sqlite.mjs';
 import {createSeatRequestHandler} from '../oauth/auth-server/src/seat-request.mjs';
+import {SEAT_ALLOCATION,seatCounts} from '../oauth/auth-server/src/seat-request-page.mjs';
 const origin='https://auth.whooplens.tech';
 function setup(){const sql=new DatabaseSync(':memory:');sql.exec(readFileSync(new URL('../migrations/0014_seat_requests.sql',import.meta.url),'utf8'));const sent=[];let clock=100000000;
  const env={DB:d1Database(sql),SEAT_REQUEST_ENABLED:'true',SEAT_REQUEST_TURNSTILE_SITE_KEY:'synthetic-site',SEAT_REQUEST_TURNSTILE_SECRET:'synthetic-secret'};
@@ -49,3 +50,26 @@ test('branded form retains submission contract and narrowly scoped font policy',
  assert.match(errorHtml,/class="mark"/);assert.match(errorHtml,/class="result"/);assert.match(errorHtml,/Return to the request form/);assert.doesNotMatch(errorHtml,/<form|synthetic@example/);
  const success=await s.call(post());assert.match(await success.text(),/Request received/);assert.equal(s.sent.length,1);
 }finally{s.sql.close();}});
+test('seat illustration shows the three-seat allocation as counts only',async()=>{const s=setup();try{
+ const html=await (await s.call(new Request(origin+'/request-seat'))).text();
+ assert.deepEqual(seatCounts(),{max:3,owner:1,members:1,reserved:1,open:0});
+ assert.equal(SEAT_ALLOCATION.max,3);
+ const row=html.match(/<div class="seat-row"[^>]*>(.*?)<\/div>/)[1];
+ assert.equal((row.match(/<i class="seat[^"]*"><\/i>/g)||[]).length,3);
+ assert.equal((row.match(/class="seat owner"/g)||[]).length,1);
+ assert.equal((row.match(/class="seat member"/g)||[]).length,1);
+ assert.equal((row.match(/class="seat reserved"/g)||[]).length,1);
+ assert.equal((row.match(/class="seat"/g)||[]).length,0);
+ const legend=html.match(/<div class="seat-legend">(.*?)<\/div>/)[1].replace(/<[^>]+>/g,'');
+ assert.equal(legend,'1 owner/developer1 approved member1 reserved, pending owner approval0 open3 max');
+ assert.match(html,/3 seats total, including the owner's/);
+ assert.doesNotMatch(html,/7 open|2 reserved/);
+ // Counts only: no names, relationships or addresses.
+ assert.doesNotMatch(html.replace(/whoop-lens@outlook\.com/g,''),/@[a-z0-9.-]+\.[a-z]{2,}|\b(mother|mom|sister|brother|wife|husband|son|daughter|aaron|amy|kimberly)\b/i);
+}finally{s.sql.close();}});
+test('seat allocation rejects more seats than the maximum and computes open seats',()=>{
+ assert.deepEqual(seatCounts({max:3,owner:1,members:2,reserved:0}),{max:3,owner:1,members:2,reserved:0,open:0});
+ assert.deepEqual(seatCounts({max:5,owner:1,members:1,reserved:1}).open,2);
+ assert.throws(()=>seatCounts({max:3,owner:1,members:2,reserved:1}),/Invalid seat allocation/);
+ assert.throws(()=>seatCounts({max:3,owner:1,members:-1,reserved:0}),/Invalid seat allocation/);
+});

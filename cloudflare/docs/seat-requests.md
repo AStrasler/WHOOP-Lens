@@ -1,10 +1,10 @@
 # Private seat requests
 
-Deployed and enabled on October 16, 2026. The request form is a public contact route at `https://auth.whooplens.tech/request-seat`; the MCP, WHOOP records and OAuth callback remain private. This does not change the owner's reserved seat or nine member slots. Submitting never enrolls a user, links an identity or reserves a seat.
+Deployed and enabled on October 16, 2026. The request form is a public contact route at `https://auth.whooplens.tech/request-seat`; the MCP, WHOOP records and OAuth callback remain private. WHOOP Lens has three seats in total, the owner's included (`WHOOP_LENS_SEAT_LIMIT`, default 3, on the resource Worker). Submitting never enrolls a user, links an identity or reserves a seat.
 
 The form asks for name, desired email and an optional short message, with explicit permission to contact the applicant. The auth Worker sends a plain-text email only to `whoop-lens@outlook.com` from `seat-requests@whooplens.tech`. Applicant content is untrusted and cannot choose the recipient or subject. Reply-To is the validated applicant address. The sender domain must be configured for Cloudflare email service and the destination verified.
 
-The public seat illustration shows one owner/developer seat, two owner-reserved member seats and seven open member seats. These are owner-declared reservations, not a live membership count. The display creates no membership, identity or access permission. Update the illustration when the owner changes allocations.
+The public seat illustration shows counts only, never names, emails or relationships: one owner/developer seat, one approved member, one seat reserved pending owner approval, and zero open seats, out of a maximum of three. The counts come from `SEAT_ALLOCATION` in `oauth/auth-server/src/seat-request-page.mjs`; open seats are computed as the maximum minus the others, and an allocation larger than the maximum is rejected. These are owner-declared allocations, not a live membership count. The display creates no membership, identity or access permission. Access is enforced by the Cloudflare Access allow rule, manual member approval and the resource Worker's seat cap. Update `SEAT_ALLOCATION` when the owner changes allocations, for example `members:2, reserved:0` once the reserved seat is approved.
 
 ## Branding
 
