@@ -3,6 +3,7 @@
 // evidence labels. Read-only. Reports flags and this account's own counts and
 // timestamps only; never a secret value, another member, or record content.
 import {whoopConnectConfigured} from './whoop-oauth.mjs';
+import {analyticsConfigured} from './ai-account.mjs';
 import {memberLimits,memberLimitEnabled} from './member-rate-limit.mjs';
 
 // A listed tool whose server flag is off throws this, so the member is told the
@@ -20,7 +21,9 @@ export function featureStates(env){
   // env is already resolved by the router (secrets.mjs), so this mirrors the
   // exact check connect_whoop runs. Presence only; no value is returned.
   const whoopConfigured=whoopConnectConfigured(env);
-  const ai=!!env?.AI;
+  // Summaries need the AI binding and the account analytics budget settings;
+  // without the budget settings every summary falls back to a template.
+  const ai=!!env?.AI&&analyticsConfigured(env);
   const features=[
     {id:'whoop_connection',tools:['connect_whoop','disconnect_whoop'],
       state:state(on(env,'WHOOP_OAUTH_ENABLED'),whoopConfigured)},
@@ -41,7 +44,7 @@ export function featureStates(env){
   ];
   return features.map(f=>({...f,reason:f.state==='enabled'?'Server flag is on and required settings are present.':
     f.state==='disabled'?'Server flag is off. Its tools may still be listed but return a feature-off message.':
-    'Server flag is on but a required setting or binding is missing, so calls may fail.'}));
+    'Server flag is on but a required setting or binding is missing, so calls may fail or fall back to a template.'}));
 }
 export const ROLE_BOUNDARIES=Object.freeze({
   shared:['Every seat, including the owner, reads, imports, connects and deletes only its own account data.',
@@ -118,7 +121,11 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
       not_verifiable_here:['Whether the phone app has Health Connect permissions, ran a sync, or which types it sent.',
         'The response the phone app received for a delivery. An accepted delivery can store zero records.']
     },
-    request_budget:memberLimitEnabled(env)?{state:'enabled',...memberLimits(env)[seat_role==='developer'?'developer':'public']}:{state:'disabled'}
+    // Same seat class the limiter uses: whoop_connections.seat_role. Without a
+    // connection row no WHOOP request is made, so no budget applies.
+    request_budget:!memberLimitEnabled(env)?{state:'disabled'}:roleRow===UNREAD?{state:'unknown'}:!roleRow?
+      {state:'not_applicable',reason:'No WHOOP connection, so no WHOOP requests are made.'}:
+      {state:'enabled',...memberLimits(env)[role==='developer'?'developer':'public']}
   };
 }
 export const ISSUE_GUIDANCE=Object.freeze({

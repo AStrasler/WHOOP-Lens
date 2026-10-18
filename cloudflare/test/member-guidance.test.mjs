@@ -94,6 +94,7 @@ test('Kimberly-like member: token issued, delivery accepted with unsupported typ
     assert.ok(account.role_boundaries.some(s=>/only its own account data/.test(s)));
     assert.ok(account.role_boundaries.some(s=>/ask the server owner/.test(s)));
     assert.ok(!account.role_boundaries.some(s=>/owner\/developer seat/.test(s)));
+    assert.deepEqual(account.request_budget,{state:'enabled',perMinute:25,perDay:1000});
   }finally{db.close();}
 });
 
@@ -144,6 +145,8 @@ test('owner stays the developer seat after disconnecting WHOOP, matching get_ai_
     assert.equal(account.seat_role_source,'Server owner setting.');
     assert.equal(account.whoop_connected,false);
     assert.ok(account.role_boundaries.some(s=>/server-wide AI summary total/.test(s)));
+    // No connection row: the limiter makes no WHOOP request, so no budget is claimed.
+    assert.equal(account.request_budget.state,'not_applicable');
     // A public member is never promoted by the owner setting.
     assert.equal(parse(await call(db,AMYLIKE,'get_capabilities')).account.seat_role,'public');
   }finally{db.close();}
@@ -171,6 +174,7 @@ test('member without a WHOOP connection: seat role reported as unknown, with the
     assert.equal(account.seat_role,'unknown');
     assert.equal(account.whoop_connected,false);
     assert.match(account.seat_role_source,/No WHOOP connection record yet/);
+    assert.equal(account.request_budget.state,'not_applicable');
     assert.equal(account.role_boundaries.length,2);
   }finally{db.close();}
 });
@@ -195,7 +199,16 @@ test('feature states: enabled, disabled and not_configured come from flags and b
   assert.equal(half.health_connect_phone_ingest,'enabled');
   assert.equal(half.health_connect_withdraw,'enabled');
   assert.equal(half.health_connect_file_import,'disabled');
-  const full=byId({...flagsOn,AI_SUMMARY_ENABLED:'true',AI:{run(){}},STRESS_ESTIMATE_ENABLED:'true'});
+  const analytics={AI_ANALYTICS_ACCOUNT_ID:'0123456789abcdef0123456789abcdef',AI_ACCOUNT_ANALYTICS_TOKEN:'synthetic-analytics-token-0001'};
+  const full=byId({...flagsOn,AI_SUMMARY_ENABLED:'true',AI:{run(){}},STRESS_ESTIMATE_ENABLED:'true',...analytics});
+  // Binding present but the budget settings missing or malformed: template-only, not enabled.
+  for(const drop of ['AI_ANALYTICS_ACCOUNT_ID','AI_ACCOUNT_ANALYTICS_TOKEN']){
+    const env={AI_SUMMARY_ENABLED:'true',STRESS_ESTIMATE_ENABLED:'true',AI:{run(){}},...analytics};delete env[drop];
+    assert.equal(byId(env).ai_summaries,'not_configured',drop);
+    assert.equal(byId(env).experimental_stress_estimate,'not_configured',drop);
+  }
+  assert.equal(byId({AI_SUMMARY_ENABLED:'true',AI:{run(){}},...analytics,AI_ANALYTICS_ACCOUNT_ID:'nope'}).ai_summaries,'not_configured');
+  assert.ok(!JSON.stringify(featureStates({AI_SUMMARY_ENABLED:'true',AI:{run(){}},...analytics})).includes('synthetic-analytics-token'));
   assert.equal(full.whoop_connection,'enabled');
   assert.equal(full.ai_summaries,'enabled');
   assert.equal(full.experimental_stress_estimate,'enabled');
