@@ -10,7 +10,7 @@ import {createStagingRouter} from '../src/router.mjs';
 import {handleMcpRpc,validateMcpTransport} from '../src/mcp.mjs';
 import {ISSUE_CONSENT} from '../src/health-connect-webhook.mjs';
 import {capture,sanitizeEvent,classifyToolError,newRequestId,BUCKET_MS,RETENTION_DAYS} from '../src/diagnostics.mjs';
-import {sanitizeDescription,LIMITS,reportIssue,APPROVAL_TTL_MS,REPORT_RETENTION_DAYS} from '../src/issue-reports.mjs';
+import {sanitizeDescription,LIMITS,reportIssue,reviewIssueReports,updateIssueReport,APPROVAL_TTL_MS,REPORT_RETENTION_DAYS} from '../src/issue-reports.mjs';
 import {hostInstructionsFor} from '../src/host-instructions.mjs';
 import {FeatureDisabled} from '../src/member-guidance.mjs';
 
@@ -475,4 +475,20 @@ test('0017 applies after 0001-0016, rolls back and re-applies; existing rows unt
     // Constraints reject free text in code fields.
     assert.throws(()=>sqlite.prepare("INSERT INTO diagnostic_events(user_key,category,subsystem,code,outcome,retryable,bucket,first_at,last_at,request_id) VALUES('','auth','mcp','Free Text 45','fail',0,0,'a','a','req_0011223344556677')").run());
   }finally{sqlite.close();}
+});
+
+test('owner review never returns or changes expired resolved reports, even beyond the purge batch',async()=>{
+  const db=await fixture();try{
+    const old='2026-01-01T00:00:00.000Z',fresh='2026-10-18T09:00:00.000Z',now=Date.parse('2026-10-18T10:00:00Z');
+    const insert=db.sqlite.prepare("INSERT INTO issue_reports(reference,user_id,category,severity,status,description,dedupe_key,request_id,evidence_json,day_key,day_submissions,last_submitted_at,created_at,updated_at) VALUES(?,?,'other','low',?,'synthetic text',?,'req_0000000000000000','[]',?,1,?,?,?)");
+    // 30 expired resolved rows: more than one purge batch (20).
+    for(let i=0;i<30;i++)insert.run('WL-'+i.toString(36).toUpperCase().padStart(8,'A'),AMYLIKE,'resolved',i.toString(16).padStart(64,'0'),old.slice(0,10),old,old,old);
+    insert.run('WL-NEWROW01',AMYLIKE,'new','f'.repeat(64),fresh.slice(0,10),fresh,fresh,fresh);
+    const review=await reviewIssueReports(db,OWNER,{limit:50},{env:ON,now});
+    assert.ok(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports').get().n>1,'purge is bounded; expired rows remain stored');
+    assert.deepEqual(review.reports.map(r=>r.reference),['WL-NEWROW01']);
+    assert.equal(review.counts.resolved,0);assert.equal(review.counts.new,1);
+    const leftover=db.sqlite.prepare("SELECT reference FROM issue_reports WHERE status='resolved' LIMIT 1").get().reference;
+    await assert.rejects(updateIssueReport(db,OWNER,{reference:leftover,status:'recurring'},{env:ON,now}),/not submitted/);
+  }finally{db.close();}
 });

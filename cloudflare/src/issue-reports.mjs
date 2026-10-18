@@ -177,19 +177,24 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     message:row.occurrences>1?`This matches an earlier report, ${row.reference}. It was updated, not duplicated.`:
       `Report ${row.reference} was saved for the server owner to review.`};
 }
+// Resolved reports past retention are never shown or changed, even if the
+// bounded purge has not reached them yet.
+const LIVE="NOT (status='resolved' AND updated_at<?5)";
 const LIST_SQL='SELECT reference,user_id,category,severity,status,description,request_id,evidence_json,subsystems,'+
   'occurrences,created_at,updated_at FROM issue_reports WHERE (?1 IS NULL OR status=?1) AND (?2 IS NULL OR category=?2) '+
-  'ORDER BY updated_at DESC LIMIT ?3 OFFSET ?4';
-const COUNTS_SQL='SELECT status,COUNT(*) AS n FROM issue_reports GROUP BY status';
+  'AND '+LIVE+' ORDER BY updated_at DESC LIMIT ?3 OFFSET ?4';
+const COUNTS_SQL='SELECT status,COUNT(*) AS n FROM issue_reports WHERE '+LIVE.replace('?5','?1')+' GROUP BY status';
+const reportCutoff=now=>new Date(now-REPORT_RETENTION_DAYS*86400000).toISOString();
 // Server-wide sanitized diagnostics for the last day: counts only, no member ids.
 const DIAG_SQL='SELECT category,subsystem,code,outcome,SUM(count) AS n,MAX(last_at) AS last_at FROM diagnostic_events '+
   'WHERE last_at>?1 AND outcome<>\'success\' GROUP BY category,subsystem,code,outcome ORDER BY n DESC LIMIT 25';
 export async function reviewIssueReports(db,userId,args,{env,now=Date.now()}={}){
   if(!issueReportsEnabled(env)||!isOwner(env,userId))throw new ReportNotSubmitted('unavailable');
   try{await db.batch(retentionStatements(db,now));}catch{/* retention is retried on the next write */}
-  const rows=(await db.prepare(LIST_SQL).bind(args.status??null,args.category??null,args.limit??10,args.offset??0).all())?.results??[];
+  const cutoff=reportCutoff(now);
+  const rows=(await db.prepare(LIST_SQL).bind(args.status??null,args.category??null,args.limit??10,args.offset??0,cutoff).all())?.results??[];
   const counts=Object.fromEntries(STATUSES.map(s=>[s,0]));
-  for(const r of (await db.prepare(COUNTS_SQL).all())?.results??[])if(Object.hasOwn(counts,r.status))counts[r.status]=r.n;
+  for(const r of (await db.prepare(COUNTS_SQL).bind(cutoff).all())?.results??[])if(Object.hasOwn(counts,r.status))counts[r.status]=r.n;
   let diagnostics=[];
   try{diagnostics=((await db.prepare(DIAG_SQL).bind(new Date(now-86400000).toISOString()).all())?.results??[])
     .map(r=>({category:r.category,subsystem:r.subsystem,code:r.code,outcome:r.outcome,count:r.n,last_at:r.last_at}));}catch{}
@@ -206,8 +211,8 @@ export async function reviewIssueReports(db,userId,args,{env,now=Date.now()}={})
 }
 export async function updateIssueReport(db,userId,args,{env,now=Date.now()}={}){
   if(!issueReportsEnabled(env)||!isOwner(env,userId))throw new ReportNotSubmitted('unavailable');
-  const result=await db.prepare('UPDATE issue_reports SET status=?2,updated_at=?3 WHERE reference=?1')
-    .bind(args.reference,args.status,new Date(now).toISOString()).run();
+  const result=await db.prepare('UPDATE issue_reports SET status=?2,updated_at=?3 WHERE reference=?1 AND '+LIVE.replace('?5','?4'))
+    .bind(args.reference,args.status,new Date(now).toISOString(),reportCutoff(now)).run();
   if(!result?.success||(result.meta?.changes??0)!==1)throw new ReportNotSubmitted('not_found');
   return {reference:args.reference,status:args.status,updated:true};
 }
