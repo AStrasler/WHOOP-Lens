@@ -19,6 +19,8 @@ function requireConfig(env) {
     throw Error("WHOOP redirect not configured for approved domain");
   return env;
 }
+// Same check connect_whoop runs, for capability reporting. Never returns a value.
+export function whoopConnectConfigured(env){try{requireConfig(env);return true;}catch{return false;}}
 function validateUser(userId) {
   if(typeof userId!=="string"||!UUID.test(userId))throw Error("Invalid user");
   return userId.toLowerCase();

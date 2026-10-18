@@ -2,7 +2,7 @@
 // states, Health Connect token-versus-data status, seat-role boundaries and
 // evidence labels. Read-only. Reports flags and this account's own counts and
 // timestamps only; never a secret value, another member, or record content.
-import {SECRET_RULES,BACKUP_PREFIX} from './secrets.mjs';
+import {whoopConnectConfigured} from './whoop-oauth.mjs';
 import {memberLimits,memberLimitEnabled} from './member-rate-limit.mjs';
 
 // A listed tool whose server flag is off throws this, so the member is told the
@@ -15,17 +15,11 @@ export class FeatureDisabled extends Error{
   }
 }
 const on=(env,name)=>env?.[name]==='true';
-// Presence only: a valid-format primary or a backup binding. The value is never
-// read out. Configured is not proof the provider accepts it.
-function secretPresent(env,name){
-  const rule=SECRET_RULES[name];
-  if(rule&&rule(env?.[name]))return true;
-  const backup=env?.[BACKUP_PREFIX+name];
-  return !!backup&&typeof backup.get==='function';
-}
 function state(enabled,configured=true){return !enabled?'disabled':configured?'enabled':'not_configured';}
 export function featureStates(env){
-  const whoopConfigured=secretPresent(env,'WHOOP_CLIENT_ID')&&secretPresent(env,'WHOOP_CLIENT_SECRET');
+  // env is already resolved by the router (secrets.mjs), so this mirrors the
+  // exact check connect_whoop runs. Presence only; no value is returned.
+  const whoopConfigured=whoopConnectConfigured(env);
   const ai=!!env?.AI;
   const features=[
     {id:'whoop_connection',tools:['connect_whoop','disconnect_whoop'],
@@ -79,7 +73,10 @@ async function read(db,sql,userId){
 export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   const roleRow=await read(db,ROLE_SQL,userId);
   const role=roleRow===UNREAD?undefined:roleRow?.seat_role;
-  const seat_role=role==='developer'||role==='public'?role:null;
+  // The owner setting is the same rule get_ai_usage uses, so the owner stays
+  // the developer seat even after disconnecting WHOOP.
+  const owner=typeof env?.WHOOP_LENS_DEVELOPER_USER_ID==='string'&&env.WHOOP_LENS_DEVELOPER_USER_ID.length>0&&env.WHOOP_LENS_DEVELOPER_USER_ID===userId;
+  const seat_role=owner?'developer':role==='developer'||role==='public'?role:null;
   const token=await read(db,TOKEN_SQL,userId);
   const issued=await read(db,ANY_TOKEN_SQL,userId);
   const records=await read(db,RECORDS_SQL,userId);
@@ -103,7 +100,7 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   return {
     as_of:new Date(now).toISOString(),
     seat_role:seat_role??'unknown',
-    seat_role_source:roleRow===UNREAD?'Could not be read right now.':seat_role?'This account\'s WHOOP connection record.':'No WHOOP connection record yet, so the seat role is not recorded.',
+    seat_role_source:owner?'Server owner setting.':roleRow===UNREAD?'Could not be read right now.':seat_role?'This account\'s WHOOP connection record.':'No WHOOP connection record yet, so the seat role is not recorded.',
     role_boundaries:[...ROLE_BOUNDARIES.shared,...(seat_role?ROLE_BOUNDARIES[seat_role]:[])],
     whoop_connected:roleRow===UNREAD?'unknown':!!roleRow,
     health_connect:{
@@ -125,8 +122,9 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   };
 }
 export const ISSUE_GUIDANCE=Object.freeze({
-  data_received:false,
-  next_step:'Enter header_name and header_value in the phone app, then let it sync. Issuing this token does not mean any data has arrived.',
+  // Scoped to this call: issuing or replacing a token never delivers data.
+  this_call_delivered_data:false,
+  next_step:'Enter header_name and header_value in the phone app, then let it sync. Issuing this token does not mean any data has arrived. Records already stored for this account are unchanged.',
   verify_with:'get_capabilities account.health_connect.records_stored, or get_health_connect',
   note:'A delivery can be accepted and still store zero records, for example when it has no supported types or permitted data.'
 });

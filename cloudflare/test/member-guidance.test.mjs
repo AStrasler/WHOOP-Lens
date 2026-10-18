@@ -20,7 +20,8 @@ const NEWBIE='0d0d0d0d-0000-4000-8000-00000000000d';
 const NOW=Date.parse('2026-10-18T22:00:00Z');
 const transport=validateMcpTransport(new Request('https://whooplens.tech/mcp',{headers:{'mcp-protocol-version':'2025-11-25'}}),{jsonrpc:'2.0',id:1,method:'tools/call'});
 const flagsOn={HEALTH_CONNECT_WEBHOOK_ENABLED:'true',WEB_HEALTH_IMPORT_ENABLED:'true',WHOOP_OAUTH_ENABLED:'true',
-  WHOOP_CLIENT_ID:'synthetic-client',WHOOP_CLIENT_SECRET:'synthetic-secret-123',WHOOP_LENS_DEVELOPER_USER_ID:OWNER};
+  WHOOP_CLIENT_ID:'synthetic-client',WHOOP_CLIENT_SECRET:'synthetic-secret-123',WHOOP_LENS_DEVELOPER_USER_ID:OWNER,
+  WHOOP_TOKEN_AES256_KEY:'synthetic-key-not-a-real-secret',WHOOP_REDIRECT_URI:'https://whooplens.tech/api/whoop/callback'};
 
 async function fixture(){
   const sqlite=new DatabaseSync(':memory:');
@@ -57,7 +58,8 @@ test('token issuance says no data has arrived and how to verify it',async()=>{
   const db=await fixture();try{
     const {data}=await issue(db,KIMLIKE);
     assert.equal(data.shown_once,true);
-    assert.equal(data.data_received,false);
+    assert.equal(data.this_call_delivered_data,false);
+    assert.ok(!('data_received' in data));
     assert.match(data.next_step,/does not mean any data has arrived/);
     assert.match(data.verify_with,/records_stored/);
     assert.match(data.note,/accepted and still store zero records/);
@@ -134,6 +136,35 @@ test('owner seat: developer boundaries, still own data only, owner budget',async
   }finally{db.close();}
 });
 
+test('owner stays the developer seat after disconnecting WHOOP, matching get_ai_usage',async()=>{
+  const db=await fixture();try{
+    db.sqlite.prepare('DELETE FROM whoop_connections WHERE user_id=?').run(OWNER);
+    const account=parse(await call(db,OWNER,'get_capabilities')).account;
+    assert.equal(account.seat_role,'developer');
+    assert.equal(account.seat_role_source,'Server owner setting.');
+    assert.equal(account.whoop_connected,false);
+    assert.ok(account.role_boundaries.some(s=>/server-wide AI summary total/.test(s)));
+    // A public member is never promoted by the owner setting.
+    assert.equal(parse(await call(db,AMYLIKE,'get_capabilities')).account.seat_role,'public');
+  }finally{db.close();}
+});
+
+test('reissuing for an account with stored records keeps them and is scoped to the call',async()=>{
+  const db=await fixture();try{
+    const first=await issue(db,AMYLIKE);
+    assert.equal((await (await deliver(db,first.token,envelope({steps:[steps(10)]}))).json()).stored,1);
+    const again=await issue(db,AMYLIKE);
+    assert.equal(again.data.replaced_previous,true);
+    assert.equal(again.data.this_call_delivered_data,false);
+    assert.match(again.data.next_step,/already stored for this account are unchanged/);
+    const hc=parse(await call(db,AMYLIKE,'get_capabilities')).account.health_connect;
+    assert.equal(hc.records_stored,1);
+    assert.equal(hc.ingest_token,'active');
+    assert.equal(hc.latest_authenticated_delivery_window_at,null);
+    assert.match(hc.summary,/1 Health Connect record\(s\) are stored/);
+  }finally{db.close();}
+});
+
 test('member without a WHOOP connection: seat role reported as unknown, with the reason',async()=>{
   const db=await fixture();try{
     const account=parse(await call(db,NEWBIE,'get_capabilities')).account;
@@ -168,9 +199,14 @@ test('feature states: enabled, disabled and not_configured come from flags and b
   assert.equal(full.whoop_connection,'enabled');
   assert.equal(full.ai_summaries,'enabled');
   assert.equal(full.experimental_stress_estimate,'enabled');
-  // A Secrets Store backup binding counts as configured; its value is never read.
-  const backup=byId({WHOOP_OAUTH_ENABLED:'true',BK_WHOOP_CLIENT_ID:{get(){throw Error('must not read');}},BK_WHOOP_CLIENT_SECRET:{get(){throw Error('must not read');}}});
-  assert.equal(backup.whoop_connection,'enabled');
+  // Same check as connect_whoop: client, secret, a token key and the approved redirect.
+  for(const missing of ['WHOOP_CLIENT_ID','WHOOP_CLIENT_SECRET','WHOOP_TOKEN_AES256_KEY','WHOOP_REDIRECT_URI']){
+    const env={...flagsOn};delete env[missing];
+    assert.equal(byId(env).whoop_connection,'not_configured',missing);
+  }
+  assert.equal(byId({...flagsOn,WHOOP_REDIRECT_URI:'https://elsewhere.invalid/cb'}).whoop_connection,'not_configured');
+  const nextOnly={...flagsOn,WHOOP_TOKEN_AES256_KEY_NEXT:flagsOn.WHOOP_TOKEN_AES256_KEY};delete nextOnly.WHOOP_TOKEN_AES256_KEY;
+  assert.equal(byId(nextOnly).whoop_connection,'enabled');
   // Exact "true" only, like every other flag on this server.
   assert.equal(byId({HEALTH_CONNECT_WEBHOOK_ENABLED:'TRUE'}).health_connect_phone_ingest,'disabled');
   assert.ok(!JSON.stringify(featureStates(flagsOn)).includes('synthetic-secret-123'));
