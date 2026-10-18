@@ -250,6 +250,9 @@ test('feature states: enabled, disabled and not_configured come from flags and b
   assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY:'not-a-32-byte-key'}).whoop_connection,'not_configured');
   assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY_NEXT:'not-a-32-byte-key'}).whoop_connection,'not_configured');
   assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY_NEXT:'B'.repeat(43)}).whoop_connection,'enabled');
+  // Malformed client credentials (whitespace, too short) are not configured either.
+  assert.equal(byId({...flagsOn,WHOOP_CLIENT_ID:'has space id'}).whoop_connection,'not_configured');
+  assert.equal(byId({...flagsOn,WHOOP_CLIENT_SECRET:'short'}).whoop_connection,'not_configured');
   // Exact "true" only, like every other flag on this server.
   assert.equal(byId({HEALTH_CONNECT_WEBHOOK_ENABLED:'TRUE'}).health_connect_phone_ingest,'disabled');
   assert.ok(!JSON.stringify(featureStates(flagsOn)).includes('synthetic-secret-123'));
@@ -290,6 +293,8 @@ test('status reads fail soft: the catalog still answers and labels Health Connec
     assert.match(status.seat_role_source,/No WHOOP connection record yet/);
     assert.match(status.health_connect.summary,/unverified/);
     assert.equal(status.as_of,new Date(NOW).toISOString());
+    // The budget is knowable without Health Connect tables, so it is still reported.
+    assert.equal(status.request_budget.state,'not_applicable');
   }finally{sqlite.close();}
 });
 
