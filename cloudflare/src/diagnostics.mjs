@@ -57,9 +57,15 @@ export async function capture(env,db,event,{now=Date.now()}={}){
   // The console line (Workers observability) carries no member id.
   try{console.log(JSON.stringify({event:'diag',category:clean.category,subsystem:clean.subsystem,code:clean.code,
     outcome:clean.outcome,retryable:clean.retryable,request_id:clean.request_id}));}catch{/* diagnostics only */}
-  if(!diagnosticsEnabled(env)||!db||typeof db.prepare!=='function')return false;
+  if(!db||typeof db.prepare!=='function'||typeof db.batch!=='function')return false;
+  const cutoff=new Date(now-RETENTION_DAYS*86400000).toISOString();
+  if(!diagnosticsEnabled(env)){
+    // Capture is off, but rows collected earlier still expire on schedule.
+    // Before the migration the tables do not exist and this is a no-op.
+    try{await db.batch([db.prepare(SWEEP).bind(cutoff),...retentionStatements(db,now)]);}catch{/* retried next time */}
+    return false;
+  }
   try{
-    const cutoff=new Date(now-RETENTION_DAYS*86400000).toISOString();
     const results=await db.batch([
       db.prepare(UPSERT).bind(clean.user_key,clean.category,clean.subsystem,clean.code,clean.outcome,
         clean.retryable?1:0,clean.bucket,clean.at,clean.request_id),

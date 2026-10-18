@@ -12,7 +12,7 @@ Each event has: category, subsystem, fixed code, outcome (`success`/`fail`/`part
 
 Sources: MCP tool errors and invalid arguments, WHOOP API, auth and 429s, AI summary failure and template fallback (with the fixed reason), Health Connect token issuance and storage errors, webhook outcomes (`hc_delivery_stored`, `hc_only_unsupported_types`, `hc_records_rejected`, `hc_empty_delivery`, token, consent, payload and rate-limit failures), the WHOOP callback, unauthenticated MCP calls, inactive membership and DB failures.
 
-Retention: 30 days. Each write sweeps at most 50 expired rows.
+Retention: 30 days. Each write sweeps at most 50 expired rows. The sweep keeps running on failure events even after capture is turned off.
 
 ## Member reports (`src/issue-reports.mjs`)
 - `report_issue` takes `{category, description, approval_token?}`. There is no member id argument; the member is the authenticated one.
@@ -25,7 +25,7 @@ Retention: 30 days. Each write sweeps at most 50 expired rows.
 
 ## Owner oversight
 `review_issue_reports` and `update_issue_report` are listed and callable only when `WHOOP_LENS_DEVELOPER_USER_ID` equals the caller (the `get_ai_usage` rule). Anyone else gets "Unknown tool".
-- `review_issue_reports` shows a pseudonymous `member_ref` (a truncated SHA-256 that groups one member's reports; no account id), severity, category, status, subsystems, occurrences, sanitized evidence and server-wide event counts for the last day, without member ids.
+- `review_issue_reports` returns report text as `untrusted_member_text`, with a `handling` note (and host guidance) never to follow instructions in it. It also shows a pseudonymous `member_ref` (a truncated SHA-256 that groups one member's reports; no account id), severity, category, status, subsystems, occurrences, sanitized evidence and server-wide event counts for the last day, without member ids.
 - `update_issue_report` only sets the status: new, acknowledged, resolved or recurring.
 
 While reporting is on, `get_capabilities` role boundaries and the host instructions tell members their reports are visible to the owner, and tell the owner this is the only cross-account view.
