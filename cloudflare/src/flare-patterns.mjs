@@ -1,5 +1,6 @@
 // Descriptive analysis only. No trained predictor, external model, or persisted inference.
 import {parseWeekEnding} from './ai-digest.mjs';
+import {validWhoopToken} from './history-pagination.mjs';
 const DAY=86400000;
 const shift=(day,n)=>new Date(Date.parse(day+'T00:00:00Z')+n*DAY).toISOString().slice(0,10);
 function dateOf(value){
@@ -27,7 +28,7 @@ async function history(ctx,resource,start,end){
    rows.push(...page.records);
    const next=page.next_token??null;
    if(next===null){complete=true;break;}
-   if(typeof next!=='string'||!next.length||next.length>512||! /^[A-Za-z0-9._~+/-]+$/.test(next)||next.includes('..')||seen.has(next))break;
+   if(!validWhoopToken(next)||next===token||seen.has(next))break;
    seen.add(next);token=next;
   }
  }catch{/* Retain partial observations; never pretend the source had no records. */}

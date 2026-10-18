@@ -15,7 +15,7 @@ const B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const C="cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const key=randomBytes(32).toString("base64url");
 const nextKey=randomBytes(32).toString("base64url");
-const migrations=["0001_initial.sql","0002_enforce_seat_limits.sql"].map(f=>readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
+const migrations=["0001_initial.sql","0002_enforce_seat_limits.sql","0008_whoop_credential_revocations.sql"].map(f=>readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
 const ENDPOINTS={get_recovery:["recovery","recovery"],get_sleep:["sleep","activity/sleep"],get_workouts:["workouts","activity/workout"],get_cycles:["cycles","cycle"]};
 const PATH_TO_RESOURCE=Object.fromEntries(Object.values(ENDPOINTS).map(([r,p])=>["/developer/v2/"+p,r]));
 const TOTAL=230; // more than two full auto_page calls (100 records each)
@@ -370,7 +370,10 @@ test("cursor crypto binds member, endpoint, window and key; uses the existing to
   const cursor=await sealCursor(args);
   assert.match(cursor,/^wlc1\.k1\.[A-Za-z0-9_-]{16}\.[A-Za-z0-9_-]+$/);
   assert.doesNotMatch(cursor,/MTIzOjEyMzEyMw/);
-  assert.deepEqual(await openCursor({...args,cursor}),{whoopToken:"MTIzOjEyMzEyMw==",depth:1});
+  const opened=await openCursor({...args,cursor});
+  assert.deepEqual({whoopToken:opened.whoopToken,depth:opened.depth},{whoopToken:"MTIzOjEyMzEyMw==",depth:1});
+  // issuedAt is derived from the sealed expiry (used for the disconnect check).
+  assert.ok(Math.abs(opened.issuedAt-Date.now())<5000);
   // Member ids are case-normalized, so the same member always matches.
   assert.ok(await openCursor({...args,userId:A.toUpperCase(),cursor}));
   for(const change of [{userId:B},{resource:"sleep"},{query:{start:"2026-01-01T00:00:00Z"}},{env:{...baseEnv,WHOOP_TOKEN_AES256_KEY:nextKey}}])
