@@ -1,7 +1,7 @@
 // Local record reads never accept an owner from the client. Membership is checked
 // by the router before dispatch; each SQL statement also binds the verified ID.
 import manifest from '../../supabase/functions/whoop-mcp/capabilities.json' with {type:'json'};
-import {activeMembership,connectionStatus} from './storage.mjs';
+import {activeMembership} from './storage.mjs';
 import {ISSUE_CONSENT,REVOKE_CONFIRM} from './health-connect-webhook.mjs';
 import {featureStates,accountStatus} from './member-guidance.mjs';
 export const SAMSUNG_METRICS=['sleep','heart_rate','spo2','steps','activity','exercise','body_composition','skin_temperature','energy_score','blood_pressure','profile'];
@@ -106,7 +106,12 @@ export const STRESS_CAPABILITY=Object.freeze({
   example_prompts:['What was my experimental stress estimate this week, and how confident is it?']
 });
 async function catalog(db,userId,{category,limit=25,offset=0,include_planned=true},env=null){
-  const connected=(await connectionStatus(db,userId)).connected;
+  // One connection read for the whole response: the capability entries and the
+  // account block come from the same snapshot. If it cannot be read, WHOOP
+  // capabilities are not advertised as available.
+  const account=await accountStatus(db,userId,env);
+  const connected=account.whoop_connected===true;
+  const unreadable=account.whoop_connected==='unknown';
   const available={};
   for(const [id,sql] of Object.entries({
     samsung:'SELECT id FROM samsung_health_records WHERE user_id=?1 LIMIT 1',
@@ -139,12 +144,13 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
     }
     const needsWhoop=item.tools.some(t=>['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles'].includes(t));
     return {...value,status:needsWhoop&&!connected?'requires_connection_or_data':item.status,
-      availability_reason:needsWhoop&&!connected?'Connect WHOOP first.':
+      availability_reason:needsWhoop&&unreadable?'The WHOOP connection could not be confirmed right now; get_capabilities again shortly.':
+        needsWhoop&&!connected?'Connect WHOOP first.':
         item.delivery==='host_assisted'?'Depends on the AI host and sufficient user-provided or connected data.':
         item.status==='planned'||item.status==='unsupported'?'Not provided by this service.':'Registered; record completeness is not guaranteed.'};
   }).filter(item=>(!category||item.category===category)&&(include_planned||!['planned','unsupported'].includes(item.status)));
   return {schema_version:manifest.schema_version,registry_version:'cloudflare-1.3',source:'bundled_cloudflare_catalog',
-    server_features:featureStates(env),account:await accountStatus(db,userId,env),
+    server_features:featureStates(env),account,
     global_limitations:[...manifest.global_limitations.filter(s=>!s.startsWith('Android Health Connect')),
       'Local record tools read stored records for the signed-in account.',
       'Health Connect phone ingest stays off until an ingest token is issued and the server flag is on. File import is a separate consent.',

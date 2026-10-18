@@ -12,6 +12,7 @@ import {handleMcpRpc,validateMcpTransport} from '../src/mcp.mjs';
 import {healthConnectWebhook,ISSUE_CONSENT} from '../src/health-connect-webhook.mjs';
 import {featureStates,accountStatus,FeatureDisabled} from '../src/member-guidance.mjs';
 import {hostInstructions,hostInstructionsFor} from '../src/host-instructions.mjs';
+import {readExtraTool} from '../src/extra-tools.mjs';
 
 const OWNER='0a0a0a0a-0000-4000-8000-00000000000a';
 const AMYLIKE='0b0b0b0b-0000-4000-8000-00000000000b';
@@ -246,8 +247,10 @@ test('feature states: enabled, disabled and not_configured come from flags and b
   assert.equal(byId({...flagsOn,WHOOP_REDIRECT_URI:'https://elsewhere.invalid/cb'}).whoop_connection,'not_configured');
   const nextOnly={...flagsOn,WHOOP_TOKEN_AES256_KEY_NEXT:flagsOn.WHOOP_TOKEN_AES256_KEY};delete nextOnly.WHOOP_TOKEN_AES256_KEY;
   assert.equal(byId(nextOnly).whoop_connection,'enabled');
-  // A malformed current or next token key breaks every callback: not configured.
+  // A malformed sealing key breaks every callback: not configured. Callbacks seal with NEXT whenever it is set.
   assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY:'not-a-32-byte-key'}).whoop_connection,'not_configured');
+  // During rotation a valid NEXT seals new callbacks, so a malformed old key does not block reconnecting.
+  assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY:'not-a-32-byte-key',WHOOP_TOKEN_AES256_KEY_NEXT:'B'.repeat(43)}).whoop_connection,'enabled');
   assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY_NEXT:'not-a-32-byte-key'}).whoop_connection,'not_configured');
   assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY_NEXT:'B'.repeat(43)}).whoop_connection,'enabled');
   // Malformed client credentials (whitespace, too short) are not configured either.
@@ -310,4 +313,26 @@ test('host instructions carry the shared guidance for every flag combination',()
     assert.match(text,/as unverified/);
   }
   assert.ok(hostInstructions.endsWith('phone-side settings.'));
+});
+
+test('get_capabilities reads the WHOOP connection once, so capabilities and account agree',async()=>{
+  const db=await fixture();try{
+    const whoopCaps=c=>c.capabilities.filter(x=>x.tools?.includes('get_recovery'));
+    const connected=await readExtraTool(db,AMYLIKE,'get_capabilities',{include_planned:false},flagsOn);
+    assert.equal(connected.account.whoop_connected,true);
+    assert.ok(whoopCaps(connected).length>0&&whoopCaps(connected).every(x=>x.status!=='requires_connection_or_data'));
+    const none=await readExtraTool(db,NEWBIE,'get_capabilities',{include_planned:false},flagsOn);
+    assert.equal(none.account.whoop_connected,false);
+    assert.ok(whoopCaps(none).every(x=>x.status==='requires_connection_or_data'));
+    // Count reads of the connection row: exactly one per response.
+    let reads=0;
+    const counting={...db,prepare(sql){if(/FROM whoop_connections/.test(sql))reads++;return db.prepare(sql);}};
+    await readExtraTool(counting,AMYLIKE,'get_capabilities',{},flagsOn);
+    assert.equal(reads,1);
+    // If the row cannot be read, WHOOP capabilities are not advertised as available.
+    const broken={...db,prepare(sql){if(/FROM whoop_connections/.test(sql))throw Error('synthetic read failure');return db.prepare(sql);}};
+    const unknown=await readExtraTool(broken,AMYLIKE,'get_capabilities',{include_planned:false},flagsOn);
+    assert.equal(unknown.account.whoop_connected,'unknown');
+    assert.ok(whoopCaps(unknown).every(x=>x.status==='requires_connection_or_data'&&/could not be confirmed/.test(x.availability_reason)));
+  }finally{db.close();}
 });
