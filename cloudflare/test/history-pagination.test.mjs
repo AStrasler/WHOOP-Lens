@@ -273,6 +273,14 @@ test("failed or incomplete WHOOP pages return what was read and resume at the fa
     const mal=fakeWhoop({fail:({offset})=>offset===25?new Response(JSON.stringify({records:"nope"}),{status:200}):null});
     const partial=content(await setup(mal)(db,B,"get_sleep",{auto_page:true}));
     assert.equal(partial.records.length,25);assert.equal(partial.incomplete_reason,"upstream_error");
+    // Manual pages get the same validation: missing, non-array or oversized
+    // records are an error, never complete: true (Codex P2 on f1c09f7).
+    for(const page of [{next_token:null},{records:"nope",next_token:null},{records:Array.from({length:11},(_,i)=>({id:i})),next_token:null}]){
+      const bad={fetch:async()=>new Response(JSON.stringify(page),{status:200})};
+      const res=await setup(bad)(db,B,"get_sleep",{limit:10});
+      assert.equal(res.result.isError,true,JSON.stringify(page).slice(0,40));
+      assert.equal(res.result.structuredContent,undefined);
+    }
     // Nothing read at all: generic tool error, no partial data or details.
     const down=fakeWhoop({fail:()=>new Response("SECRET upstream body",{status:503})});
     const err=await setup(down)(db,B,"get_sleep",{auto_page:true});

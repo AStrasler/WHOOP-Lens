@@ -155,7 +155,9 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
 async function readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,now}){
   if(depth>=SEQUENCE_MAX_PAGES)return {records:[],next_token:null,complete:false,incomplete_reason:"page_limit"};
   const batch=await whoopRequest(db,userId,resource,env,{limit,next_token:token});
-  if(batch===null||typeof batch!=="object"||Array.isArray(batch))throw Error("Unexpected WHOOP page");
+  // Same page validation as auto_page: a malformed or oversized page is an
+  // error, never a "complete" history.
+  if(!pageOk(batch,limit))throw Error(batch&&Array.isArray(batch.records)?"WHOOP page oversized":"Unexpected WHOOP page");
   const next=batch.next_token??null;
   const out={...batch};
   // Same completion signal as auto_page, so "paginate until complete is true" works.

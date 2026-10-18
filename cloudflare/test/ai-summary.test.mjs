@@ -720,7 +720,8 @@ test("summaries use only WHOOP and Health Connect allowlisted fields",async()=>{
 
 test("the reserved input cap covers the call and over-cap usage is kept",async()=>{
   const records=[];
-  for(let day=1;day<=25;day++)records.push(recovery(40+day,`2026-01-${String(day).padStart(2,"0")}`));
+  // One full WHOOP page (25 records): a page larger than its limit is rejected.
+  for(let day=1;day<=24;day++)records.push(recovery(40+day,`2026-01-${String(day).padStart(2,"0")}`));
   records.push(recovery(70,"2026-09-15"));
   const db=openDb();
   try{
@@ -730,7 +731,7 @@ test("the reserved input cap covers the call and over-cap usage is kept",async()
       return {response:'{"selected":[0]}',
         usage:{prompt_tokens:100,completion_tokens:20}};
     }}});
-    const body=await handleMcpRpc(rpc("get_recovery",{summary:true}),{
+    const body=await handleMcpRpc(rpc("get_recovery",{summary:true,limit:25}),{
       db,userId:A,env,whoopRequest:async()=>({records,next_token:null})
     },modern);
     assert.equal(summaryOf(body).status,"model");
