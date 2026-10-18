@@ -21,7 +21,7 @@ const NOW=Date.parse('2026-10-18T22:00:00Z');
 const transport=validateMcpTransport(new Request('https://whooplens.tech/mcp',{headers:{'mcp-protocol-version':'2025-11-25'}}),{jsonrpc:'2.0',id:1,method:'tools/call'});
 const flagsOn={HEALTH_CONNECT_WEBHOOK_ENABLED:'true',WEB_HEALTH_IMPORT_ENABLED:'true',WHOOP_OAUTH_ENABLED:'true',
   WHOOP_CLIENT_ID:'synthetic-client',WHOOP_CLIENT_SECRET:'synthetic-secret-123',WHOOP_LENS_DEVELOPER_USER_ID:OWNER,
-  WHOOP_TOKEN_AES256_KEY:'synthetic-key-not-a-real-secret',WHOOP_REDIRECT_URI:'https://whooplens.tech/api/whoop/callback'};
+  WHOOP_TOKEN_AES256_KEY:'A'.repeat(43),WHOOP_REDIRECT_URI:'https://whooplens.tech/api/whoop/callback'};
 
 async function fixture(){
   const sqlite=new DatabaseSync(':memory:');
@@ -246,6 +246,10 @@ test('feature states: enabled, disabled and not_configured come from flags and b
   assert.equal(byId({...flagsOn,WHOOP_REDIRECT_URI:'https://elsewhere.invalid/cb'}).whoop_connection,'not_configured');
   const nextOnly={...flagsOn,WHOOP_TOKEN_AES256_KEY_NEXT:flagsOn.WHOOP_TOKEN_AES256_KEY};delete nextOnly.WHOOP_TOKEN_AES256_KEY;
   assert.equal(byId(nextOnly).whoop_connection,'enabled');
+  // A malformed current or next token key breaks every callback: not configured.
+  assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY:'not-a-32-byte-key'}).whoop_connection,'not_configured');
+  assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY_NEXT:'not-a-32-byte-key'}).whoop_connection,'not_configured');
+  assert.equal(byId({...flagsOn,WHOOP_TOKEN_AES256_KEY_NEXT:'B'.repeat(43)}).whoop_connection,'enabled');
   // Exact "true" only, like every other flag on this server.
   assert.equal(byId({HEALTH_CONNECT_WEBHOOK_ENABLED:'TRUE'}).health_connect_phone_ingest,'disabled');
   assert.ok(!JSON.stringify(featureStates(flagsOn)).includes('synthetic-secret-123'));
