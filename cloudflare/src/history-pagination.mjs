@@ -98,7 +98,21 @@ export async function openCursor({env,userId,resource,query,cursor,now=Date.now}
      !Number.isSafeInteger(payload.d)||payload.d<1||payload.d>SEQUENCE_MAX_PAGES)
     throw new CursorError("invalid");
   if(now()>=payload.x)throw new CursorError("expired");
-  return {whoopToken:payload.t,depth:payload.d};
+  // Every cursor is sealed exactly CURSOR_TTL_MS before it expires.
+  return {whoopToken:payload.t,depth:payload.d,issuedAt:payload.x-CURSOR_TTL_MS};
+}
+// A disconnect (disconnect_whoop) ends every sequence started before it, so a
+// cursor from the old WHOOP connection never continues on a later one.
+// revoked_at has one-second precision: anything issued in that second fails.
+async function assertNotRevoked(db,userId,issuedAt){
+  const row=await db.prepare(
+    "SELECT revoked_at FROM whoop_credential_revocations WHERE user_id=?1 LIMIT 1"
+  ).bind(userId.toLowerCase()).first();
+  if(!row?.revoked_at)return;
+  const raw=String(row.revoked_at);
+  const revoked=Date.parse(raw.includes("T")?raw:raw.slice(0,19).replace(" ","T")+"Z");
+  // An unreadable marker fails closed.
+  if(!Number.isFinite(revoked)||issuedAt<revoked+1000)throw new CursorError("revoked");
 }
 
 function pageOk(batch,max){
@@ -113,12 +127,13 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
   let token=null,depth=0;
   if(cursor!=null){
     const opened=await openCursor({env,userId,resource,query,cursor,now});
+    await assertNotRevoked(db,userId,opened.issuedAt);
     token=opened.whoopToken;depth=opened.depth;
   }
   if(!auto)return readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,now});
   const records=[];
   const seen=new Set(token?[token]:[]);
-  let pages=0,reason=null;
+  let pages=0,reason=null,retryAfter=null;
   while(pages<AUTO_PAGE_MAX_PAGES){
     if(depth>=SEQUENCE_MAX_PAGES){reason="page_limit";break;}
     let batch;
@@ -126,7 +141,9 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
     catch(error){
       // Nothing retrieved yet: surface the failure exactly as before.
       if(pages===0)throw error;
-      reason=error?.status===429?"rate_limited":"upstream_error";break;
+      reason=error?.status===429?"rate_limited":"upstream_error";
+      if(reason==="rate_limited"&&Number.isSafeInteger(error?.retryAfter))retryAfter=error.retryAfter;
+      break;
     }
     if(!pageOk(batch,AUTO_PAGE_SIZE)){
       if(pages===0)throw Error(batch&&Array.isArray(batch.records)?"WHOOP page oversized":"Unexpected WHOOP page");
@@ -147,6 +164,7 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
     next_token:token===null?null:await sealCursor({env,userId,resource,query,whoopToken:token,depth,now}),
     complete:token===null&&reason===null,pages_fetched:pages};
   if(reason)out.incomplete_reason=reason;
+  if(retryAfter!=null)out.retry_after_seconds=retryAfter;
   return out;
 }
 // One page, as before: the WHOOP response passes through except that its

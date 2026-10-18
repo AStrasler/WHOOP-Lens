@@ -172,6 +172,11 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       return json({category,records,source:"cloudflare-staging"});
     } catch (error) {
       if (error instanceof AccessDenied) return json({error:"Unauthorized"},error.status);
+      if (error?.status === 429) {
+        const response=json({error:"WHOOP rate limited this request. Retry later."},429);
+        if (Number.isSafeInteger(error.retryAfter)) response.headers.set("retry-after",String(error.retryAfter));
+        return response;
+      }
       // Never disclose query text, tokens, D1 errors or upstream response bodies.
       return json({error:"Staging service unavailable"},503);
     }
