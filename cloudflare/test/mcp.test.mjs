@@ -23,8 +23,6 @@ function db({member=true}={}){
   return {
     count:()=>count,
     prepare(query){count++;return {bind(...values){assert.equal(values[0],A);return this;},async first(){
-      // History reads also look up the connection generation (migration 0016); none stored = 0.
-      if(/FROM whoop_connection_generations WHERE user_id=\?1/.test(query))return null;
       assert.match(query,/whoop_members/);return member?{user_id:A}:null;
     }};}
   };
