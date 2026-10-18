@@ -98,15 +98,15 @@ test("migrations 0015/0016: apply in order after 0001-0014, roll back, re-apply;
 
 test("limits: defaults are a fair share; env overrides are clamped and a bad value never locks anyone out",()=>{
   assert.deepEqual(DEFAULT_MEMBER_LIMITS,{perMinute:25,perDay:1000});
-  assert.deepEqual(memberLimits({},A),{perMinute:25,perDay:1000,seat:"public"});
+  const both=(pm,pd)=>({public:{perMinute:pm,perDay:pd},developer:{perMinute:pm,perDay:pd}});
+  assert.deepEqual(memberLimits({}),both(25,1000));
   // Developer seat: same limit by default, configurable separately.
-  assert.deepEqual(memberLimits({WHOOP_LENS_DEVELOPER_USER_ID:DEV},DEV),{perMinute:25,perDay:1000,seat:"developer"});
-  assert.deepEqual(memberLimits({WHOOP_LENS_DEVELOPER_USER_ID:DEV,WHOOP_DEVELOPER_LIMIT_PER_MINUTE:"60",WHOOP_DEVELOPER_LIMIT_PER_DAY:"3000"},DEV),
-    {perMinute:60,perDay:3000,seat:"developer"});
-  assert.deepEqual(memberLimits({WHOOP_LENS_DEVELOPER_USER_ID:DEV,WHOOP_DEVELOPER_LIMIT_PER_MINUTE:"60"},A),{perMinute:25,perDay:1000,seat:"public"});
+  assert.deepEqual(memberLimits({WHOOP_DEVELOPER_LIMIT_PER_MINUTE:"60",WHOOP_DEVELOPER_LIMIT_PER_DAY:"3000"}),
+    {public:{perMinute:25,perDay:1000},developer:{perMinute:60,perDay:3000}});
   for(const bad of ["0","-1","abc","1e3"," ","","2.5",null,undefined])
-    assert.deepEqual(memberLimits({WHOOP_MEMBER_LIMIT_PER_MINUTE:bad,WHOOP_MEMBER_LIMIT_PER_DAY:bad},A),{perMinute:25,perDay:1000,seat:"public"},String(bad));
-  assert.deepEqual(memberLimits({WHOOP_MEMBER_LIMIT_PER_MINUTE:"500",WHOOP_MEMBER_LIMIT_PER_DAY:"99999"},A),{perMinute:100,perDay:10000,seat:"public"});
+    assert.deepEqual(memberLimits({WHOOP_MEMBER_LIMIT_PER_MINUTE:bad,WHOOP_MEMBER_LIMIT_PER_DAY:bad,
+      WHOOP_DEVELOPER_LIMIT_PER_MINUTE:bad,WHOOP_DEVELOPER_LIMIT_PER_DAY:bad}),both(25,1000),String(bad));
+  assert.deepEqual(memberLimits({WHOOP_MEMBER_LIMIT_PER_MINUTE:"500",WHOOP_MEMBER_LIMIT_PER_DAY:"99999"}),both(100,10000));
 });
 
 test("limits: over the per-minute budget no WHOOP request is made; MCP and REST report the limit and Retry-After",async()=>{
@@ -183,7 +183,8 @@ test("limits: auto_page stops at the budget with partial records and a cursor th
 test("limits: members are isolated; the developer seat keeps its own (configurable) limit",async()=>{
   const d=await db();
   try{
-    const w=fakeWhoop(),h=harness(w,{t:T0},{WHOOP_MEMBER_LIMIT_PER_MINUTE:"2",WHOOP_DEVELOPER_LIMIT_PER_MINUTE:"4"});
+    // The developer seat is identified by seat_role, even without WHOOP_LENS_DEVELOPER_USER_ID.
+    const w=fakeWhoop(),h=harness(w,{t:T0},{WHOOP_MEMBER_LIMIT_PER_MINUTE:"2",WHOOP_DEVELOPER_LIMIT_PER_MINUTE:"4",WHOOP_LENS_DEVELOPER_USER_ID:undefined});
     for(let i=0;i<2;i++)await h.call(d,A,"get_workouts",{limit:1});
     assert.equal((await quietly(()=>h.call(d,A,"get_workouts",{limit:1}))).body.result.isError,true);
     // B is unaffected by A's exhausted budget, and the reverse.
@@ -193,6 +194,10 @@ test("limits: members are isolated; the developer seat keeps its own (configurab
     assert.equal((await quietly(()=>h.call(d,DEV,"get_workouts",{limit:1}))).body.result.isError,true);
     assert.deepEqual([A,B,DEV].map(id=>budgetRow(d,id).minute_count),[2,2,4]);
     assert.equal(d.sqlite.prepare("SELECT COUNT(*) n FROM whoop_member_request_budget").get().n,3,"one row per member");
+    // Without an override the developer seat has the member limit (not exempt).
+    const plain=harness(fakeWhoop(),{t:T0+120_000},{WHOOP_MEMBER_LIMIT_PER_MINUTE:"2"});
+    for(let i=0;i<2;i++)assert.ok(content(await plain.call(d,DEV,"get_workouts",{limit:1})).records);
+    assert.equal((await quietly(()=>plain.call(d,DEV,"get_workouts",{limit:1}))).body.result.isError,true);
   }finally{d.close();}
 });
 

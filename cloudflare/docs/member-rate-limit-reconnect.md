@@ -21,9 +21,10 @@ the connection are verified and immediately before the request. Over budget, not
 - Fair share: 10 seats (9 public + 1 developer). 1,000/day x 10 = WHOOP's 10,000/day. 25/minute is
   2.5x the strict 10/minute because a summary with baselines uses about 18 requests and an
   `auto_page` call 4; four members at full speed still fit in 100/minute.
-- Developer/owner seat (`WHOOP_LENS_DEVELOPER_USER_ID`, the same rule that assigns
-  `seat_role='developer'`): **not exempt**, same limit by default, configurable separately.
-  Seat roles, seat counts and membership checks are unchanged.
+- Developer/owner seat (the member whose `whoop_connections.seat_role` is `'developer'`, read inside
+  the reservation statement; production does not set `WHOOP_LENS_DEVELOPER_USER_ID`, so the env id is
+  not used): **not exempt**, same limit by default, configurable separately. Seat roles, seat counts
+  and membership checks are unchanged.
 - A missing, zero or malformed value uses the default, so a bad setting cannot lock members out.
 - Windows are fixed UTC minute and UTC day. One row per member (`whoop_member_request_budget`),
   updated by a single atomic UPSERT, so parallel requests cannot overspend.
