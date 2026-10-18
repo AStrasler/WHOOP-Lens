@@ -76,7 +76,9 @@ test("audit cursor: a disconnect and reconnect during a call never mixes account
       db.sqlite.prepare("DELETE FROM whoop_connections WHERE user_id=?").run(B);
       return connect(db.sqlite,B,"public",`access${account++}-${B}`);
     };
-    const w=fakeWhoop({fail:({offset})=>{if(at!==null&&offset===at)swap();return null;}});
+    // Await the swap: connect() seals tokens asynchronously, and a reconnect
+    // still in progress when the next call starts made this test flaky under load.
+    const w=fakeWhoop({fail:async({offset})=>{if(at!==null&&offset===at)await swap();return null;}});
     const call=setup(w);
     // auto_page with no cursor: the page in flight during the swap is dropped.
     at=25;
