@@ -4,6 +4,7 @@
 import { openWithKeyring, sealWithKeyring, needsReseal, tokenKeyring } from "./token-crypto.mjs";
 import { migrateConnection, migrateAllTokens } from "./token-migration.mjs";
 import { activeMembership } from "./storage.mjs";
+import { validWhoopToken } from "./history-pagination.mjs";
 
 const API="https://api.prod.whoop.com/developer/v2/";
 const TOKEN_ENDPOINT="https://api.prod.whoop.com/oauth/oauth2/token";
@@ -145,8 +146,9 @@ export async function callWhoop(db,userId,resource,env,opts={},deps={}){
   const limit=opts.limit??10;
   if(!Number.isSafeInteger(limit)||limit<1||limit>25)throw Error("Invalid limit");
   const nextToken=opts.next_token;
-  if(nextToken!=null&&(!spec.history||typeof nextToken!=="string"||
-                        (!/^[A-Za-z0-9._~+/-]{1,512}$/.test(nextToken)||nextToken.includes(".."))))
+  // WHOOP's own cursor (base64 padding allowed). Clients never send it: MCP and
+  // the REST routes unseal a member-bound cursor first (history-pagination.mjs).
+  if(nextToken!=null&&(!spec.history||!validWhoopToken(nextToken)))
     throw Error("Invalid WHOOP cursor");
   const token=await whoopAccessToken(db,userId,env,deps);
   const search=new URLSearchParams();

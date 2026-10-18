@@ -8,6 +8,7 @@ import {revokeWhoopConnection} from './whoop-oauth.mjs';
 import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
 import {hostInstructionsFor,serverInfo} from './host-instructions.mjs';
+import {CursorError,cursorShapeOk,readHistoryPages,CURSOR_MAX_LENGTH} from './history-pagination.mjs';
 // Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
 // this module. Do not copy WHOOP refresh tokens from Supabase.
@@ -33,8 +34,9 @@ const schemaHistory=Object.freeze({
   type:"object",
   properties:{
     limit:{type:"integer",minimum:1,maximum:25},
-    next_token:{type:"string",minLength:1,maxLength:512},
-    auto_page:{type:"boolean",description:"Fetch up to four WHOOP pages (100 records maximum)"}
+    next_token:{type:"string",minLength:1,maxLength:CURSOR_MAX_LENGTH,
+      description:"Opaque cursor from the previous call's next_token. Pass it back unchanged to continue; it works with or without auto_page and expires after one hour."},
+    auto_page:{type:"boolean",description:"Fetch up to four WHOOP pages (100 records maximum) per call. If next_token is returned, call again with it to continue."}
   },
   additionalProperties:false
 });
@@ -134,19 +136,20 @@ function checkArguments(name,args,env) {
   if(Object.keys(args).some(k=>!allowed.includes(k)))return null;
   if(!history){
     if(!summaryOn||!own(args,"summary"))return Object.keys(args).length===0?{}:null;
+    if(args.summary==null)return Object.keys(args).length===1?{}:null;
     if(typeof args.summary!=="boolean")return null;
     return args.summary?{summary:true}:{};
   }
-  if(summaryOn&&own(args,"summary")&&typeof args.summary!=="boolean")return null;
+  // Clients may send optional fields as null (or an empty cursor); treat those as absent.
+  if(summaryOn&&own(args,"summary")&&args.summary!=null&&typeof args.summary!=="boolean")return null;
   const limit=args.limit??10;
   if(!Number.isSafeInteger(limit)||limit<1||limit>25)return null;
   if(args.auto_page!=null&&typeof args.auto_page!=="boolean")return null;
-  if(args.next_token!=null&&(typeof args.next_token!=="string"||
-     args.next_token.length<1||args.next_token.length>512||
-     !/^[A-Za-z0-9._~+/-]+$/.test(args.next_token)||
-     args.next_token.includes("..")))return null;
-  if(args.auto_page===true&&args.next_token!=null)return null;
-  const out={limit,next_token:args.next_token??null,auto_page:args.auto_page??false};
+  const cursor=args.next_token===""?null:(args.next_token??null);
+  // Shape only here; the cursor is authenticated against the member later.
+  if(cursor!=null&&!cursorShapeOk(cursor))return null;
+  // auto_page with next_token continues an automatic sequence from the cursor.
+  const out={limit,next_token:cursor,auto_page:args.auto_page??false};
   if(summaryOn&&args.summary===true)out.summary=true;
   return out;
 }
@@ -252,24 +255,12 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
         status:digest.status,cached:digest.cached===true};
     }else if(extraTools.some(t=>t.name===name)){
       data=await readExtraTool(db,userId,name,queryArgs(args),env);
-    }else if(!historyTools.has(name)||!args.auto_page){
+    }else if(!historyTools.has(name)){
       data=await whoopRequest(db,userId,resource,env,queryArgs(args));
     }else{
-      const records=[];
-      let cursor=null,pages=0;
-      for(let i=0;i<4;i++){
-        const batch=await whoopRequest(db,userId,resource,env,{limit:25,next_token:cursor});
-        if(!isObject(batch)||!Array.isArray(batch.records))throw Error("Unexpected WHOOP page");
-        if(batch.records.length>25)throw Error("WHOOP page oversized");
-        records.push(...batch.records);
-        pages++;
-        const next=batch.next_token??null;
-        if(next!=null&&(typeof next!=="string"||next.length>512||next===cursor))
-          throw Error("Invalid WHOOP cursor");
-        cursor=next;
-        if(cursor===null)break;
-      }
-      data={records,next_token:cursor,complete:cursor===null,pages_fetched:pages};
+      // userId is the verified member from the router, never a tool argument.
+      data=await readHistoryPages({db,userId,resource,env,whoopRequest,
+        limit:args.limit,cursor:args.next_token,auto:args.auto_page===true});
     }
     if(args.summary===true&&aiSummaryEnabled(env)){
       try{data=await attachSummary(data,{db,userId,env,tool:name,whoopRequest});}
@@ -281,6 +272,9 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }catch(error){
     // No details about secrets, token status, providers, account existence or SQL.
     // File-import validation messages are safe to show; everything else stays generic.
+    if(error instanceof CursorError)return toolError(id,error.reason==="expired"?
+      "This next_token has expired. Request the first page again without next_token.":
+      "This next_token is not valid for this account and history category. Request the first page again without next_token.",modern);
     if(flareTools.some(t=>t.name===name))return toolError(id,'Flare journal request could not be completed. Verify consent, active membership, the current entry revision, and WHOOP connection for analysis. No medical data or internal error details are included.',modern);
     const safe=publicImportError(error);
     return toolError(id,safe||"WHOOP data is unavailable for this connection.",modern);
