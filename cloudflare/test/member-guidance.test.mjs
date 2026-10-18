@@ -125,7 +125,7 @@ test('Amy-like member: delivered records are counted for her account only, never
 
 test('owner seat: developer boundaries, still own data only, owner budget',async()=>{
   const db=await fixture();try{
-    const account=parse(await call(db,OWNER,'get_capabilities',{},{...flagsOn,WHOOP_DEVELOPER_LIMIT_PER_DAY:'2000'})).account;
+    const account=parse(await call(db,OWNER,'get_capabilities',{},{...flagsOn,AI_SUMMARY_ENABLED:'true',WHOOP_DEVELOPER_LIMIT_PER_DAY:'2000'})).account;
     assert.equal(account.seat_role,'developer');
     assert.equal(account.whoop_connected,true);
     assert.ok(account.role_boundaries.some(s=>/including the owner, reads, imports, connects and deletes only its own/.test(s)));
@@ -140,7 +140,7 @@ test('owner seat: developer boundaries, still own data only, owner budget',async
 test('owner stays the developer seat after disconnecting WHOOP, matching get_ai_usage',async()=>{
   const db=await fixture();try{
     db.sqlite.prepare('DELETE FROM whoop_connections WHERE user_id=?').run(OWNER);
-    const account=parse(await call(db,OWNER,'get_capabilities')).account;
+    const account=parse(await call(db,OWNER,'get_capabilities',{},{...flagsOn,AI_SUMMARY_ENABLED:'true'})).account;
     assert.equal(account.seat_role,'developer');
     assert.equal(account.seat_role_source,'Server owner setting.');
     assert.equal(account.whoop_connected,false);
@@ -177,6 +177,17 @@ test('a developer seat row without the owner setting gets no server-wide AI tota
     assert.ok(!account.role_boundaries.some(s=>/server-wide AI summary total/.test(s)));
     const other=parse(await call(db,OWNER,'get_capabilities',{},{...env,WHOOP_LENS_DEVELOPER_USER_ID:AMYLIKE})).account;
     assert.ok(!other.role_boundaries.some(s=>/server-wide AI summary total/.test(s)));
+  }finally{db.close();}
+});
+
+test('AI usage boundaries appear only while get_ai_usage is listed',async()=>{
+  const db=await fixture();try{
+    for(const who of [OWNER,AMYLIKE]){
+      const off=parse(await call(db,who,'get_capabilities')).account.role_boundaries;
+      assert.ok(!off.some(s=>/get_ai_usage/.test(s)),who);
+      const on=parse(await call(db,who,'get_capabilities',{},{...flagsOn,AI_SUMMARY_ENABLED:'true'})).account.role_boundaries;
+      assert.ok(on.some(s=>who===OWNER?/server-wide AI summary total/.test(s):/get_ai_usage shows this account only/.test(s)),who);
+    }
   }finally{db.close();}
 });
 
