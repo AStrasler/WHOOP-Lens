@@ -40,7 +40,9 @@ export function featureStates(env){
     {id:'weekly_digest',tools:['get_weekly_digest'],
       state:state(on(env,'WEEKLY_DIGEST_ENABLED'))},
     {id:'experimental_stress_estimate',tools:['summary argument on WHOOP read tools'],
-      state:state(on(env,'STRESS_ESTIMATE_ENABLED')&&on(env,'AI_SUMMARY_ENABLED'),ai)},
+      // Computed without the model, so it follows the two flags only (the same
+      // rule as the summary path and host instructions).
+      state:state(on(env,'STRESS_ESTIMATE_ENABLED')&&on(env,'AI_SUMMARY_ENABLED'))},
     {id:'flare_journal',tools:['set_flare_consent','get_flare_journal'],
       state:state(on(env,'FLARE_JOURNAL_ENABLED'))}
   ];
@@ -86,12 +88,14 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   // the developer seat even after disconnecting WHOOP.
   const owner=typeof env?.WHOOP_LENS_DEVELOPER_USER_ID==='string'&&env.WHOOP_LENS_DEVELOPER_USER_ID.length>0&&env.WHOOP_LENS_DEVELOPER_USER_ID===userId;
   const seat_role=owner?'developer':role==='developer'||role==='public'?role:null;
+  const seat_role_source=owner?'Server owner setting.':roleRow===UNREAD?'Could not be read right now.':seat_role?
+    'This account\'s WHOOP connection record.':'No WHOOP connection record yet, so the seat role is not recorded.';
   const token=await read(db,TOKEN_SQL,userId);
   const issued=await read(db,ANY_TOKEN_SQL,userId);
   const records=await read(db,RECORDS_SQL,userId);
   const consent=await read(db,CONSENT_SQL,userId);
   if([token,issued,records,consent].includes(UNREAD))return {
-    as_of:new Date(now).toISOString(),seat_role:seat_role??'unknown',
+    as_of:new Date(now).toISOString(),seat_role:seat_role??'unknown',seat_role_source,
     role_boundaries:boundaries(seat_role,owner),
     whoop_connected:roleRow===UNREAD?'unknown':!!roleRow,
     health_connect:{status:'unknown',summary:'Health Connect status could not be read right now. Treat it as unverified.'}
@@ -109,7 +113,7 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   return {
     as_of:new Date(now).toISOString(),
     seat_role:seat_role??'unknown',
-    seat_role_source:owner?'Server owner setting.':roleRow===UNREAD?'Could not be read right now.':seat_role?'This account\'s WHOOP connection record.':'No WHOOP connection record yet, so the seat role is not recorded.',
+    seat_role_source,
     role_boundaries:boundaries(seat_role,owner),
     whoop_connected:roleRow===UNREAD?'unknown':!!roleRow,
     health_connect:{

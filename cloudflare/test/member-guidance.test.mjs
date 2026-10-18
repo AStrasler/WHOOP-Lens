@@ -219,13 +219,14 @@ test('feature states: enabled, disabled and not_configured come from flags and b
   for(const drop of ['AI_ANALYTICS_ACCOUNT_ID','AI_ACCOUNT_ANALYTICS_TOKEN']){
     const env={AI_SUMMARY_ENABLED:'true',STRESS_ESTIMATE_ENABLED:'true',AI:{run(){}},...analytics};delete env[drop];
     assert.equal(byId(env).ai_summaries,'not_configured',drop);
-    assert.equal(byId(env).experimental_stress_estimate,'not_configured',drop);
   }
   assert.equal(byId({AI_SUMMARY_ENABLED:'true',AI:{run(){}},...analytics,AI_ANALYTICS_ACCOUNT_ID:'nope'}).ai_summaries,'not_configured');
   assert.ok(!JSON.stringify(featureStates({AI_SUMMARY_ENABLED:'true',AI:{run(){}},...analytics})).includes('synthetic-analytics-token'));
   assert.equal(full.whoop_connection,'enabled');
   assert.equal(full.ai_summaries,'enabled');
   assert.equal(full.experimental_stress_estimate,'enabled');
+  // The stress estimate does not need the model, so the two flags decide it.
+  assert.equal(byId({AI_SUMMARY_ENABLED:'true',STRESS_ESTIMATE_ENABLED:'true'}).experimental_stress_estimate,'enabled');
   // Same check as connect_whoop: client, secret, a token key and the approved redirect.
   for(const missing of ['WHOOP_CLIENT_ID','WHOOP_CLIENT_SECRET','WHOOP_TOKEN_AES256_KEY','WHOOP_REDIRECT_URI']){
     const env={...flagsOn};delete env[missing];
@@ -270,6 +271,8 @@ test('status reads fail soft: the catalog still answers and labels Health Connec
   try{
     const status=await accountStatus(db,KIMLIKE,{},{now:NOW});
     assert.equal(status.health_connect.status,'unknown');
+    assert.equal(status.seat_role,'unknown');
+    assert.match(status.seat_role_source,/No WHOOP connection record yet/);
     assert.match(status.health_connect.summary,/unverified/);
     assert.equal(status.as_of,new Date(NOW).toISOString());
   }finally{sqlite.close();}
