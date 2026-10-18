@@ -3,6 +3,7 @@
 // Source Supabase WHOOP OAuth redirect remains unchanged until separate cutover approval.
 import { activeMembership, ACTIVE_MEMBER_SQL } from "./storage.mjs";
 import { sealWithKeyring, tokenKeyring } from "./token-crypto.mjs";
+import { SECRET_RULES } from "./secrets.mjs";
 import { assertSeatAvailable, seatAvailableSql, seatLimit, SeatsFull } from "./seat-limit.mjs";
 const AUTH="https://api.prod.whoop.com/oauth/oauth2/auth";
 const TOKEN="https://api.prod.whoop.com/oauth/oauth2/token";
@@ -20,7 +21,13 @@ function requireConfig(env) {
   return env;
 }
 // Same check connect_whoop runs, for capability reporting. Never returns a value.
-export function whoopConnectConfigured(env){try{requireConfig(env);return true;}catch{return false;}}
+// Also checks the token key formats: an invalid current or next key makes every
+// callback fail when sealing, so that is not configured either.
+export function whoopConnectConfigured(env){
+  try{requireConfig(env);}catch{return false;}
+  const keys=["WHOOP_TOKEN_AES256_KEY","WHOOP_TOKEN_AES256_KEY_NEXT"].filter(name=>env?.[name]!=null&&env[name]!=="");
+  return keys.length>0&&keys.every(name=>SECRET_RULES[name](env[name]));
+}
 function validateUser(userId) {
   if(typeof userId!=="string"||!UUID.test(userId))throw Error("Invalid user");
   return userId.toLowerCase();
