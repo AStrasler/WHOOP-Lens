@@ -4,6 +4,7 @@ import { AccessDenied } from "./access-denied.mjs";
 import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
 import { callWhoop } from "./whoop-api.mjs";
 import { memberLimitMessage } from "./member-rate-limit.mjs";
+import { SeatsFull } from "./seat-limit.mjs";
 import { createWhoopAuthorization, acceptWhoopCallback } from "./whoop-oauth.mjs";
 import { handleMcpRpc, validateMcpTransport } from "./mcp.mjs";
 import { CursorError, cursorShapeOk, readHistoryPages } from "./history-pagination.mjs";
@@ -118,7 +119,8 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       try {
         const result = await whoopCallback(env.DB,url,env);
         return json(result);
-      } catch {
+      } catch (error) {
+        if (error instanceof SeatsFull) return json({error:error.message,seat_limit:error.limit},409);
         // Never disclose WHOOP authorization codes, states or exchanged tokens.
         return json({error:"WHOOP authorization could not be completed"},400);
       }
@@ -173,6 +175,7 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       return json({category,records,source:"cloudflare-staging"});
     } catch (error) {
       if (error instanceof AccessDenied) return json({error:"Unauthorized"},error.status);
+      if (error instanceof SeatsFull) return json({error:error.message,seat_limit:error.limit},409);
       if (error?.status === 429) {
         const response=error.memberLimit===true?
           json({error:memberLimitMessage(error),rate_limit_scope:"member"},429):

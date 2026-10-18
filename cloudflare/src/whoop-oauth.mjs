@@ -3,6 +3,7 @@
 // Source Supabase WHOOP OAuth redirect remains unchanged until separate cutover approval.
 import { activeMembership, ACTIVE_MEMBER_SQL } from "./storage.mjs";
 import { sealWithKeyring, tokenKeyring } from "./token-crypto.mjs";
+import { assertSeatAvailable, seatAvailableSql, seatLimit, SeatsFull } from "./seat-limit.mjs";
 const AUTH="https://api.prod.whoop.com/oauth/oauth2/auth";
 const TOKEN="https://api.prod.whoop.com/oauth/oauth2/token";
 const REDIRECT="https://whooplens.tech/api/whoop/callback";
@@ -40,6 +41,8 @@ export async function createWhoopAuthorization(db,userId,env,{now=NOW}={}){
   requireConfig(env);
   const id=validateUser(userId);
   if(!await activeMembership(db,id))throw Error("Membership required");
+  // Fail early, before sending the member to WHOOP; the callback enforces it.
+  await assertSeatAvailable(db,id,env);
   const state=tokenString(),expires_at=new Date(now()+10*60_000).toISOString();
   const hash=await sha256(state);
   // Bounded per member: drop expired states, and keep at most five pending
@@ -140,19 +143,21 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
   const access=await sealWithKeyring(data.access_token,{userId:id,purpose:"access",keys});
   const refresh=await sealWithKeyring(data.refresh_token,{userId:id,purpose:"refresh",keys});
   const expiresAt=new Date(now()+Number(data.expires_in)*1000).toISOString();
-  // Seat limit and one-developer-seat constraints are enforced by SQLite
-  // migration 0002, including concurrent callbacks.
+  // The seat cap (seat-limit.mjs) is part of this statement, so concurrent
+  // callbacks cannot overshoot it; migration 0002's triggers (9 public + 1
+  // developer) and the one-developer index remain as a database ceiling.
+  const cap=seatLimit(env);
   const invalidate=await digestInvalidation(db,id);
   const statement=db.prepare(
     "INSERT INTO whoop_connections(user_id,expires_at,scope,encrypted_access_token,"+
     "encrypted_refresh_token,encryption_key_version,seat_role) "+
     "SELECT ?1,?2,?3,?4,?5,?8,?6 WHERE EXISTS ("+ACTIVE_MEMBER_SQL+") AND NOT EXISTS ("+
-    "SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7) "+
+    "SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7) AND "+seatAvailableSql("?9")+" "+
     "ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at,scope=excluded.scope,"+
     "encrypted_access_token=excluded.encrypted_access_token,"+
     "encrypted_refresh_token=excluded.encrypted_refresh_token,encryption_key_version=excluded.encryption_key_version,updated_at=CURRENT_TIMESTAMP "+
     "WHERE EXISTS ("+ACTIVE_MEMBER_SQL+") AND NOT EXISTS (SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7)"
-  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role,stateCreated,keys.current==="k2"?"k2":"v1");
+  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role,stateCreated,keys.current==="k2"?"k2":"v1",cap);
   // A reconnect over an existing connection (no disconnect first) bumps the
   // generation too, which ends every history cursor issued before it. If the
   // credential write aborts (seat limit), the batch rolls back the bump.
@@ -162,6 +167,8 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
       "SELECT user_id FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?2"
     ).bind(id,stateCreated).first();
     if(blocked)throw Error("WHOOP authorization was revoked");
+    const seat=await db.prepare("SELECT "+seatAvailableSql("?2")+" AS ok").bind(id,cap).first();
+    if(seat&&Number(seat.ok)!==1)throw new SeatsFull(cap);
     throw Error("WHOOP connection save failed");
   }
   return {connected:true,seat_role:role};

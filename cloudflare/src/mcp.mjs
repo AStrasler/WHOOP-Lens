@@ -9,6 +9,7 @@ import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} f
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
 import {hostInstructionsFor,serverInfo} from './host-instructions.mjs';
 import {CursorError,cursorShapeOk,readHistoryPages,CURSOR_MAX_LENGTH} from './history-pagination.mjs';
+import {SeatsFull} from './seat-limit.mjs';
 import {memberLimitMessage} from './member-rate-limit.mjs';
 // Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
@@ -273,6 +274,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }catch(error){
     // No details about secrets, token status, providers, account existence or SQL.
     // File-import validation messages are safe to show; everything else stays generic.
+    if(error instanceof SeatsFull)return toolError(id,error.message,modern);
     if(error instanceof CursorError)return toolError(id,error.reason==="expired"?
       "This next_token has expired. Request the first page again without next_token.":
       "This next_token is not valid for this account and history category. Request the first page again without next_token.",modern);
