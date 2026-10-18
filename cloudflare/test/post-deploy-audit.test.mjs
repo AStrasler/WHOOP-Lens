@@ -50,9 +50,9 @@ test("audit cursor: seat deactivation, disconnect and reconnect end an old curso
       assert.equal(stale.body.result.structuredContent,undefined);
     }
     assert.equal(w.calls.length,n,"no WHOOP request for a pre-disconnect cursor");
-    // revoked_at has one-second precision; a real reconnect takes longer.
-    await new Promise(r=>setTimeout(r,1100));
-    // A fresh sequence on the new connection pages normally to the end.
+    // revoked_at has millisecond precision: a sequence started right after the
+    // reconnect (no delay) pages normally to the end (Codex P2 on f9ff3a4).
+    assert.match(db.sqlite.prepare("SELECT revoked_at FROM whoop_credential_revocations WHERE user_id=?").get(B).revoked_at,/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
     const got=[];let cursor=null;
     do{const out=content(await call(db,B,"get_recovery",cursor?{auto_page:true,next_token:cursor}:{auto_page:true}));
       assert.ok(out.records.every(r=>r.account==="access2-"+B));got.push(...idx(out.records));cursor=out.next_token;}while(cursor);
@@ -60,6 +60,72 @@ test("audit cursor: seat deactivation, disconnect and reconnect end an old curso
     // A's cursors are untouched by B's disconnect.
     const a=content(await call(db,A,"get_cycles",{auto_page:true}));
     assert.equal(content(await call(db,A,"get_cycles",{auto_page:true,next_token:a.next_token})).records.length,100);
+  }finally{db.close();}
+});
+
+test("audit cursor: a disconnect and reconnect during a call never mixes accounts (Codex P2 on f9ff3a4)",async()=>{
+  const db=await fixture([[A,"developer"],[B,"public"]]);
+  try{
+    // While WHOOP serves the request at offset `at`, B disconnects (same
+    // statements as disconnect_whoop) and reconnects a different WHOOP account.
+    let at=null,account=2;
+    const swap=()=>{
+      at=null;
+      db.sqlite.prepare("INSERT INTO whoop_credential_revocations(user_id,revoked_at) VALUES(?,?) ON CONFLICT(user_id) DO UPDATE SET revoked_at=excluded.revoked_at")
+        .run(B,new Date().toISOString().slice(0,23).replace("T"," "));
+      db.sqlite.prepare("DELETE FROM whoop_connections WHERE user_id=?").run(B);
+      return connect(db.sqlite,B,"public",`access${account++}-${B}`);
+    };
+    const w=fakeWhoop({fail:({offset})=>{if(at!==null&&offset===at)swap();return null;}});
+    const call=setup(w);
+    // auto_page with no cursor: the page in flight during the swap is dropped.
+    at=25;
+    let out=content(await call(db,B,"get_recovery",{auto_page:true}));
+    assert.deepEqual(idx(out.records),range(0,25),"only pages read before the swap");
+    assert.ok(out.records.every(r=>r.account==="access-"+B));
+    assert.equal(out.complete,false);assert.equal(out.incomplete_reason,"connection_changed");
+    assert.equal(out.next_token,null);
+    await new Promise(r=>setTimeout(r,5));
+    // The new connection starts its own sequence immediately and continues it.
+    const fresh=content(await call(db,B,"get_recovery",{auto_page:true}));
+    assert.ok(fresh.records.every(r=>r.account==="access2-"+B));
+    const next=content(await call(db,B,"get_recovery",{auto_page:true,next_token:fresh.next_token}));
+    assert.deepEqual(idx(next.records),range(100,200));
+    assert.ok(next.records.every(r=>r.account==="access2-"+B));
+    // Swap during the first page of an auto_page continuation: an error, no data.
+    await new Promise(r=>setTimeout(r,5));
+    const page=content(await call(db,B,"get_recovery",{limit:25}));
+    at=25;
+    const first=await call(db,B,"get_recovery",{auto_page:true,next_token:page.next_token});
+    assert.equal(first.body.result.isError,true);assert.equal(content(first),undefined);
+    // Manual paging, with and without a cursor: same.
+    await new Promise(r=>setTimeout(r,5));
+    const p2=content(await call(db,B,"get_recovery",{limit:25}));
+    at=25;
+    const manual=await call(db,B,"get_recovery",{limit:25,next_token:p2.next_token});
+    assert.equal(manual.body.result.isError,true);assert.equal(content(manual),undefined);
+    await new Promise(r=>setTimeout(r,5));
+    at=0;
+    const manualFirst=await call(db,B,"get_recovery",{limit:25});
+    assert.equal(manualFirst.body.result.isError,true);assert.equal(content(manualFirst),undefined);
+    // A's sequence is never affected.
+    assert.deepEqual(idx(content(await call(db,A,"get_recovery",{auto_page:true})).records),range(0,100));
+  }finally{db.close();}
+});
+
+test("audit cursor: second-precision disconnect markers stay conservative",async()=>{
+  const db=await fixture([[B,"public"]]);
+  try{
+    const w=fakeWhoop(),call=setup(w);
+    const now=Date.now(),stamp=new Date(now).toISOString().slice(0,19).replace("T"," ");
+    db.sqlite.prepare("INSERT INTO whoop_credential_revocations(user_id,revoked_at) VALUES(?,?)").run(B,stamp);
+    const secondStart=Date.parse(stamp.replace(" ","T")+"Z");
+    const inSecond=await sealCursor({env:baseEnv,userId:B,resource:"sleep",query:{start:null,end:null},whoopToken:btoa("sleep:25"),depth:1,now:()=>secondStart+999});
+    const after=await sealCursor({env:baseEnv,userId:B,resource:"sleep",query:{start:null,end:null},whoopToken:btoa("sleep:25"),depth:1,now:()=>secondStart+1000});
+    assert.equal((await call(db,B,"get_sleep",{limit:25,next_token:inSecond})).body.result.isError,true);
+    assert.deepEqual(idx(content(await call(db,B,"get_sleep",{limit:25,next_token:after})).records),range(25,50));
+    db.sqlite.prepare("UPDATE whoop_credential_revocations SET revoked_at='not a date' WHERE user_id=?").run(B);
+    assert.equal((await call(db,B,"get_sleep",{limit:25,next_token:after})).body.result.isError,true);
   }finally{db.close();}
 });
 
