@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {readFileSync,readdirSync} from "node:fs";
 import {DatabaseSync} from "node:sqlite";
-import {fixture,fakeWhoop,content,member,TOTAL,baseEnv,key} from "./audit-fixtures.mjs";
+import {fixture,fakeWhoop,content,member,TOTAL,baseEnv,key,connect} from "./audit-fixtures.mjs";
 import {d1Database} from "./d1-sqlite.mjs";
 import {callWhoop} from "../src/whoop-api.mjs";
 import {createStagingRouter} from "../src/router.mjs";
@@ -266,9 +266,12 @@ test("reconnect without disconnect: the OAuth overwrite bumps the generation and
     const manualA=content(await h.call(d,A,"get_sleep",{limit:25}));
     const firstB=content(await h.call(d,B,"get_recovery",{auto_page:true}));
     assert.equal(generation(d,A),0);
-    // A legacy cursor (sealed by 04e4499d, no generation) is generation 0.
+    // A cursor sealed without a generation (by 04e4499d, or before 0016 existed)
+    // is rejected once 0016 is present, even with no reconnect recorded.
     const legacy=await sealCursor({env:baseEnv,userId:A,resource:"cycles",query:{start:null,end:null},whoopToken:btoa("cycles:25"),depth:1});
-    assert.equal(idx(content(await h.call(d,A,"get_cycles",{limit:25,next_token:legacy})).records)[0],25);
+    const before=w.calls.length;
+    assert.match((await h.call(d,A,"get_cycles",{limit:25,next_token:legacy})).body.result.content[0].text,/not valid/);
+    assert.equal(w.calls.length,before);
     // Same member authorizes WHOOP again with a different account, no disconnect.
     assert.deepEqual(await reconnect(d,A,"access2-"+A),{connected:true,seat_role:"public"});
     assert.equal(generation(d,A),1);
@@ -391,5 +394,52 @@ test("reconnect mid-call: a reconnect without disconnect between pages drops the
     assert.equal(content(await h2.call(d,B,"get_sleep",{auto_page:true})).records.length,100);
     const fresh=content(await harness(fakeWhoop()).call(d,A,"get_recovery",{auto_page:true}));
     assert.equal(fresh.records.length,100);assert.ok(fresh.next_token);
+  }finally{d.close();}
+});
+
+test("rollout: cursors issued before 0016, and reconnects by pre-0016 code, cannot continue once 0016 exists (Codex P2 on 6968b7d)",async()=>{
+  // Schema-first window: the table exists but the old Worker still serves.
+  // Old code seals cursors without a generation and reconnects without a bump.
+  const d=await db(undefined,{generations:false});
+  try{
+    const w=fakeWhoop(),h=harness(w);
+    // This branch's code without the table seals cursors without a generation.
+    const early=content(await h.call(d,A,"get_recovery",{auto_page:true}));
+    const old=await sealCursor({env:baseEnv,userId:A,resource:"sleep",query:{start:null,end:null},whoopToken:btoa("sleep:100"),depth:4});
+    d.sqlite.exec(migration(GENERATIONS));
+    // A reconnect that bypasses the bump (pre-0016 code): credentials replaced, no row.
+    await connect(d.sqlite,A,"public","access2-"+A);
+    assert.equal(generation(d,A),0);
+    const n=w.calls.length;
+    for(const [name,cursor] of [["get_recovery",early.next_token],["get_sleep",old]]){
+      const stale=await h.call(d,A,name,{auto_page:true,next_token:cursor});
+      assert.equal(stale.body.result.isError,true,name);
+      assert.match(stale.body.result.content[0].text,/not valid/);
+    }
+    assert.equal(w.calls.length,n,"no WHOOP request for a generation-less cursor");
+    // A fresh sequence works and its cursor continues.
+    const fresh=content(await h.call(d,A,"get_recovery",{auto_page:true}));
+    assert.equal(content(await h.call(d,A,"get_recovery",{auto_page:true,next_token:fresh.next_token})).records.length,100);
+  }finally{d.close();}
+});
+
+test("rollout: the bump is always in the credential batch; without the table the batch is retried without it",async()=>{
+  const d=await db(undefined,{generations:false});
+  try{
+    const seen=[];const batch=d.batch.bind(d);
+    d.batch=async statements=>{seen.push(statements.length);return batch(statements);};
+    assert.equal((await reconnect(d,A,"access2-"+A)).connected,true);
+    // seen[0] is the authorize-state batch. The callback's first attempt carried
+    // the bump and failed as a whole; the retry did not carry it.
+    assert.equal(seen.length,3);assert.equal(seen[1],seen[2]+1);
+    assert.equal(d.sqlite.prepare("SELECT encrypted_access_token<>'' ok FROM whoop_connections WHERE user_id=?").get(A).ok,1);
+    // Once the table exists, one batch with the bump.
+    d.sqlite.exec(migration(GENERATIONS));seen.length=0;
+    await new Promise(r=>setTimeout(r,5));
+    assert.equal((await reconnect(d,A,"access3-"+A)).connected,true);
+    assert.equal(seen.length,2,"authorize + one callback batch");assert.equal(generation(d,A),1);
+    // Other batch failures are not retried.
+    d.batch=async()=>{throw Error("D1_ERROR: Public WHOOP seats are full");};
+    await assert.rejects(reconnect(d,B,"access2-"+B),/seats are full/);
   }finally{d.close();}
 });

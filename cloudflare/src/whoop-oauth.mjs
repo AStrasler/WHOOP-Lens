@@ -67,22 +67,38 @@ async function digestInvalidation(db,id){
     .bind('user:'+id,'user:'+id+':')]:[];
 }
 // Migration 0016: one statement that bumps the member's connection generation,
-// added to the same D1 batch as the credential write or delete so the bump and
-// the change are atomic. Skipped (no statement) when the table does not exist
-// yet, so the callback and disconnect keep working before 0016 is applied.
+// in the same D1 batch as the credential write or delete, so the bump and the
+// change are atomic. The bump is always attempted; only if D1 reports that the
+// table does not exist (0016 not applied yet, or rolled back) is the batch,
+// which then rolled back as a whole, retried without it. There is no separate
+// "does the table exist" read, so a table created between such a read and the
+// commit cannot let a credential change through without a bump.
 // For a callback, storedAccess is the new access-token envelope (random IV, so
 // unique): the bump applies only when the batch actually stored it, not when a
 // revocation or an inactive membership left the connection unchanged.
-async function generationBump(db,id,storedAccess=null){
-  const table=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='whoop_connection_generations'").first();
-  if(!table)return [];
+function generationBump(db,id,storedAccess=null){
   const when=storedAccess===null?"":
     " AND EXISTS (SELECT 1 FROM whoop_connections WHERE user_id=?1 AND encrypted_access_token=?2)";
   const statement=db.prepare(
     "INSERT INTO whoop_connection_generations(user_id,generation) SELECT ?1,1 WHERE 1"+when+" "+
     "ON CONFLICT(user_id) DO UPDATE SET generation=whoop_connection_generations.generation+1,updated_at=CURRENT_TIMESTAMP"
   );
-  return [storedAccess===null?statement.bind(id):statement.bind(id,storedAccess)];
+  return storedAccess===null?statement.bind(id):statement.bind(id,storedAccess);
+}
+function generationsMissing(error){
+  const text=String(error?.message||error||"");
+  return /no such table/i.test(text)&&text.includes("whoop_connection_generations");
+}
+// Runs before ++ [bump] ++ after as one batch; results keep the positions of
+// before and after (the bump result, when present, is removed).
+async function batchWithBump(db,before,bump,after){
+  try{
+    const results=await db.batch([...before,bump,...after]);
+    return Array.isArray(results)?[...results.slice(0,before.length),...results.slice(before.length+1)]:results;
+  }catch(error){
+    if(!generationsMissing(error))throw error;
+    return db.batch([...before,...after]);
+  }
 }
 export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW}={}){
   requireConfig(env);
@@ -140,8 +156,7 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
   // A reconnect over an existing connection (no disconnect first) bumps the
   // generation too, which ends every history cursor issued before it. If the
   // credential write aborts (seat limit), the batch rolls back the bump.
-  const bump=await generationBump(db,id,access);
-  const [saved]=await db.batch([statement,...bump,...invalidate]);
+  const [saved]=await batchWithBump(db,[statement],generationBump(db,id,access),invalidate);
   if(!saved?.success||saved.meta?.changes!==1){
     const blocked=await db.prepare(
       "SELECT user_id FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?2"
@@ -173,7 +188,7 @@ export async function revokeWhoopConnection(db,userId,{now=NOW}={}){
   let results;
   try{
     const invalidate=await digestInvalidation(db,id);
-    results=await db.batch([
+    results=await batchWithBump(db,[
       db.prepare(
         "INSERT INTO whoop_credential_revocations(user_id,revoked_at) VALUES(?1,?2) "+
         "ON CONFLICT(user_id) DO UPDATE SET revoked_at=excluded.revoked_at"
@@ -182,10 +197,8 @@ export async function revokeWhoopConnection(db,userId,{now=NOW}={}){
       // cursors can tell a sequence started right after a reconnect apart.
       ).bind(id,revocationStamp(now())),
       db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1").bind(id),
-      db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id),
-      ...await generationBump(db,id),
-      ...invalidate
-    ]);
+      db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id)
+    ],generationBump(db,id),invalidate);
   }catch{throw Error("WHOOP disconnect failed");}
   if(!Array.isArray(results)||results.length<3||results.some(result=>result?.success===false))
     throw Error("WHOOP disconnect failed");

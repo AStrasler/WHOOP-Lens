@@ -48,10 +48,19 @@ the connection are verified and immediately before the request. Over budget, not
 - every disconnect.
 
 History cursors carry the generation read at the start of the call (before any WHOOP request) and
-are rejected, with no WHOOP request, once it changes. Cursors sealed before 0016 (no generation) are
-generation 0, which is also the value for members without a row, so existing sequences keep working
-until that member's next reconnect or disconnect. Without the table only the `revoked_at` check
-applies (the behaviour of the audit branch).
+are rejected, with no WHOOP request, once it changes. The connection state (revocation marker and
+generation, one combined read) is re-read after every WHOOP page; a page fetched across a change is
+dropped (`connection_changed`).
+
+Once the table exists, a cursor without a generation is rejected. Such a cursor was sealed by
+pre-0016 code (live 04e4499d) or by this code before the table existed, and a reconnect made by old
+code in that window leaves no bump, so its generation cannot be trusted. Members simply start the
+sequence again; cursors expire within an hour anyway. Without the table only the `revoked_at`
+check applies (the behaviour of the audit branch).
+
+The bump is always part of the credential batch (no separate schema check). If D1 rejects the
+batch because `whoop_connection_generations` does not exist, the whole batch rolled back and it is
+retried once without the bump; any other failure (for example a seat-limit abort) is not retried.
 
 ## Migration SQL, rollback and compatibility
 
@@ -76,22 +85,30 @@ npx wrangler d1 execute whoop-lens-migration --remote --file=migrations/0016_who
 npx wrangler d1 execute whoop-lens-migration --remote --command="INSERT INTO d1_migrations(name) VALUES('0015_member_whoop_request_budget.sql'),('0016_whoop_connection_generations.sql')"
 ```
 
-Order: schema first (safe with live code), then deploy the code. Rollback: redeploy the previous
-version, then (optionally) run the down files.
+Order: either order is safe. Every cursor issued before 0016 exists stops being accepted when 0016
+is applied, so in-flight paging restarts once. The recommended order is to deploy this code, then
+apply 0015 and 0016. Old code never writes generations, so if old code serves traffic again after
+0016 (a rollback that keeps the tables), bump every member before redeploying this code. This
+invalidates all outstanding cursors:
+
+```
+npx wrangler d1 execute whoop-lens-migration --remote --command="INSERT INTO whoop_connection_generations(user_id,generation) SELECT user_id,1 FROM identity_links WHERE true ON CONFLICT(user_id) DO UPDATE SET generation=generation+1,updated_at=CURRENT_TIMESTAMP"
+```
+
+Rollback: redeploy the previous version, then (optionally) run the down files.
 
 ## Extra D1 work (measured with the synthetic harness)
 
-| Operation | audit branch | this branch | delta |
+| Operation | audit branch (fd5bf8a) | this branch | delta |
 | --- | --- | --- | --- |
-| manual page, first | 3 | 5 | +1 reservation, +1 generation read |
-| manual page, with cursor | 4 | 5 | +1 reservation (generation folded into the revocation read) |
-| auto_page (4 pages), first | 9 | 14 | +4 reservations, +1 generation read |
-| auto_page (4 pages), with cursor | 10 | 14 | +4 reservations |
-| OAuth callback | 6 | 8 | +1 schema check, +1 statement inside the existing batch |
-| disconnect | 7 | 9 | +1 schema check, +1 statement inside the existing batch |
+| manual page, first or with cursor | 5 | 6 | +1 reservation (generation folded into the per-page state read) |
+| auto_page (4 pages), first or with cursor | 14 | 18 | +4 reservations |
+| OAuth callback | 6 | 7 | +1 statement inside the existing batch |
+| disconnect | 7 | 8 | +1 statement inside the existing batch |
 | over the limit | n/a | +1 | one SELECT to compute Retry-After |
+| pre-0016 schema, callback/disconnect | - | +1 batch | failed batch retried without the bump |
 
-Every reservation is a primary-key UPSERT (a D1 write). Local SQLite: about 38 us per reservation and
-9 us for the combined revocation/generation read. Production D1 server-side batch time over the last
+Every reservation is a primary-key UPSERT (a D1 write). Local SQLite: about 40-65 us per reservation and
+10 us for the combined revocation/generation read. Production D1 server-side batch time over the last
 7 days: P50 0.27-0.6 ms, P90 0.5-2.6 ms per batch. Worker-to-D1 network round trips are extra and
 were not measured (that needs a deployed Worker).

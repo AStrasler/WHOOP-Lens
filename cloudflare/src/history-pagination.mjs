@@ -106,8 +106,8 @@ export async function openCursor({env,userId,resource,query,cursor,now=Date.now}
     throw new CursorError("invalid");
   if(now()>=payload.x)throw new CursorError("expired");
   // Every cursor is sealed exactly CURSOR_TTL_MS before it expires. A cursor
-  // without g predates migration 0016 and belongs to generation 0.
-  return {whoopToken:payload.t,depth:payload.d,issuedAt:payload.x-CURSOR_TTL_MS,generation:payload.g??0};
+  // without g was sealed without a generation (before 0016): generation null.
+  return {whoopToken:payload.t,depth:payload.d,issuedAt:payload.x-CURSOR_TTL_MS,generation:payload.g??null};
 }
 // The member's WHOOP connection state, in one D1 read. It is read once before
 // any WHOOP request (to check an incoming cursor and to stamp the outgoing
@@ -159,7 +159,13 @@ function assertCurrent(state,opened){
     const revoked=Date.parse(marker.includes("T")?marker:marker.replace(" ","T")+"Z");
     if(!Number.isFinite(revoked)||opened.issuedAt<=revoked+(precise?0:999))throw new CursorError("revoked");
   }
-  if(state.generation!==null&&opened.generation!==state.generation)throw new CursorError("revoked");
+  // With 0016 present, a cursor must carry the generation it was issued under.
+  // A cursor without one was sealed by code or a schema that could not record
+  // a reconnect (pre-0016 code, or this code before the table existed), so it
+  // is rejected: a reconnect made then would be invisible here. Members just
+  // request the first page again; cursors expire within an hour anyway.
+  if(state.generation!==null&&(opened.generation===null||opened.generation!==state.generation))
+    throw new CursorError("revoked");
 }
 
 function pageOk(batch,max){
