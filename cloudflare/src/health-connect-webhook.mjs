@@ -330,6 +330,7 @@ export async function healthConnectWebhook(request,env,{now=Date.now(),maxBody=D
   catch{return fail(503,'Health Connect webhook is unavailable');}
   if(mapped.error==='too_large') return fail(413,'Payload too large');
   if(mapped.error) return fail(400,'Invalid payload');
+  let written=0;
   try{
     // D1 batch is transactional: no partial upload on a failed chunk, and
     // revocation/withdrawal cannot interleave between authorization and writes.
@@ -343,6 +344,15 @@ export async function healthConnectWebhook(request,env,{now=Date.now(),maxBody=D
     if(!Array.isArray(results)||results.length!==statements.length||results.some(r=>!r?.success))
       return fail(503,'Health Connect webhook is unavailable');
     if(results[0].meta?.changes!==1)return fail(403,'Not authorized');
+    // stored stays the accepted count (unchanged contract). written is what
+    // the upsert actually changed; an older or unversioned copy of a newer
+    // record is accepted but unchanged.
+    let changed=0;
+    for(const result of results.slice(1)){
+      const n=result.meta?.changes;
+      changed+=Number.isSafeInteger(n)&&n>=0?n:0;
+    }
+    written=Math.min(changed,mapped.rows.length);
   }catch{return fail(503,'Health Connect webhook is unavailable');}
-  return httpJson({ok:true,stored:mapped.rows.length,skipped:mapped.skipped,skipped_types:mapped.skipped_types,rejected:mapped.rejected});
+  return httpJson({ok:true,stored:mapped.rows.length,written,unchanged:mapped.rows.length-written,skipped:mapped.skipped,skipped_types:mapped.skipped_types,rejected:mapped.rejected});
 }

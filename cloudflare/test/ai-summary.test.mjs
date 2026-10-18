@@ -32,6 +32,7 @@ const ACCOUNT_ID="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 function openDb(){
   const sqlite=new DatabaseSync(":memory:");
   sqlite.exec(readFileSync(new URL("../migrations/0009_ai_usage.sql",import.meta.url),"utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0008_whoop_credential_revocations.sql",import.meta.url),"utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0010_ai_account_snapshot.sql",import.meta.url),"utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0012_ai_usage_event.sql",import.meta.url),"utf8"));
   return {sqlite,...d1Database(sqlite),close(){sqlite.close();}};
@@ -84,7 +85,11 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
   globalThis.fetch=(...args)=>{analytics++;return originalFetch(...args);};
   try{
   const whoopRequest=async()=>{calls++;return upstream;};
-  const db={prepare(){throw Error("quota storage must stay unused");}};
+  // Only the history disconnect-marker read (no marker here) may touch storage.
+  const db={prepare(sql){
+    if(/^SELECT revoked_at FROM whoop_credential_revocations /.test(sql))return {bind(){return this;},async first(){return null;}};
+    throw Error("quota storage must stay unused");
+  }};
   const message=rpc("get_recovery",{limit:10});
   const expected={jsonrpc:"2.0",id:1,result:{
     content:[{type:"text",text:JSON.stringify(returned)}],

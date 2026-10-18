@@ -44,6 +44,27 @@ function clientConfig(env){
     throw Error("WHOOP OAuth not configured");
   return env;
 }
+// WHOOP sends X-RateLimit-Reset (seconds); Retry-After may be seconds or an
+// HTTP date. Bounded to one hour so a bad header cannot suggest a long wait.
+export function retryAfterSeconds(headers,now=Date.now()){
+  const read=name=>{try{return headers?.get?.(name)??null;}catch{return null;}};
+  for(const name of ["retry-after","x-ratelimit-reset"]){
+    const raw=read(name);
+    if(typeof raw!=="string"||!raw.trim()||raw.length>64)continue;
+    const value=raw.trim();
+    let seconds=null;
+    if(/^\d{1,6}$/.test(value))seconds=Number(value);
+    else if(name==="retry-after"){const at=Date.parse(value);if(Number.isFinite(at))seconds=Math.ceil((at-now)/1000);}
+    if(seconds!=null&&Number.isFinite(seconds))return Math.min(3600,Math.max(0,seconds));
+  }
+  return null;
+}
+function rateLimited(response,message){
+  const error=Error(message);error.status=429;
+  const after=retryAfterSeconds(response.headers);
+  if(after!=null)error.retryAfter=after;
+  return error;
+}
 function ownerId(value){if(typeof value!=="string"||!UUID.test(value))throw Error("Invalid user");return value.toLowerCase();}
 async function boundedJson(response){
   const length=Number(response.headers.get("content-length"));
@@ -98,6 +119,8 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
     // one makes ours fail. Use the access token that request stored, if any.
     const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep);
     if(winner)return winner;
+    // A rate-limited refresh is reported as such (the stored tokens are kept).
+    if(response.status===429)throw rateLimited(response,"WHOOP refresh failed");
     throw Error("WHOOP refresh failed");
   }
   const tokens=await boundedJson(response);
@@ -173,6 +196,7 @@ export async function callWhoop(db,userId,resource,env,opts={},deps={}){
   if(!response.ok){
     // Same message as before; the status lets optional features (the stress
     // estimate) tell a WHOOP rate limit (429) apart from other failures.
+    if(response.status===429)throw rateLimited(response,"WHOOP API request failed");
     const error=Error("WHOOP API request failed");error.status=response.status;throw error;
   }
   const data=await boundedJson(response);

@@ -98,7 +98,28 @@ export async function openCursor({env,userId,resource,query,cursor,now=Date.now}
      !Number.isSafeInteger(payload.d)||payload.d<1||payload.d>SEQUENCE_MAX_PAGES)
     throw new CursorError("invalid");
   if(now()>=payload.x)throw new CursorError("expired");
-  return {whoopToken:payload.t,depth:payload.d};
+  // Every cursor is sealed exactly CURSOR_TTL_MS before it expires.
+  return {whoopToken:payload.t,depth:payload.d,issuedAt:payload.x-CURSOR_TTL_MS};
+}
+// A disconnect (disconnect_whoop) ends every sequence started before it, so a
+// cursor from the old WHOOP connection never continues on a later one.
+// The marker is the raw revoked_at text (null when the member never
+// disconnected). Reconnecting requires a disconnect first or replaces the
+// connection in place (handled separately), so a changed marker during a call
+// means the WHOOP connection changed under it.
+async function revocationMarker(db,userId){
+  const row=await db.prepare(
+    "SELECT revoked_at FROM whoop_credential_revocations WHERE user_id=?1 LIMIT 1"
+  ).bind(userId.toLowerCase()).first();
+  return row?.revoked_at==null?null:String(row.revoked_at);
+}
+function assertIssuedAfter(marker,issuedAt){
+  if(marker==null)return;
+  // "YYYY-MM-DD HH:MM:SS[.mmm]" (UTC). Second-precision markers (written before
+  // millisecond stamps) reject the whole second; an unreadable marker fails closed.
+  const precise=/\.\d{3}$/.test(marker);
+  const revoked=Date.parse(marker.includes("T")?marker:marker.replace(" ","T")+"Z");
+  if(!Number.isFinite(revoked)||issuedAt<=revoked+(precise?0:999))throw new CursorError("revoked");
 }
 
 function pageOk(batch,max){
@@ -111,14 +132,21 @@ function pageOk(batch,max){
 export async function readHistoryPages({db,userId,resource,env,whoopRequest,limit,cursor,auto,now=Date.now}){
   const query={start:null,end:null};
   let token=null,depth=0;
+  // Read once before any WHOOP request; rechecked after every page.
+  const marker=await revocationMarker(db,userId);
   if(cursor!=null){
     const opened=await openCursor({env,userId,resource,query,cursor,now});
+    assertIssuedAfter(marker,opened.issuedAt);
     token=opened.whoopToken;depth=opened.depth;
   }
-  if(!auto)return readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,now});
+  // A disconnect that commits while a page is in flight is visible here: the
+  // marker and the credential deletion are one D1 batch, and a reconnect can
+  // only follow it. Such a page may already come from the next connection.
+  const unchanged=async()=>await revocationMarker(db,userId)===marker;
+  if(!auto)return readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,now,unchanged});
   const records=[];
   const seen=new Set(token?[token]:[]);
-  let pages=0,reason=null;
+  let pages=0,reason=null,retryAfter=null;
   while(pages<AUTO_PAGE_MAX_PAGES){
     if(depth>=SEQUENCE_MAX_PAGES){reason="page_limit";break;}
     let batch;
@@ -126,11 +154,18 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
     catch(error){
       // Nothing retrieved yet: surface the failure exactly as before.
       if(pages===0)throw error;
-      reason=error?.status===429?"rate_limited":"upstream_error";break;
+      reason=error?.status===429?"rate_limited":"upstream_error";
+      if(reason==="rate_limited"&&Number.isSafeInteger(error?.retryAfter))retryAfter=error.retryAfter;
+      break;
     }
     if(!pageOk(batch,AUTO_PAGE_SIZE)){
       if(pages===0)throw Error(batch&&Array.isArray(batch.records)?"WHOOP page oversized":"Unexpected WHOOP page");
       reason="upstream_error";break;
+    }
+    if(!await unchanged()){
+      // Drop this page: it may belong to a newly connected WHOOP account.
+      if(pages===0)throw Error("WHOOP connection changed");
+      token=null;reason="connection_changed";break;
     }
     records.push(...batch.records);
     pages++;depth++;
@@ -147,14 +182,16 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
     next_token:token===null?null:await sealCursor({env,userId,resource,query,whoopToken:token,depth,now}),
     complete:token===null&&reason===null,pages_fetched:pages};
   if(reason)out.incomplete_reason=reason;
+  if(retryAfter!=null)out.retry_after_seconds=retryAfter;
   return out;
 }
 // One page, as before: the WHOOP response passes through except that its
 // next_token is replaced by a sealed cursor (or null when it is unusable) and
 // complete says whether the sequence has ended.
-async function readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,now}){
+async function readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,now,unchanged}){
   if(depth>=SEQUENCE_MAX_PAGES)return {records:[],next_token:null,complete:false,incomplete_reason:"page_limit"};
   const batch=await whoopRequest(db,userId,resource,env,{limit,next_token:token});
+  if(!await unchanged())throw Error("WHOOP connection changed");
   // Same page validation as auto_page: a malformed or oversized page is an
   // error, never a "complete" history.
   if(!pageOk(batch,limit))throw Error(batch&&Array.isArray(batch.records)?"WHOOP page oversized":"Unexpected WHOOP page");

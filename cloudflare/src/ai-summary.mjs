@@ -1,3 +1,4 @@
+import {validWhoopToken} from "./history-pagination.mjs";
 // Optional evidence-grounded summary. Off unless AI_SUMMARY_ENABLED is exactly "true".
 // Stats are computed here. The model sees aggregates and selected numbers only.
 import { computeStressEstimate, recoveryDay, isRecoveryRecord, STRESS_NAME, STRESS_LABEL, LIMITATIONS as STRESS_LIMITATIONS } from "./stress-estimate.mjs";
@@ -215,9 +216,10 @@ const HISTORY_RESOURCE=Object.freeze({
 });
 const HISTORY_PAGE=25;
 export const HISTORY_MAX_PAGES=16;
+// Same WHOOP cursor rule as callWhoop (base64 padding allowed), so an
+// internal walk never stops early on a cursor the API would accept.
 function validCursor(token,previous){
-  return typeof token==="string"&&token.length>=1&&token.length<=512&&
-    /^[A-Za-z0-9._~+/-]+$/.test(token)&&!token.includes("..")&&token!==previous;
+  return validWhoopToken(token)&&token!==previous;
 }
 export async function collectHistoryPages(whoopRequest,ctx,resource,{start=null,end=null,maxPages=HISTORY_MAX_PAGES}={}){
   if(typeof whoopRequest!=="function")return {records:[],complete:false};
@@ -633,7 +635,7 @@ export async function fetchStressWindow(ctx,resource,startDay,endDay){
     records.push(...batch);
     const next=page?.next_token??null;
     if(next==null){complete=true;break;}
-    if(typeof next!=="string"||next===token||seen.has(next)||!/^[A-Za-z0-9._~+/-]{1,512}$/.test(next)||next.includes(".."))break;
+    if(!validCursor(next,token)||seen.has(next))break;
     seen.add(next);
     token=next;
   }
