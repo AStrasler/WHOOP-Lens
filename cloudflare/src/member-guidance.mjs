@@ -98,12 +98,19 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   const seat_role=owner?'developer':role==='developer'||role==='public'?role:null;
   const seat_role_source=owner?'Server owner setting.':roleRow===UNREAD?'Could not be read right now.':seat_role?
     'This account\'s WHOOP connection record.':'No WHOOP connection record yet, so the seat role is not recorded.';
+  // Same seat class the limiter uses: whoop_connections.seat_role. Without a
+  // connection row no WHOOP request is made, so no budget applies. Reported in
+  // both response paths.
+  const request_budget=!memberLimitEnabled(env)?{state:'disabled'}:roleRow===UNREAD?{state:'unknown'}:!roleRow?
+      {state:'not_applicable',reason:'No WHOOP connection, so no WHOOP requests are made.'}:
+      {state:'enabled',...memberLimits(env)[role==='developer'?'developer':'public']};
   const hc=await read(db,HC_STATUS_SQL,userId);
   if(hc===UNREAD||!hc)return {
     as_of:new Date(now).toISOString(),seat_role:seat_role??'unknown',seat_role_source,
     role_boundaries:boundaries(seat_role,owner,env),
     whoop_connected:roleRow===UNREAD?'unknown':!!roleRow,
-    health_connect:{status:'unknown',summary:'Health Connect status could not be read right now. Treat it as unverified.'}
+    health_connect:{status:'unknown',summary:'Health Connect status could not be read right now. Treat it as unverified.'},
+    request_budget
   };
   const count=Number(hc.records??0);
   const active=Number(hc.active_tokens??0)>0;
@@ -138,9 +145,7 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
     },
     // Same seat class the limiter uses: whoop_connections.seat_role. Without a
     // connection row no WHOOP request is made, so no budget applies.
-    request_budget:!memberLimitEnabled(env)?{state:'disabled'}:roleRow===UNREAD?{state:'unknown'}:!roleRow?
-      {state:'not_applicable',reason:'No WHOOP connection, so no WHOOP requests are made.'}:
-      {state:'enabled',...memberLimits(env)[role==='developer'?'developer':'public']}
+    request_budget
   };
 }
 export const ISSUE_GUIDANCE=Object.freeze({

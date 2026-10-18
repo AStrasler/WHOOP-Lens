@@ -21,10 +21,11 @@ function requireConfig(env) {
   return env;
 }
 // Same check connect_whoop runs, for capability reporting. Never returns a value.
-// Also checks the token key formats: an invalid current or next key makes every
+// Also checks the client credential and token key formats (SECRET_RULES): an invalid current or next key makes every
 // callback fail when sealing, so that is not configured either.
 export function whoopConnectConfigured(env){
   try{requireConfig(env);}catch{return false;}
+  if(!SECRET_RULES.WHOOP_CLIENT_ID(env.WHOOP_CLIENT_ID)||!SECRET_RULES.WHOOP_CLIENT_SECRET(env.WHOOP_CLIENT_SECRET))return false;
   const keys=["WHOOP_TOKEN_AES256_KEY","WHOOP_TOKEN_AES256_KEY_NEXT"].filter(name=>env?.[name]!=null&&env[name]!=="");
   return keys.length>0&&keys.every(name=>SECRET_RULES[name](env[name]));
 }
