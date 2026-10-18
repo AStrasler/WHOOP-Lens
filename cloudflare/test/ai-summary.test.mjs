@@ -85,9 +85,11 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
   globalThis.fetch=(...args)=>{analytics++;return originalFetch(...args);};
   try{
   const whoopRequest=async()=>{calls++;return upstream;};
-  // Only the history disconnect-marker read (no marker here) may touch storage.
+  // Only the history connection-state read (disconnect marker + generation,
+  // migrations 0008/0016; none stored here) may touch storage.
   const db={prepare(sql){
-    if(/^SELECT revoked_at FROM whoop_credential_revocations /.test(sql))return {bind(){return this;},async first(){return null;}};
+    if(/^SELECT \(SELECT revoked_at FROM whoop_credential_revocations WHERE user_id=\?1\) AS revoked_at,\(SELECT generation FROM whoop_connection_generations WHERE user_id=\?1\) AS generation$/.test(sql))
+      return {bind(){return this;},async first(){return null;}};
     throw Error("quota storage must stay unused");
   }};
   const message=rpc("get_recovery",{limit:10});

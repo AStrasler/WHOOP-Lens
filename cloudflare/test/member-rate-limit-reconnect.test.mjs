@@ -366,3 +366,30 @@ test("reconnect: cursors stay bound to member and endpoint; another member's gen
     assert.equal((await h.call(d,A,"get_sleep",{auto_page:true,next_token:next.next_token})).body.result.isError,true);
   }finally{d.close();}
 });
+
+test("reconnect mid-call: a reconnect without disconnect between pages drops the in-flight page (generation re-check)",async()=>{
+  const d=await db();
+  try{
+    // A reconnect over the existing connection, as acceptWhoopCallback's batch
+    // writes it: new credentials and a generation bump, revoked_at untouched.
+    let armed=false;
+    const swap=()=>{armed=false;d.sqlite.prepare("INSERT INTO whoop_connection_generations(user_id,generation) VALUES(?,1) ON CONFLICT(user_id) DO UPDATE SET generation=generation+1").run(A);};
+    const w=fakeWhoop({fail:({bearer,call})=>{if(armed&&bearer==="access-"+A&&call>=2)swap();return null;}}),h=harness(w);
+    armed=true;
+    const out=content(await h.call(d,A,"get_recovery",{auto_page:true}));
+    assert.equal(out.records.length,25,"only the page fetched before the reconnect");
+    assert.equal(out.complete,false);
+    assert.equal(out.incomplete_reason,"connection_changed");
+    assert.equal(out.next_token,null);
+    assert.equal(d.sqlite.prepare("SELECT COUNT(*) n FROM whoop_credential_revocations").get().n,0,"marker never changed");
+    // Manual page: the page is not returned at all.
+    const w2=fakeWhoop({fail:()=>{swap();return null;}}),h2=harness(w2);
+    const manual=await h2.call(d,A,"get_sleep",{limit:25});
+    assert.equal(manual.body.result.isError,true);
+    assert.equal(manual.body.result.structuredContent,undefined);
+    // B is unaffected and a fresh sequence for A works.
+    assert.equal(content(await h2.call(d,B,"get_sleep",{auto_page:true})).records.length,100);
+    const fresh=content(await harness(fakeWhoop()).call(d,A,"get_recovery",{auto_page:true}));
+    assert.equal(fresh.records.length,100);assert.ok(fresh.next_token);
+  }finally{d.close();}
+});

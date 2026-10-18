@@ -64,13 +64,19 @@ function binding(kid,userId,resource,query){
 function keyring(env){
   try{return tokenKeyring(env);}catch{throw new CursorError("key");}
 }
-export async function sealCursor({env,userId,resource,query,whoopToken,depth,now=Date.now}){
+// generation is the member's WHOOP connection generation (migration 0016) at
+// the start of the call; null when that table is not available, in which case
+// the cursor is sealed without one (the format issued before the migration).
+export async function sealCursor({env,userId,resource,query,whoopToken,depth,generation=null,now=Date.now}){
   if(!validWhoopToken(whoopToken))throw new CursorError("upstream");
   if(!Number.isSafeInteger(depth)||depth<1||depth>SEQUENCE_MAX_PAGES)throw new CursorError("depth");
+  if(generation!==null&&(!Number.isSafeInteger(generation)||generation<0))throw new CursorError("generation");
   const keys=keyring(env),kid=keys.current;
   const key=await cursorKey(keys[kid]);
   const iv=crypto.getRandomValues(new Uint8Array(12));
-  const body=enc.encode(JSON.stringify({t:whoopToken,x:now()+CURSOR_TTL_MS,d:depth}));
+  const sealed={t:whoopToken,x:now()+CURSOR_TTL_MS,d:depth};
+  if(generation!==null)sealed.g=generation;
+  const body=enc.encode(JSON.stringify(sealed));
   const ct=new Uint8Array(await crypto.subtle.encrypt(
     {name:"AES-GCM",iv,additionalData:binding(kid,userId,resource,query),tagLength:128},key,body));
   return "wlc1."+kid+"."+b64u(iv)+"."+b64u(ct);
@@ -95,31 +101,65 @@ export async function openCursor({env,userId,resource,query,cursor,now=Date.now}
   let payload;
   try{payload=JSON.parse(dec.decode(plain));}catch{throw new CursorError("invalid");}
   if(!payload||!validWhoopToken(payload.t)||!Number.isSafeInteger(payload.x)||
-     !Number.isSafeInteger(payload.d)||payload.d<1||payload.d>SEQUENCE_MAX_PAGES)
+     !Number.isSafeInteger(payload.d)||payload.d<1||payload.d>SEQUENCE_MAX_PAGES||
+     (payload.g!==undefined&&(!Number.isSafeInteger(payload.g)||payload.g<0)))
     throw new CursorError("invalid");
   if(now()>=payload.x)throw new CursorError("expired");
-  // Every cursor is sealed exactly CURSOR_TTL_MS before it expires.
-  return {whoopToken:payload.t,depth:payload.d,issuedAt:payload.x-CURSOR_TTL_MS};
+  // Every cursor is sealed exactly CURSOR_TTL_MS before it expires. A cursor
+  // without g predates migration 0016 and belongs to generation 0.
+  return {whoopToken:payload.t,depth:payload.d,issuedAt:payload.x-CURSOR_TTL_MS,generation:payload.g??0};
 }
-// A disconnect (disconnect_whoop) ends every sequence started before it, so a
-// cursor from the old WHOOP connection never continues on a later one.
-// The marker is the raw revoked_at text (null when the member never
-// disconnected). Reconnecting requires a disconnect first or replaces the
-// connection in place (handled separately), so a changed marker during a call
-// means the WHOOP connection changed under it.
-async function revocationMarker(db,userId){
+// The member's WHOOP connection state, in one D1 read. It is read once before
+// any WHOOP request (to check an incoming cursor and to stamp the outgoing
+// one) and again after every page (to drop a page fetched while it changed):
+// - revoked_at (migration 0008): the raw disconnect marker, null when the
+//   member never disconnected. A disconnect ends every sequence started
+//   before it.
+// - generation (migration 0016): bumped by every OAuth callback that stores
+//   credentials (including a reconnect without a disconnect) and every
+//   disconnect. With 0016 applied it alone detects both changes; revoked_at is
+//   still compared because a disconnect made by code that predates 0016 (or
+//   while it was rolled back) changes only the marker. Both come from the
+//   same read, so keeping both costs nothing.
+// Without the 0016 table only revoked_at is used and generation is null,
+// which is the behaviour before 0016.
+async function connectionState(db,userId){
+  const id=userId.toLowerCase();
+  try{
+    const row=await db.prepare(
+      "SELECT (SELECT revoked_at FROM whoop_credential_revocations WHERE user_id=?1) AS revoked_at,"+
+      "(SELECT generation FROM whoop_connection_generations WHERE user_id=?1) AS generation"
+    ).bind(id).first();
+    return {revokedAt:row?.revoked_at==null?null:String(row.revoked_at),generation:readGeneration(row?.generation)};
+  }catch(error){
+    if(error instanceof CursorError)throw error;
+    if(!/no such table/i.test(String(error?.message||""))||!String(error.message).includes("whoop_connection_generations"))throw error;
+  }
   const row=await db.prepare(
     "SELECT revoked_at FROM whoop_credential_revocations WHERE user_id=?1 LIMIT 1"
-  ).bind(userId.toLowerCase()).first();
-  return row?.revoked_at==null?null:String(row.revoked_at);
+  ).bind(id).first();
+  return {revokedAt:row?.revoked_at==null?null:String(row.revoked_at),generation:null};
 }
-function assertIssuedAfter(marker,issuedAt){
-  if(marker==null)return;
-  // "YYYY-MM-DD HH:MM:SS[.mmm]" (UTC). Second-precision markers (written before
-  // millisecond stamps) reject the whole second; an unreadable marker fails closed.
-  const precise=/\.\d{3}$/.test(marker);
-  const revoked=Date.parse(marker.includes("T")?marker:marker.replace(" ","T")+"Z");
-  if(!Number.isFinite(revoked)||issuedAt<=revoked+(precise?0:999))throw new CursorError("revoked");
+// No row is generation 0. An unreadable value fails closed.
+function readGeneration(value){
+  if(value==null)return 0;
+  const n=Number(value);
+  if(!Number.isSafeInteger(n)||n<0)throw new CursorError("revoked");
+  return n;
+}
+function sameState(a,b){return a.revokedAt===b.revokedAt&&a.generation===b.generation;}
+// A cursor must be issued after the last disconnect and under the current
+// generation. revoked_at is "YYYY-MM-DD HH:MM:SS[.mmm]" (UTC); second-precision
+// markers (written before millisecond stamps) reject the whole second, and an
+// unreadable marker fails closed.
+function assertCurrent(state,opened){
+  const marker=state.revokedAt;
+  if(marker!=null){
+    const precise=/\.\d{3}$/.test(marker);
+    const revoked=Date.parse(marker.includes("T")?marker:marker.replace(" ","T")+"Z");
+    if(!Number.isFinite(revoked)||opened.issuedAt<=revoked+(precise?0:999))throw new CursorError("revoked");
+  }
+  if(state.generation!==null&&opened.generation!==state.generation)throw new CursorError("revoked");
 }
 
 function pageOk(batch,max){
@@ -133,20 +173,24 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
   const query={start:null,end:null};
   let token=null,depth=0;
   // Read once before any WHOOP request; rechecked after every page.
-  const marker=await revocationMarker(db,userId);
+  const state=await connectionState(db,userId);
+  const generation=state.generation;
   if(cursor!=null){
     const opened=await openCursor({env,userId,resource,query,cursor,now});
-    assertIssuedAfter(marker,opened.issuedAt);
+    assertCurrent(state,opened);
     token=opened.whoopToken;depth=opened.depth;
   }
-  // A disconnect that commits while a page is in flight is visible here: the
-  // marker and the credential deletion are one D1 batch, and a reconnect can
-  // only follow it. Such a page may already come from the next connection.
-  const unchanged=async()=>await revocationMarker(db,userId)===marker;
-  if(!auto)return readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,now,unchanged});
+  // A disconnect or reconnect that commits while a page is in flight is
+  // visible here: the marker/generation and the credential change are one D1
+  // batch. Such a page may already come from the next connection.
+  const unchanged=async()=>{
+    try{return sameState(await connectionState(db,userId),state);}
+    catch(error){if(error instanceof CursorError)return false;throw error;}
+  };
+  if(!auto)return readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,generation,now,unchanged});
   const records=[];
   const seen=new Set(token?[token]:[]);
-  let pages=0,reason=null,retryAfter=null;
+  let pages=0,reason=null,retryAfter=null,scope=null;
   while(pages<AUTO_PAGE_MAX_PAGES){
     if(depth>=SEQUENCE_MAX_PAGES){reason="page_limit";break;}
     let batch;
@@ -156,6 +200,9 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
       if(pages===0)throw error;
       reason=error?.status===429?"rate_limited":"upstream_error";
       if(reason==="rate_limited"&&Number.isSafeInteger(error?.retryAfter))retryAfter=error.retryAfter;
+      // "member": this account's WHOOP Lens share (member-rate-limit.mjs);
+      // "whoop": WHOOP throttled the app.
+      if(reason==="rate_limited")scope=error?.memberLimit===true?"member":"whoop";
       break;
     }
     if(!pageOk(batch,AUTO_PAGE_SIZE)){
@@ -179,16 +226,17 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
   // resumes at the page that failed. A depth limit or a bad WHOOP cursor ends it.
   if(reason!==null&&reason!=="upstream_error"&&reason!=="rate_limited")token=null;
   const out={records,
-    next_token:token===null?null:await sealCursor({env,userId,resource,query,whoopToken:token,depth,now}),
+    next_token:token===null?null:await sealCursor({env,userId,resource,query,whoopToken:token,depth,generation,now}),
     complete:token===null&&reason===null,pages_fetched:pages};
   if(reason)out.incomplete_reason=reason;
   if(retryAfter!=null)out.retry_after_seconds=retryAfter;
+  if(scope)out.rate_limit_scope=scope;
   return out;
 }
 // One page, as before: the WHOOP response passes through except that its
 // next_token is replaced by a sealed cursor (or null when it is unusable) and
 // complete says whether the sequence has ended.
-async function readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,now,unchanged}){
+async function readOnePage({db,userId,resource,env,whoopRequest,limit,token,depth,query,generation,now,unchanged}){
   if(depth>=SEQUENCE_MAX_PAGES)return {records:[],next_token:null,complete:false,incomplete_reason:"page_limit"};
   const batch=await whoopRequest(db,userId,resource,env,{limit,next_token:token});
   if(!await unchanged())throw Error("WHOOP connection changed");
@@ -204,7 +252,7 @@ async function readOnePage({db,userId,resource,env,whoopRequest,limit,token,dept
     out.incomplete_reason=depth+1>=SEQUENCE_MAX_PAGES&&validWhoopToken(next)&&next!==token?"page_limit":"invalid_upstream_cursor";
     return out;
   }
-  out.next_token=await sealCursor({env,userId,resource,query,whoopToken:next,depth:depth+1,now});
+  out.next_token=await sealCursor({env,userId,resource,query,whoopToken:next,depth:depth+1,generation,now});
   out.complete=false;
   return out;
 }
