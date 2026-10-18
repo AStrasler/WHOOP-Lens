@@ -151,6 +151,9 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
   }
   return {connected:true,seat_role:role};
 }
+function revocationStamp(ms){
+  return new Date(ms).toISOString().slice(0,23).replace("T"," ");
+}
 function utcStamp(ms){
   return new Date(ms).toISOString().slice(0,19).replace("T"," ");
 }
@@ -174,7 +177,10 @@ export async function revokeWhoopConnection(db,userId,{now=NOW}={}){
       db.prepare(
         "INSERT INTO whoop_credential_revocations(user_id,revoked_at) VALUES(?1,?2) "+
         "ON CONFLICT(user_id) DO UPDATE SET revoked_at=excluded.revoked_at"
-      ).bind(id,utcStamp(now())),
+      // Millisecond suffix: string comparison with the second-precision state
+      // stamps used above is unchanged ("...:56.123" >= "...:56"), and history
+      // cursors can tell a sequence started right after a reconnect apart.
+      ).bind(id,revocationStamp(now())),
       db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1").bind(id),
       db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id),
       ...await generationBump(db,id),

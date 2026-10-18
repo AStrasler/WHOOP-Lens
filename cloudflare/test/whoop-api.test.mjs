@@ -12,7 +12,8 @@ const A="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const now=Date.parse("2026-10-11T12:00:00Z");
 const key=randomBytes(32).toString("base64url");
-const schema=readFileSync(new URL("../migrations/0001_initial.sql",import.meta.url),"utf8");
+const schema=readFileSync(new URL("../migrations/0001_initial.sql",import.meta.url),"utf8")+
+  readFileSync(new URL("../migrations/0008_whoop_credential_revocations.sql",import.meta.url),"utf8");
 const env={WHOOP_TOKEN_AES256_KEY:key,WHOOP_CLIENT_ID:"synthetic-client",WHOOP_CLIENT_SECRET:"synthetic-secret"};
 
 function dbFixture() {
