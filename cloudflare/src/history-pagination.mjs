@@ -231,6 +231,11 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
   // Only an upstream failure mid-sequence keeps a cursor, so the next call
   // resumes at the page that failed. A depth limit or a bad WHOOP cursor ends it.
   if(reason!==null&&reason!=="upstream_error"&&reason!=="rate_limited")token=null;
+  // A cursor sealed now expires after CURSOR_TTL_MS. If the advertised wait is
+  // at least that long (for example a member's daily limit), the cursor could
+  // never be used once retrying makes sense, so none is returned: the member
+  // starts again after the wait instead of holding a cursor that will fail.
+  if(reason==="rate_limited"&&retryAfter!=null&&retryAfter*1000>=CURSOR_TTL_MS)token=null;
   const out={records,
     next_token:token===null?null:await sealCursor({env,userId,resource,query,whoopToken:token,depth,generation,now}),
     complete:token===null&&reason===null,pages_fetched:pages};

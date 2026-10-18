@@ -443,3 +443,28 @@ test("rollout: the bump is always in the credential batch; without the table the
     await assert.rejects(reconnect(d,B,"access2-"+B),/seats are full/);
   }finally{d.close();}
 });
+
+test("limits: a daily limit returns no cursor it would outlive, and says to restart (Codex P2 on 0e50f99)",async()=>{
+  const d=await db();
+  try{
+    const {CURSOR_TTL_MS}=await import("../src/history-pagination.mjs");
+    assert.equal(CURSOR_TTL_MS,3600_000,"memberLimitMessage assumes one-hour cursors");
+    const w=fakeWhoop(),clock={t:T0},h=harness(w,clock,{WHOOP_MEMBER_LIMIT_PER_MINUTE:"100",WHOOP_MEMBER_LIMIT_PER_DAY:"6"});
+    const first=content(await h.call(d,A,"get_recovery",{auto_page:true}));
+    assert.equal(first.records.length,100);
+    const second=content(await quietly(()=>h.call(d,A,"get_recovery",{auto_page:true,next_token:first.next_token})));
+    assert.deepEqual(idx(second.records),range(100,150),"partial records are still returned");
+    assert.equal(second.incomplete_reason,"rate_limited");assert.equal(second.rate_limit_scope,"member");
+    assert.ok(second.retry_after_seconds*1000>=CURSOR_TTL_MS);
+    assert.equal(second.next_token,null,"no cursor that expires before the retry");
+    assert.equal(second.complete,false);
+    const blocked=await quietly(()=>h.call(d,A,"get_cycles",{limit:25}));
+    const text=blocked.body.result.content[0].text;
+    assert.match(text,/per day \(UTC\)/);assert.match(text,/request the first page again without next_token/);
+    assert.doesNotMatch(text,/retry the same call/);
+    // A minute limit keeps its cursor and its "retry the same call" advice.
+    const m=harness(w,clock,{WHOOP_MEMBER_LIMIT_PER_MINUTE:"1"});
+    const minute=await quietly(()=>m.call(d,B,"get_cycles",{limit:25}).then(()=>m.call(d,B,"get_cycles",{limit:25})));
+    assert.match(minute.body.result.content[0].text,/retry the same call\. A next_token stays valid for one hour after it was issued\./);
+  }finally{d.close();}
+});

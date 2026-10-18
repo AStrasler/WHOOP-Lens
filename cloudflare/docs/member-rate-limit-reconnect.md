@@ -36,6 +36,9 @@ the connection are verified and immediately before the request. Over budget, not
   - `auto_page`: the records already fetched are returned with `complete:false`,
     `incomplete_reason:"rate_limited"`, `rate_limit_scope:"member"` (`"whoop"` when WHOOP itself
     throttled), `retry_after_seconds`, and a cursor that resumes at the next page.
+    When the wait is an hour or more (the daily limit), no cursor is returned (`next_token:null`),
+    because a cursor lives one hour and would expire before the retry. The member starts the
+    sequence again after the reset, and the error message says so.
 - Without the table (migration not applied yet, or rolled back) enforcement is skipped and logged
   once (`member_rate_limit`/`schema_missing`). Any other D1 error fails closed (no WHOOP request).
 
