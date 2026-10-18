@@ -267,6 +267,7 @@ test('host instructions carry the shared guidance for every flag combination',()
     assert.match(text,/server_features reports each feature as enabled, disabled or not_configured/);
     assert.match(text,/issuing an ingest token only creates a credential\. It does not mean any data has arrived/);
     assert.match(text,/Every seat, including the owner, can read and change only its own data/);
+    assert.match(text,/report unknown as unknown, with seat_role_source, and do not guess a role/);
     assert.match(text,/No tool approves members, changes seats or roles, or reads another account/);
     assert.match(text,/cite the tool and field that supports each claim/);
     assert.match(text,/as unverified/);
