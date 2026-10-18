@@ -4,7 +4,7 @@
 // timestamps only; never a secret value, another member, or record content.
 import {whoopConnectConfigured} from './whoop-oauth.mjs';
 import {analyticsConfigured} from './ai-account.mjs';
-import {selectModel} from './ai-summary.mjs';
+import {selectModel,aiSummaryEnabled} from './ai-summary.mjs';
 import {memberLimits,memberLimitEnabled} from './member-rate-limit.mjs';
 
 // A listed tool whose server flag is off throws this, so the member is told the
@@ -56,11 +56,13 @@ export const ROLE_BOUNDARIES=Object.freeze({
   developer:['This is the owner/developer seat.','Member approval and seat changes happen outside this MCP, by the owner.'],
   // Only when the owner setting names this account: the same rule get_ai_usage uses.
   ownerUsage:'get_ai_usage also returns a server-wide AI summary total with no per-member breakdown.',
-  public:['This is an approved member seat. get_ai_usage shows this account only.',
-    'To change membership or seats, ask the server owner; this MCP cannot do it.']
+  public:['This is an approved member seat.','To change membership or seats, ask the server owner; this MCP cannot do it.'],
+  // Only while get_ai_usage is listed (AI_SUMMARY_ENABLED).
+  memberUsage:'get_ai_usage shows this account only.'
 });
-function boundaries(seatRole,owner){
-  return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...(owner?[ROLE_BOUNDARIES.ownerUsage]:[])];
+function boundaries(seatRole,owner,env){
+  const usage=aiSummaryEnabled(env)?[owner?ROLE_BOUNDARIES.ownerUsage:ROLE_BOUNDARIES.memberUsage]:[];
+  return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...usage];
 }
 const ROLE_SQL='SELECT seat_role FROM whoop_connections WHERE user_id=?1 LIMIT 1';
 // One statement, so token, consent and record fields come from one consistent
@@ -99,7 +101,7 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   const hc=await read(db,HC_STATUS_SQL,userId);
   if(hc===UNREAD||!hc)return {
     as_of:new Date(now).toISOString(),seat_role:seat_role??'unknown',seat_role_source,
-    role_boundaries:boundaries(seat_role,owner),
+    role_boundaries:boundaries(seat_role,owner,env),
     whoop_connected:roleRow===UNREAD?'unknown':!!roleRow,
     health_connect:{status:'unknown',summary:'Health Connect status could not be read right now. Treat it as unverified.'}
   };
@@ -117,7 +119,7 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
     as_of:new Date(now).toISOString(),
     seat_role:seat_role??'unknown',
     seat_role_source,
-    role_boundaries:boundaries(seat_role,owner),
+    role_boundaries:boundaries(seat_role,owner,env),
     whoop_connected:roleRow===UNREAD?'unknown':!!roleRow,
     health_connect:{
       phone_ingest_feature:flag,
