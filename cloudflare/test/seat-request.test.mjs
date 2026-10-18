@@ -50,18 +50,18 @@ test('branded form retains submission contract and narrowly scoped font policy',
  assert.match(errorHtml,/class="mark"/);assert.match(errorHtml,/class="result"/);assert.match(errorHtml,/Return to the request form/);assert.doesNotMatch(errorHtml,/<form|synthetic@example/);
  const success=await s.call(post());assert.match(await success.text(),/Request received/);assert.equal(s.sent.length,1);
 }finally{s.sql.close();}});
-test('seat illustration shows the three-seat allocation as counts only',async()=>{const s=setup();try{
+test('seat illustration shows the full three-seat allocation as counts only',async()=>{const s=setup();try{
  const html=await (await s.call(new Request(origin+'/request-seat'))).text();
- assert.deepEqual(seatCounts(),{max:3,owner:1,members:1,reserved:1,open:0});
+ assert.deepEqual(seatCounts(),{max:3,owner:1,members:2,reserved:0,open:0});
  assert.equal(SEAT_ALLOCATION.max,3);
  const row=html.match(/<div class="seat-row"[^>]*>(.*?)<\/div>/)[1];
  assert.equal((row.match(/<i class="seat[^"]*"><\/i>/g)||[]).length,3);
  assert.equal((row.match(/class="seat owner"/g)||[]).length,1);
- assert.equal((row.match(/class="seat member"/g)||[]).length,1);
- assert.equal((row.match(/class="seat reserved"/g)||[]).length,1);
+ assert.equal((row.match(/class="seat member"/g)||[]).length,2);
+ assert.equal((row.match(/class="seat reserved"/g)||[]).length,0);
  assert.equal((row.match(/class="seat"/g)||[]).length,0);
  const legend=html.match(/<div class="seat-legend">(.*?)<\/div>/)[1].replace(/<[^>]+>/g,'');
- assert.equal(legend,'1 owner/developer1 approved member1 reserved, pending owner approval0 open3 max');
+ assert.equal(legend,'1 owner/developer2 approved members0 open3 max');
  assert.match(html,/3 seats total, including the owner's/);
  assert.doesNotMatch(html,/7 open|2 reserved/);
  // Counts only: no names, relationships or addresses.
