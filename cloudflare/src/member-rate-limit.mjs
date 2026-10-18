@@ -6,11 +6,12 @@
 // MCP and REST layers already report as a rate limit (auto_page keeps the
 // records it has and returns a cursor).
 //
-// Defaults: 25 a minute and 1,000 a day per member. Ten seats (9 public + 1
-// developer) x 1,000 = WHOOP's 10,000 a day, so the daily share is strict. The
-// minute share is 2.5x the strict 10, because one summary with baselines uses
-// about 18 requests and an auto_page call 4; four members at full speed still
-// fit in WHOOP's 100 a minute. Configuration (Worker vars, all optional):
+// Defaults: 25 a minute and 1,000 a day per member, the owner included. This
+// is a separate control from the seat cap (seat-limit.mjs, default 3 seats):
+// 3 x 1,000 = 3,000 of WHOOP's 10,000 a day and 3 x 25 = 75 of its 100 a
+// minute. Even at the database ceiling of 10 seats, 10 x 1,000 fits the day;
+// the minute share stays 25 because an auto_page call uses 4 requests and a
+// summary with stress estimate about 9. Configuration (Worker vars, all optional):
 //   WHOOP_MEMBER_LIMIT_ENABLED        "false" turns enforcement off (default on)
 //   WHOOP_MEMBER_LIMIT_PER_MINUTE     default 25
 //   WHOOP_MEMBER_LIMIT_PER_DAY        default 1000

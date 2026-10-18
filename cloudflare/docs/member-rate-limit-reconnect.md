@@ -18,13 +18,17 @@ the connection are verified and immediately before the request. Over budget, not
 | `WHOOP_DEVELOPER_LIMIT_PER_MINUTE` | member value | developer seat only |
 | `WHOOP_DEVELOPER_LIMIT_PER_DAY` | member value | developer seat only |
 
-- Fair share: 10 seats (9 public + 1 developer). 1,000/day x 10 = WHOOP's 10,000/day. 25/minute is
-  2.5x the strict 10/minute because a summary with baselines uses about 18 requests and an
-  `auto_page` call 4; four members at full speed still fit in 100/minute.
+- Shared quota with the seat cap of 3 (`WHOOP_LENS_SEAT_LIMIT`, see `seat-limit.md`; an independent
+  control): 3 x 1,000 = 3,000 of WHOOP's 10,000/day and 3 x 25 = 75 of its 100/minute, so the
+  members can never exhaust WHOOP's app limits together. Even at the database ceiling of 10 seats
+  the daily shares fit (10 x 1,000). Measured (`test/historical-analysis-budget.test.mjs`): reading a
+  full year of recovery, sleep, cycles and workouts with `auto_page` plus a recovery summary with the
+  stress estimate takes 65 WHOOP requests (15 + 15 + 15 + 11 + 9), 6.5% of a member's day. At 25/minute
+  a client issuing calls every 2 s pauses twice (98 s in total) and resumes from the cursor.
 - Developer/owner seat (the member whose `whoop_connections.seat_role` is `'developer'`, read inside
   the reservation statement; production does not set `WHOOP_LENS_DEVELOPER_USER_ID`, so the env id is
   not used): **not exempt**, same limit by default, configurable separately. Seat roles, seat counts
-  and membership checks are unchanged.
+  and membership checks are unchanged by the rate limit.
 - A missing, zero or malformed value uses the default, so a bad setting cannot lock members out.
 - Windows are fixed UTC minute and UTC day. One row per member (`whoop_member_request_budget`),
   updated by a single atomic UPSERT, so parallel requests cannot overspend.
