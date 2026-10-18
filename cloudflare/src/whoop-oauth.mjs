@@ -3,6 +3,7 @@
 // Source Supabase WHOOP OAuth redirect remains unchanged until separate cutover approval.
 import { activeMembership, ACTIVE_MEMBER_SQL } from "./storage.mjs";
 import { sealWithKeyring, tokenKeyring } from "./token-crypto.mjs";
+import { assertSeatAvailable, seatAvailableSql, seatLimit, SeatsFull } from "./seat-limit.mjs";
 const AUTH="https://api.prod.whoop.com/oauth/oauth2/auth";
 const TOKEN="https://api.prod.whoop.com/oauth/oauth2/token";
 const REDIRECT="https://whooplens.tech/api/whoop/callback";
@@ -40,6 +41,8 @@ export async function createWhoopAuthorization(db,userId,env,{now=NOW}={}){
   requireConfig(env);
   const id=validateUser(userId);
   if(!await activeMembership(db,id))throw Error("Membership required");
+  // Fail early, before sending the member to WHOOP; the callback enforces it.
+  await assertSeatAvailable(db,id,env);
   const state=tokenString(),expires_at=new Date(now()+10*60_000).toISOString();
   const hash=await sha256(state);
   // Bounded per member: drop expired states, and keep at most five pending
@@ -65,6 +68,40 @@ async function digestInvalidation(db,id){
   const table=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_weekly_digest'").first();
   return table?[db.prepare("DELETE FROM ai_weekly_digest WHERE scope=?1 OR substr(scope,1,length(?2))=?2")
     .bind('user:'+id,'user:'+id+':')]:[];
+}
+// Migration 0016: one statement that bumps the member's connection generation,
+// in the same D1 batch as the credential write or delete, so the bump and the
+// change are atomic. The bump is always attempted; only if D1 reports that the
+// table does not exist (0016 not applied yet, or rolled back) is the batch,
+// which then rolled back as a whole, retried without it. There is no separate
+// "does the table exist" read, so a table created between such a read and the
+// commit cannot let a credential change through without a bump.
+// For a callback, storedAccess is the new access-token envelope (random IV, so
+// unique): the bump applies only when the batch actually stored it, not when a
+// revocation or an inactive membership left the connection unchanged.
+function generationBump(db,id,storedAccess=null){
+  const when=storedAccess===null?"":
+    " AND EXISTS (SELECT 1 FROM whoop_connections WHERE user_id=?1 AND encrypted_access_token=?2)";
+  const statement=db.prepare(
+    "INSERT INTO whoop_connection_generations(user_id,generation) SELECT ?1,1 WHERE 1"+when+" "+
+    "ON CONFLICT(user_id) DO UPDATE SET generation=whoop_connection_generations.generation+1,updated_at=CURRENT_TIMESTAMP"
+  );
+  return storedAccess===null?statement.bind(id):statement.bind(id,storedAccess);
+}
+function generationsMissing(error){
+  const text=String(error?.message||error||"");
+  return /no such table/i.test(text)&&text.includes("whoop_connection_generations");
+}
+// Runs before ++ [bump] ++ after as one batch; results keep the positions of
+// before and after (the bump result, when present, is removed).
+async function batchWithBump(db,before,bump,after){
+  try{
+    const results=await db.batch([...before,bump,...after]);
+    return Array.isArray(results)?[...results.slice(0,before.length),...results.slice(before.length+1)]:results;
+  }catch(error){
+    if(!generationsMissing(error))throw error;
+    return db.batch([...before,...after]);
+  }
 }
 export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW}={}){
   requireConfig(env);
@@ -106,25 +143,32 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
   const access=await sealWithKeyring(data.access_token,{userId:id,purpose:"access",keys});
   const refresh=await sealWithKeyring(data.refresh_token,{userId:id,purpose:"refresh",keys});
   const expiresAt=new Date(now()+Number(data.expires_in)*1000).toISOString();
-  // Seat limit and one-developer-seat constraints are enforced by SQLite
-  // migration 0002, including concurrent callbacks.
+  // The seat cap (seat-limit.mjs) is part of this statement, so concurrent
+  // callbacks cannot overshoot it; migration 0002's triggers (9 public + 1
+  // developer) and the one-developer index remain as a database ceiling.
+  const cap=seatLimit(env);
   const invalidate=await digestInvalidation(db,id);
   const statement=db.prepare(
     "INSERT INTO whoop_connections(user_id,expires_at,scope,encrypted_access_token,"+
     "encrypted_refresh_token,encryption_key_version,seat_role) "+
     "SELECT ?1,?2,?3,?4,?5,?8,?6 WHERE EXISTS ("+ACTIVE_MEMBER_SQL+") AND NOT EXISTS ("+
-    "SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7) "+
+    "SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7) AND "+seatAvailableSql("?9")+" "+
     "ON CONFLICT(user_id) DO UPDATE SET expires_at=excluded.expires_at,scope=excluded.scope,"+
     "encrypted_access_token=excluded.encrypted_access_token,"+
     "encrypted_refresh_token=excluded.encrypted_refresh_token,encryption_key_version=excluded.encryption_key_version,updated_at=CURRENT_TIMESTAMP "+
     "WHERE EXISTS ("+ACTIVE_MEMBER_SQL+") AND NOT EXISTS (SELECT 1 FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?7)"
-  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role,stateCreated,keys.current==="k2"?"k2":"v1");
-  const [saved]=await db.batch([statement,...invalidate]);
+  ).bind(id,expiresAt,typeof data.scope==="string"?data.scope:"",access,refresh,role,stateCreated,keys.current==="k2"?"k2":"v1",cap);
+  // A reconnect over an existing connection (no disconnect first) bumps the
+  // generation too, which ends every history cursor issued before it. If the
+  // credential write aborts (seat limit), the batch rolls back the bump.
+  const [saved]=await batchWithBump(db,[statement],generationBump(db,id,access),invalidate);
   if(!saved?.success||saved.meta?.changes!==1){
     const blocked=await db.prepare(
       "SELECT user_id FROM whoop_credential_revocations WHERE user_id=?1 AND revoked_at>=?2"
     ).bind(id,stateCreated).first();
     if(blocked)throw Error("WHOOP authorization was revoked");
+    const seat=await db.prepare("SELECT "+seatAvailableSql("?2")+" AS ok").bind(id,cap).first();
+    if(seat&&Number(seat.ok)!==1)throw new SeatsFull(cap);
     throw Error("WHOOP connection save failed");
   }
   return {connected:true,seat_role:role};
@@ -151,7 +195,7 @@ export async function revokeWhoopConnection(db,userId,{now=NOW}={}){
   let results;
   try{
     const invalidate=await digestInvalidation(db,id);
-    results=await db.batch([
+    results=await batchWithBump(db,[
       db.prepare(
         "INSERT INTO whoop_credential_revocations(user_id,revoked_at) VALUES(?1,?2) "+
         "ON CONFLICT(user_id) DO UPDATE SET revoked_at=excluded.revoked_at"
@@ -160,9 +204,8 @@ export async function revokeWhoopConnection(db,userId,{now=NOW}={}){
       // cursors can tell a sequence started right after a reconnect apart.
       ).bind(id,revocationStamp(now())),
       db.prepare("DELETE FROM whoop_oauth_states WHERE user_id=?1").bind(id),
-      db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id),
-      ...invalidate
-    ]);
+      db.prepare("DELETE FROM whoop_connections WHERE user_id=?1").bind(id)
+    ],generationBump(db,id),invalidate);
   }catch{throw Error("WHOOP disconnect failed");}
   if(!Array.isArray(results)||results.length<3||results.some(result=>result?.success===false))
     throw Error("WHOOP disconnect failed");

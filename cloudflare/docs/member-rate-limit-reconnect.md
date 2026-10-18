@@ -1,0 +1,126 @@
+# Per-member WHOOP request limit and reconnect cursor invalidation
+
+Branch `cursor/member-rate-limit-reconnect`, stacked on `cursor/post-deploy-audit-fixes`
+(it builds on that branch's disconnect-based cursor rejection, `whoop_credential_revocations.revoked_at`,
+and its WHOOP 429 reporting). Not applied to production D1 and not deployed.
+
+## 1. Per-member WHOOP request limit (migration 0015)
+
+WHOOP limits the whole app to 100 requests a minute and 10,000 a day. Every outbound WHOOP API
+request (`callWhoop`) now first reserves one unit for the authenticated member, after membership and
+the connection are verified and immediately before the request. Over budget, nothing is sent to WHOOP.
+
+| Setting (Worker var, optional) | Default | Notes |
+| --- | --- | --- |
+| `WHOOP_MEMBER_LIMIT_ENABLED` | on | `"false"` turns enforcement off |
+| `WHOOP_MEMBER_LIMIT_PER_MINUTE` | 25 | clamped to 1..100 |
+| `WHOOP_MEMBER_LIMIT_PER_DAY` | 1000 | clamped to 1..10000 |
+| `WHOOP_DEVELOPER_LIMIT_PER_MINUTE` | member value | developer seat only |
+| `WHOOP_DEVELOPER_LIMIT_PER_DAY` | member value | developer seat only |
+
+- Shared quota with the seat cap of 3 (`WHOOP_LENS_SEAT_LIMIT`, see `seat-limit.md`; an independent
+  control): 3 x 1,000 = 3,000 of WHOOP's 10,000/day and 3 x 25 = 75 of its 100/minute, so the
+  members can never exhaust WHOOP's app limits together. Even at the database ceiling of 10 seats
+  the daily shares fit (10 x 1,000). Measured (`test/historical-analysis-budget.test.mjs`): reading a
+  full year of recovery, sleep, cycles and workouts with `auto_page` plus a recovery summary with the
+  stress estimate takes 65 WHOOP requests (15 + 15 + 15 + 11 + 9), 6.5% of a member's day. At 25/minute
+  a client issuing calls every 2 s pauses twice (98 s in total) and resumes from the cursor.
+- Developer/owner seat (the member whose `whoop_connections.seat_role` is `'developer'`, read inside
+  the reservation statement; production does not set `WHOOP_LENS_DEVELOPER_USER_ID`, so the env id is
+  not used): **not exempt**, same limit by default, configurable separately. Seat roles, seat counts
+  and membership checks are unchanged by the rate limit.
+- A missing, zero or malformed value uses the default, so a bad setting cannot lock members out.
+- Windows are fixed UTC minute and UTC day. One row per member (`whoop_member_request_budget`),
+  updated by a single atomic UPSERT, so parallel requests cannot overspend.
+- Token refreshes (WHOOP's OAuth token endpoint) are not counted.
+- Over the limit:
+  - MCP: tool error "This account reached its WHOOP Lens request limit (N WHOOP requests per
+    minute|day (UTC)). No WHOOP request was made. Wait about S seconds..."
+  - REST: HTTP 429, `Retry-After: S`, `{"error":...,"rate_limit_scope":"member"}`.
+  - `auto_page`: the records already fetched are returned with `complete:false`,
+    `incomplete_reason:"rate_limited"`, `rate_limit_scope:"member"` (`"whoop"` when WHOOP itself
+    throttled), `retry_after_seconds`, and a cursor that resumes at the next page.
+    When the wait is an hour or more (the daily limit), no cursor is returned (`next_token:null`),
+    because a cursor lives one hour and would expire before the retry. The member starts the
+    sequence again after the reset, and the error message says so.
+- Without the table (migration not applied yet, or rolled back) enforcement is skipped and logged
+  once (`member_rate_limit`/`schema_missing`). Any other D1 error fails closed (no WHOOP request).
+
+## 2. Reconnect cursor invalidation (migration 0016)
+
+`whoop_connection_generations(user_id, generation)` is bumped in the same D1 batch as:
+- every OAuth callback that stores credentials, including a reconnect over an existing connection
+  without a disconnect (the bump is conditional on the new credential actually being stored; a
+  seat-limit abort rolls it back), and
+- every disconnect.
+
+History cursors carry the generation read at the start of the call (before any WHOOP request) and
+are rejected, with no WHOOP request, once it changes. The connection state (revocation marker and
+generation, one combined read) is re-read after every WHOOP page; a page fetched across a change is
+dropped (`connection_changed`).
+
+Applying 0016 seeds every existing member with a generation equal to the apply time in
+milliseconds, so it is above every generation any cursor could carry, including generations from an
+earlier copy of the table that was dropped by the rollback and applied again (bumps are +1 per
+reconnect). A cursor sealed before the apply, or while the table was absent, therefore never
+matches. Members created later start without a row (generation 0) and have no older cursors.
+
+Once the table exists, a cursor without a generation is rejected. Such a cursor was sealed by
+pre-0016 code (live 04e4499d) or by this code before the table existed, and a reconnect made by old
+code in that window leaves no bump, so its generation cannot be trusted. Members simply start the
+sequence again; cursors expire within an hour anyway. Without the table only the `revoked_at`
+check applies (the behaviour of the audit branch).
+
+The bump is always part of the credential batch (no separate schema check). If D1 rejects the
+batch because `whoop_connection_generations` does not exist, the whole batch rolled back and it is
+retried once without the bump; any other failure (for example a seat-limit abort) is not retried.
+
+## Migration SQL, rollback and compatibility
+
+- Up: `migrations/0015_member_whoop_request_budget.sql`, `migrations/0016_whoop_connection_generations.sql`
+  (CREATE TABLE IF NOT EXISTS; no ALTER, no change to existing rows. 0016 also inserts one
+  generation row per `identity_links` member: member id and a counter only).
+- Down: `migration/rollback/0016_...down.sql` then `migration/rollback/0015_...down.sql`
+  (DROP TABLE + remove the `d1_migrations` row). Kept outside `migrations/` so wrangler never runs them.
+- Old code (main 90a5277 / live 04e4499d) with the new schema: main's full suite plus an
+  old-code paging/callback/disconnect scenario pass; old code never touches the new tables.
+- New code with the old schema: both features degrade to today's behaviour (tested).
+- Tested in `test/member-rate-limit-reconnect.test.mjs`: up after 0001-0014, re-run (tables kept,
+  generations bumped), down, re-up above the dropped generations, existing rows byte-identical, and
+  stale cursors from before a drop or from while the table was absent rejected after re-apply.
+
+### Production apply (needs Aaron's approval; not done)
+
+Production `d1_migrations` lists only `0013` and `0014` (0001-0012 were applied by `d1 execute`), so
+`wrangler d1 migrations apply` would try to re-run 0001-0012. Apply the two files explicitly:
+
+```
+npx wrangler d1 execute whoop-lens-migration --remote --file=migrations/0015_member_whoop_request_budget.sql
+npx wrangler d1 execute whoop-lens-migration --remote --file=migrations/0016_whoop_connection_generations.sql
+npx wrangler d1 execute whoop-lens-migration --remote --command="INSERT INTO d1_migrations(name) VALUES('0015_member_whoop_request_budget.sql'),('0016_whoop_connection_generations.sql')"
+```
+
+Order: either order is safe. Every cursor issued before 0016 is applied stops being accepted, so
+in-flight paging restarts once. The recommended order is to deploy this code, then apply 0015 and
+0016. Old code never writes generations, so if old code serves traffic again while the table
+exists (a rollback that keeps the tables), re-run the 0016 file before redeploying this code (skip
+the `d1_migrations` insert). That bumps every member and invalidates all outstanding cursors. After
+a full rollback (down files), applying 0016 again does the same.
+
+Rollback: redeploy the previous version, then (optionally) run the down files.
+
+## Extra D1 work (measured with the synthetic harness)
+
+| Operation | audit branch (fd5bf8a) | this branch | delta |
+| --- | --- | --- | --- |
+| manual page, first or with cursor | 5 | 6 | +1 reservation (generation folded into the per-page state read) |
+| auto_page (4 pages), first or with cursor | 14 | 18 | +4 reservations |
+| OAuth callback | 6 | 7 | +1 statement inside the existing batch |
+| disconnect | 7 | 8 | +1 statement inside the existing batch |
+| over the limit | n/a | +1 | one SELECT to compute Retry-After |
+| pre-0016 schema, callback/disconnect | - | +1 batch | failed batch retried without the bump |
+
+Every reservation is a primary-key UPSERT (a D1 write). Local SQLite: about 40-65 us per reservation and
+10 us for the combined revocation/generation read. Production D1 server-side batch time over the last
+7 days: P50 0.27-0.6 ms, P90 0.5-2.6 ms per batch. Worker-to-D1 network round trips are extra and
+were not measured (that needs a deployed Worker).

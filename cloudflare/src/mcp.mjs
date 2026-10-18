@@ -9,6 +9,8 @@ import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} f
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
 import {hostInstructionsFor,serverInfo} from './host-instructions.mjs';
 import {CursorError,cursorShapeOk,readHistoryPages,CURSOR_MAX_LENGTH} from './history-pagination.mjs';
+import {SeatsFull} from './seat-limit.mjs';
+import {memberLimitMessage} from './member-rate-limit.mjs';
 // Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
 // this module. Do not copy WHOOP refresh tokens from Supabase.
@@ -272,14 +274,20 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }catch(error){
     // No details about secrets, token status, providers, account existence or SQL.
     // File-import validation messages are safe to show; everything else stays generic.
+    if(error instanceof SeatsFull)return toolError(id,error.message,modern);
     if(error instanceof CursorError)return toolError(id,error.reason==="expired"?
       "This next_token has expired. Request the first page again without next_token.":
       "This next_token is not valid for this account and history category. Request the first page again without next_token.",modern);
     // WHOOP throttles the whole app (100 requests/minute by default). Say so,
     // instead of implying the member's connection is broken.
+    // This account's own share of the WHOOP limit (member-rate-limit.mjs).
+    if(error?.status===429&&error?.memberLimit===true&&!flareTools.some(t=>t.name===name))
+      return toolError(id,memberLimitMessage(error),modern);
     if(error?.status===429&&!flareTools.some(t=>t.name===name)){
       const wait=Number.isSafeInteger(error.retryAfter)?` Wait about ${Math.max(1,error.retryAfter)} seconds,`:" Wait a minute,";
-      return toolError(id,`WHOOP is rate limiting requests right now.${wait} then retry the same call. Any next_token you hold stays valid for up to one hour.`,modern);
+      return toolError(id,error?.cursorOutlived===true?
+        `WHOOP is rate limiting requests right now.${wait} then request the first page again without next_token; the next_token you sent will have expired by then.`:
+        `WHOOP is rate limiting requests right now.${wait} then retry the same call. Any next_token you hold stays valid for up to one hour.`,modern);
     }
     if(flareTools.some(t=>t.name===name))return toolError(id,'Flare journal request could not be completed. Verify consent, active membership, the current entry revision, and WHOOP connection for analysis. No medical data or internal error details are included.',modern);
     const safe=publicImportError(error);
