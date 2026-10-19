@@ -64,7 +64,9 @@ for(const version of ['2025-11-25','2025-06-18']){
       const by=Object.fromEntries(tools.map(t=>[t.name,t]));
       for(const n of ['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles']){
         assert.match(by[n].description,/Authoritative WHOOP measurements \(source "whoop"\); if they are missing or stale, say so and never fill the gap from another source\./);
-        assert.match(by[n].description,/user-entered ones such as manual sleep, naps and activities, are returned exactly as WHOOP provides them/);
+        assert.match(by[n].description,/Every record is returned exactly as WHOOP provides it and is an authoritative WHOOP record whatever its origin; WHOOP does not say which records the person entered, so keep entry_origin unknown unless the person says so\./);
+        // Naps are never presented as user-entered.
+        assert.doesNotMatch(by[n].description,/user-entered[^.;]*nap|nap[^.;]*user-entered/i);
         assert.equal(by[n].annotations.readOnlyHint,true);
       }
       for(const n of ['get_health_connect','get_samsung_health'])

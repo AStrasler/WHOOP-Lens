@@ -54,7 +54,7 @@ const toolLabels=Object.freeze({
   get_cycles:"Read the signed-in user's WHOOP cycle history."
 });
 const WHOOP_NOTE=" Authoritative WHOOP measurements (source \"whoop\"); if they are missing or stale, say so and never fill the gap from another source."+
-  " Records, including user-entered ones such as manual sleep, naps and activities, are returned exactly as WHOOP provides them; treat user-entered records as authoritative records of what the person reported.";
+  " Every record is returned exactly as WHOOP provides it and is an authoritative WHOOP record whatever its origin; WHOOP does not say which records the person entered, so keep entry_origin unknown unless the person says so.";
 // The WHOOP v2 API has no field that marks a record as user-entered or
 // sensor-generated, so origin is reported as unknown rather than guessed.
 const ENTRY_ORIGIN_NOTE="The WHOOP API does not mark records as user-entered or sensor-generated. Records are passed through unmodified; nap is WHOOP's own field.";
