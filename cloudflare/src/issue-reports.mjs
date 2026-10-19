@@ -156,7 +156,9 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     // Preview: store only a digest of a random approval token bound to this
     // member and this exact cleaned text. No report exists yet.
     const st=await limitState(db,userId,now);
-    if(!st||Number(st.open_previews??0)>=MAX_OPEN_APPROVALS||dailyCapped(st))throw new ReportNotSubmitted('rate_limited');
+    // The minute throttle applies to previews too, so preview-then-capped-submit
+    // cycles cannot turn into a write loop while a submission is still recent.
+    if(!st||Number(st.open_previews??0)>=MAX_OPEN_APPROVALS||dailyCapped(st)||Number(st.recent)===1)throw new ReportNotSubmitted('rate_limited');
     const token=approvalToken();
     let run;
     try{

@@ -235,6 +235,8 @@ test('submission needs a server-issued approval for this member and this exact t
     // Expired approvals are refused.
     await assert.rejects(reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},{...opts,now:t0+APPROVAL_TTL_MS+1}),/fresh preview/);
     assert.equal(count(),0);
+    // A second approval held from before the first submission.
+    const second=await reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},opts);
     const ok=await reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},opts);
     assert.equal(ok.submitted,true);
     // Used once.
@@ -242,7 +244,8 @@ test('submission needs a server-issued approval for this member and this exact t
     assert.equal(count(),1);
     // A rate-limited submission spends its approval (so it cannot be retried
     // indefinitely); a fresh preview after the wait succeeds.
-    const second=await reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},{...opts,now:t0+1000});
+    // Previews are throttled during the minute too.
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},{...opts,now:t0+1000}),/Too many reports/);
     await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+1000}),/Too many reports.*preview the report again/);
     await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+62000}),/fresh preview/);
     const third=await reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},{...opts,now:t0+62000});
@@ -599,9 +602,9 @@ test('an approval retried after a limit is spent once, then each retry is one re
   const db=await fixture();try{
     const t0=Date.parse('2026-10-18T01:00:00Z'),rid=newRequestId();
     const args={category:'other',description:'Charts stopped loading today'};
+    // An approval held from before the first submission; submitting it within the minute is capped.
+    const preview=await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0});
     await approved(db,AMYLIKE,{category:'other',description:'First problem today here'},{requestId:rid,env:ON,now:t0});
-    // Per-minute limit: preview allowed, submit within the minute is capped.
-    const preview=await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+1000});
     const m=meter(db);
     await assert.rejects(reportIssue(m.db,AMYLIKE,{...args,approval_token:preview.approval_token},{requestId:rid,env:ON,now:t0+2000}),/Too many reports/);
     assert.equal(m.batches,0,'no insert batch for a capped submit');
@@ -624,5 +627,19 @@ test('an approval retried after a limit is spent once, then each retry is one re
     // Kim's approvals are untouched by Amy's spent tokens.
     const kim=await reportIssue(db,KIMLIKE,args,{requestId:rid,env:ON,now:t0+5000});
     assert.equal((await reportIssue(db,KIMLIKE,{...args,approval_token:kim.approval_token},{requestId:rid,env:ON,now:t0+5000})).submitted,true);
+  }finally{db.close();}
+});
+
+test('fresh previews are refused while a submission is still recent, so preview/submit cycles cannot loop',async()=>{
+  const db=await fixture();try{
+    const t0=Date.parse('2026-10-18T03:00:00Z'),rid=newRequestId();
+    await approved(db,AMYLIKE,{category:'other',description:'First problem today here'},{requestId:rid,env:ON,now:t0});
+    const m=meter(db);
+    for(let i=0;i<30;i++)
+      await assert.rejects(reportIssue(m.db,AMYLIKE,{category:'other',description:'Cycle attempt '+'abcdefghijklmnopqrstuvwxyz'[i%26]+' now'},{requestId:rid,env:ON,now:t0+1000+i*100}),/Too many reports/);
+    assert.equal(m.batches,0);assert.equal(m.statements,30,'one read per refused preview, no writes');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_report_approvals WHERE user_id=?').get(AMYLIKE).n,0);
+    // After the minute, previews work again; the daily limit then bounds total cycles.
+    assert.equal((await reportIssue(db,AMYLIKE,{category:'other',description:'Later problem here now'},{requestId:rid,env:ON,now:t0+61000})).submitted,false);
   }finally{db.close();}
 });
