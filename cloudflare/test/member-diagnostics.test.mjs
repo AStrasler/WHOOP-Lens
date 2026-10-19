@@ -768,3 +768,18 @@ test('credential cleaning is described as best-effort everywhere it is disclosed
     assert.match(preview.next_step,/no password, PIN or other secret remains/);
   }finally{db.close();}
 });
+
+test('with capture off, diagnostics emit no observability log line',async()=>{
+  const db=await fixture();try{
+    const off={...ON,DIAGNOSTICS_CAPTURE_ENABLED:'false'};
+    const logs=[];const original=console.log;console.log=l=>logs.push(l);
+    try{
+      for(const userId of [AMYLIKE,undefined])
+        assert.equal(await capture(off,db,{category:'whoop_api',subsystem:'whoop_api',code:'whoop_upstream_error',
+          outcome:'fail',retryable:true,requestId:newRequestId(),userId},{now:Date.parse('2026-10-18T22:00:00Z')}),false);
+      // The off path is also reached through the router.
+    }finally{console.log=original;}
+    assert.equal(logs.filter(l=>String(l).includes('"event":"diag"')).length,0);
+    assert.equal(rows(db).length,0);
+  }finally{db.close();}
+});

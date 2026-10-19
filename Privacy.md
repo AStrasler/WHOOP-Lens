@@ -1,6 +1,6 @@
 # WHOOP Lens — Privacy Statement
 
-Last updated: October 12, 2026
+Last updated: October 19, 2026
 
 WHOOP Lens is a private, read-only MCP that lets a person connect their own WHOOP account so ChatGPT and Codex can read that person's data with their permission. The project is operated by Aaron Strasler. It is not affiliated with WHOOP.
 

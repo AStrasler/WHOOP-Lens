@@ -4,7 +4,7 @@ Off by default. Nothing is written to D1 until migration `0017_member_diagnostic
 
 | Flag | Effect |
 |---|---|
-| `DIAGNOSTICS_CAPTURE_ENABLED` | Sanitized failure and partial events are stored in `diagnostic_events`. Without it, events are only a sanitized console line with no member id, in the existing Workers logs. |
+| `DIAGNOSTICS_CAPTURE_ENABLED` | Sanitized failure and partial events are stored in `diagnostic_events`. With it on, each event also emits a sanitized console line with no member id to Workers logs. Without it, nothing is stored or logged by this module (only the retention sweep for rows collected earlier runs). |
 | `ISSUE_REPORTS_ENABLED` | Lists `report_issue` for members and `review_issue_reports` and `update_issue_report` for the owner only, and adds the report guidance to the host instructions. |
 
 ## Auto-captured events (`src/diagnostics.mjs`)
@@ -12,7 +12,7 @@ Each event has: category, subsystem, fixed code, outcome (`success`/`fail`/`part
 
 Sources: MCP tool errors and invalid arguments, WHOOP API, auth and 429s, AI summary failure and template fallback (with the fixed reason), Health Connect token issuance and storage errors, webhook outcomes (`hc_delivery_stored`, `hc_only_unsupported_types`, `hc_records_rejected`, `hc_empty_delivery`, token, consent, payload and rate-limit failures), the WHOOP callback, unauthenticated MCP calls, inactive membership and DB failures.
 
-Only events tied to an authenticated member are written to D1. Pre-authentication failures (unauthenticated MCP calls, rejected webhook tokens, WHOOP callbacks without a known member) are console-only, so an anonymous caller cannot cause database writes. Rate-limited outcomes (`hc_rate_limited`, `whoop_rate_limited`, `member_budget_exhausted`) are console-only too, and each member/code/10-minute bucket stops changing after 20 occurrences (`count` then means "at least 20"), so repeats cannot cause unbounded writes. After the cap a repeat does no database work on that worker instance. With capture off, the retention sweep runs at most once a minute per worker instance.
+Only events tied to an authenticated member are written to D1. Pre-authentication failures (unauthenticated MCP calls, rejected webhook tokens, WHOOP callbacks without a known member) are console-only (and only while capture is on), so an anonymous caller cannot cause database writes. Rate-limited outcomes (`hc_rate_limited`, `whoop_rate_limited`, `member_budget_exhausted`) are console-only too (again only while capture is on), and each member/code/10-minute bucket stops changing after 20 occurrences (`count` then means "at least 20"), so repeats cannot cause unbounded writes. After the cap a repeat does no database work on that worker instance. With capture off, the retention sweep runs at most once a minute per worker instance.
 
 When `DIAGNOSTICS_CAPTURE_ENABLED` is on, every member's `account.role_boundaries` says sanitized failure codes are recorded for all signed-in members, with or without a report, and that the owner sees server-wide 24-hour counts. With capture off, the notice is gone and review_issue_reports returns no server-wide diagnostics either.
 

@@ -112,4 +112,5 @@ test("privacy notice covers owner-visible diagnostics and issue reports", () => 
     assert.match(page, /pseudonymous member reference/);
   }
   assert.match(read("../Privacy.md"), /except the owner-visible diagnostics and issue reports/);
+  assert.match(read("../Privacy.md"), /Last updated: October 19, 2026/);
 });

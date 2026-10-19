@@ -83,8 +83,9 @@ const SWEEP='DELETE FROM diagnostic_events WHERE id IN (SELECT id FROM diagnosti
 export async function capture(env,db,event,{now=Date.now()}={}){
   const clean=sanitizeEvent(event,{now});
   if(!clean)return false;
-  // The console line (Workers observability) carries no member id.
-  try{console.log(JSON.stringify({event:'diag',category:clean.category,subsystem:clean.subsystem,code:clean.code,
+  // The console line (Workers observability) carries no member id, and is
+  // emitted only while capture is enabled: with the flag off nothing is logged.
+  if(diagnosticsEnabled(env))try{console.log(JSON.stringify({event:'diag',category:clean.category,subsystem:clean.subsystem,code:clean.code,
     outcome:clean.outcome,retryable:clean.retryable,request_id:clean.request_id}));}catch{/* diagnostics only */}
   if(!db||typeof db.prepare!=='function'||typeof db.batch!=='function')return false;
   // Only events tied to an authenticated member reach D1. Anyone on the
