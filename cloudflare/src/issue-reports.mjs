@@ -5,7 +5,7 @@
 // a status; nothing here runs commands, changes infrastructure, rotates
 // credentials, or changes permissions.
 import {ACTIVE_MEMBER_SQL,activeMembership} from './storage.mjs';
-import {KINDS,validRequestId,retentionStatements,REPORT_RETENTION_DAYS} from './diagnostics.mjs';
+import {KINDS,validRequestId,retentionStatements,REPORT_RETENTION_DAYS,diagnosticsEnabled} from './diagnostics.mjs';
 export {REPORT_RETENTION_DAYS};
 
 export const APPROVAL_TTL_MS=10*60*1000;
@@ -52,11 +52,13 @@ export function sanitizeDescription(input){
     ['id',/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,'[id]'],
     ['credential',/\b[A-Za-z0-9_+/=-]{24,}\b/g,'[credential]'],
     // A labeled value ("password: x", "api key = y", "my pin is z", JSON-style
-    // {"password":"x"} or 'token' => 'y', quoted values with spaces) is removed
+    // {"password":"x"} or 'token' => 'y', quoted values with spaces) is removed;
+    // an unquoted value is removed up to the end of its clause, so multi-word
+    // secrets ("password: correct horse battery staple") go entirely
     // whatever its shape. "is/was" only counts for secret-only labels, so
     // ordinary sentences such as "the token was issued" survive.
-    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|token|secret|api[\s_-]?key|access[\s_-]?key|private[\s_-]?key|auth(?:orization)?|cookie|session(?:[\s_-]?id)?|credentials?|code)["'`\]\)]*\s*(?:=>|[:=])\s*(?:"[^"]*"?|'[^']*'?|`[^`]*`?|\S+)/giu,'[credential]'],
-    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|secret)["'`]*\s+(?:is|was)\s+(?:"[^"]*"?|'[^']*'?|`[^`]*`?|\S+)/giu,'[credential]'],
+    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|token|secret|api[\s_-]?key|access[\s_-]?key|private[\s_-]?key|auth(?:orization)?|cookie|session(?:[\s_-]?id)?|credentials?|code)["'`\]\)]*\s*(?:=>|[:=])\s*(?:"[^"]*"?|'[^']*'?|`[^`]*`?|[^,;.!?\n\r)}\]]+)/giu,'[credential]'],
+    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|secret)["'`]*\s+(?:is|was)\s+(?:"[^"]*"?|'[^']*'?|`[^`]*`?|[^,;.!?\n\r)}\]]+)/giu,'[credential]'],
     ['credential',/\S+\.\S+\.\S+/gu,'[credential]'],
     // Every number in any script (health values, dates, phone numbers).
     ['number',/\p{N}[\p{N}.,:/%-]*/gu,'[number]']
@@ -197,7 +199,9 @@ export async function reviewIssueReports(db,userId,args,{env,now=Date.now()}={})
   const counts=Object.fromEntries(STATUSES.map(s=>[s,0]));
   for(const r of (await db.prepare(COUNTS_SQL).bind(cutoff).all())?.results??[])if(Object.hasOwn(counts,r.status))counts[r.status]=r.n;
   let diagnostics=[];
-  try{diagnostics=((await db.prepare(DIAG_SQL).bind(new Date(now-86400000).toISOString()).all())?.results??[])
+  // Shown only while capture is on, the same condition under which members are
+  // told failure codes are owner-visible.
+  if(diagnosticsEnabled(env))try{diagnostics=((await db.prepare(DIAG_SQL).bind(new Date(now-86400000).toISOString()).all())?.results??[])
     .map(r=>({category:r.category,subsystem:r.subsystem,code:r.code,outcome:r.outcome,count:r.n,last_at:r.last_at}));}catch{}
   const refs=new Map();
   for(const r of rows)if(!refs.has(r.user_id))refs.set(r.user_id,await memberRef(r.user_id));

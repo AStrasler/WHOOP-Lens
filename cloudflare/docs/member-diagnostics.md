@@ -14,7 +14,7 @@ Sources: MCP tool errors and invalid arguments, WHOOP API, auth and 429s, AI sum
 
 Only events tied to an authenticated member are written to D1. Pre-authentication failures (unauthenticated MCP calls, rejected webhook tokens, WHOOP callbacks without a known member) are console-only, so an anonymous caller cannot cause database writes. Rate-limited outcomes (`hc_rate_limited`, `whoop_rate_limited`, `member_budget_exhausted`) are console-only too, and each member/code/10-minute bucket stops changing after 20 occurrences (`count` then means "at least 20"), so repeats cannot cause unbounded writes.
 
-When `DIAGNOSTICS_CAPTURE_ENABLED` is on, every member's `account.role_boundaries` says sanitized failure codes are recorded for all signed-in members, with or without a report, and that the owner sees server-wide 24-hour counts.
+When `DIAGNOSTICS_CAPTURE_ENABLED` is on, every member's `account.role_boundaries` says sanitized failure codes are recorded for all signed-in members, with or without a report, and that the owner sees server-wide 24-hour counts. With capture off, the notice is gone and review_issue_reports returns no server-wide diagnostics either.
 
 Retention: 30 days. Each write sweeps at most 50 expired rows. The sweep keeps running on failure events even after capture is turned off.
 

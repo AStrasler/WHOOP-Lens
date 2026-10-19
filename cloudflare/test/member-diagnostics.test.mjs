@@ -354,6 +354,7 @@ test('descriptions are redacted: numbers, links, addresses, ids and credentials 
   // Labeled credentials of any shape, and numbers in any script.
   for(const [input,bad] of [['Login failed with {"password":"huntertwo"} repeatedly','huntertwo'],["{'token': 'swordfishfish'}",'swordfish'],
     ['"api_key" = "open sesame"','sesame'],['`secret`:`lettuce`','lettuce'],["'pin' => '4455'",'4455'],['my password is "correct horse"','horse'],
+    ['password: correct horse battery staple','battery'],['my pin is open sesame please, then sync failed','sesame'],
     ['password: huntertwo','huntertwo'],['token: abcd.efgh.ijkl','abcd'],['my pin is swordfish','swordfish'],
     ['api key = letmein','letmein'],['HRV \u0664\u0665 and recovery \u0667\u0662','\u0664'],['RHR \u096a\u096b','\u096a'],['score \uff17\uff12','\uff17']]){
     const out=sanitizeDescription(input).text;
@@ -534,5 +535,15 @@ test('role boundaries disclose that diagnostics are owner-visible even without a
     const on=await boundariesFor({...ON,DIAGNOSTICS_CAPTURE_ENABLED:'true'});
     assert.match(on,/failure codes for every signed-in member, whether or not they submit a report/);
     assert.match(on,/server owner can see them/);
+  }finally{db.close();}
+});
+
+test('owner review hides server-wide diagnostics once capture (and its disclosure) is off',async()=>{
+  const db=await fixture();try{
+    const now=Date.parse('2026-10-18T22:00:00Z');
+    await capture(ON,db,{category:'consent',subsystem:'hc_webhook',code:'hc_consent_missing',outcome:'fail',requestId:newRequestId(),userId:KIMLIKE},{now});
+    assert.equal((await reviewIssueReports(db,OWNER,{},{env:ON,now})).diagnostics_last_24h.length,1);
+    const off={...ON,DIAGNOSTICS_CAPTURE_ENABLED:'false'};
+    assert.deepEqual((await reviewIssueReports(db,OWNER,{},{env:off,now})).diagnostics_last_24h,[]);
   }finally{db.close();}
 });
