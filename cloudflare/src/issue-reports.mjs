@@ -53,12 +53,13 @@ export function sanitizeDescription(input){
     ['credential',/\b[A-Za-z0-9_+/=-]{24,}\b/g,'[credential]'],
     // A labeled value ("password: x", "api key = y", "my pin is z", JSON-style
     // {"password":"x"} or 'token' => 'y', quoted values with spaces) is removed;
-    // an unquoted value is removed up to the end of its clause, so multi-word
-    // secrets ("password: correct horse battery staple") go entirely
+    // an unquoted value is removed to the end of its line, so multi-word or
+    // punctuated secrets ("correct horse battery staple", "correct!horse") go
+    // entirely, at the cost of any text after it on that line
     // whatever its shape. "is/was" only counts for secret-only labels, so
     // ordinary sentences such as "the token was issued" survive.
-    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|token|secret|api[\s_-]?key|access[\s_-]?key|private[\s_-]?key|auth(?:orization)?|cookie|session(?:[\s_-]?id)?|credentials?|code)["'`\]\)]*\s*(?:=>|[:=])\s*(?:"[^"]*"?|'[^']*'?|`[^`]*`?|[^,;.!?\n\r)}\]]+)/giu,'[credential]'],
-    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|secret)["'`]*\s+(?:is|was)\s+(?:"[^"]*"?|'[^']*'?|`[^`]*`?|[^,;.!?\n\r)}\]]+)/giu,'[credential]'],
+    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|token|secret|api[\s_-]?key|access[\s_-]?key|private[\s_-]?key|auth(?:orization)?|cookie|session(?:[\s_-]?id)?|credentials?|code)["'`\]\)]*\s*(?:=>|[:=])\s*(?:"[^"]*"?|'[^']*'?|`[^`]*`?|[^\n\r]+)/giu,'[credential]'],
+    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|secret)["'`]*\s+(?:is|was)\s+(?:"[^"]*"?|'[^']*'?|`[^`]*`?|[^\n\r]+)/giu,'[credential]'],
     ['credential',/\S+\.\S+\.\S+/gu,'[credential]'],
     // Every number in any script (health values, dates, phone numbers).
     ['number',/\p{N}[\p{N}.,:/%-]*/gu,'[number]']

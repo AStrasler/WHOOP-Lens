@@ -9,7 +9,7 @@ import {connect} from './audit-fixtures.mjs';
 import {createStagingRouter} from '../src/router.mjs';
 import {handleMcpRpc,validateMcpTransport} from '../src/mcp.mjs';
 import {ISSUE_CONSENT} from '../src/health-connect-webhook.mjs';
-import {capture,sanitizeEvent,classifyToolError,newRequestId,BUCKET_MS,RETENTION_DAYS,BUCKET_WRITE_CAP} from '../src/diagnostics.mjs';
+import {capture,sanitizeEvent,classifyToolError,newRequestId,BUCKET_MS,RETENTION_DAYS,BUCKET_WRITE_CAP,resetCaptureThrottle} from '../src/diagnostics.mjs';
 import {sanitizeDescription,LIMITS,reportIssue,reviewIssueReports,updateIssueReport,APPROVAL_TTL_MS,REPORT_RETENTION_DAYS} from '../src/issue-reports.mjs';
 import {hostInstructionsFor} from '../src/host-instructions.mjs';
 import {FeatureDisabled,accountStatus} from '../src/member-guidance.mjs';
@@ -266,7 +266,7 @@ test('retention keeps running after capture is turned off',async()=>{
     const t0=Date.parse('2026-01-01T00:00:00Z'),rid=newRequestId();
     await capture(ON,db,{category:'auth',subsystem:'mcp',code:'old_event',outcome:'fail',requestId:rid,userId:AMYLIKE},{now:t0});
     assert.equal(rows(db).length,1);
-    const off={...ON,DIAGNOSTICS_CAPTURE_ENABLED:'false'};
+    const off={...ON,DIAGNOSTICS_CAPTURE_ENABLED:'false'};resetCaptureThrottle();
     assert.equal(await capture(off,db,{category:'auth',subsystem:'mcp',code:'new_event',outcome:'fail',requestId:rid,userId:KIMLIKE},{now:t0+(RETENTION_DAYS+1)*86400000}),false);
     assert.equal(rows(db).length,0,'expired row swept, nothing new written');
   }finally{db.close();}
@@ -354,7 +354,7 @@ test('descriptions are redacted: numbers, links, addresses, ids and credentials 
   // Labeled credentials of any shape, and numbers in any script.
   for(const [input,bad] of [['Login failed with {"password":"huntertwo"} repeatedly','huntertwo'],["{'token': 'swordfishfish'}",'swordfish'],
     ['"api_key" = "open sesame"','sesame'],['`secret`:`lettuce`','lettuce'],["'pin' => '4455'",'4455'],['my password is "correct horse"','horse'],
-    ['password: correct horse battery staple','battery'],['my pin is open sesame please, then sync failed','sesame'],
+    ['password: correct horse battery staple','battery'],['Login password: correct!horse failed','horse'],['pin: a.b;c,d e','c,d'],['my pin is open sesame please, then sync failed','sesame'],
     ['password: huntertwo','huntertwo'],['token: abcd.efgh.ijkl','abcd'],['my pin is swordfish','swordfish'],
     ['api key = letmein','letmein'],['HRV \u0664\u0665 and recovery \u0667\u0662','\u0664'],['RHR \u096a\u096b','\u096a'],['score \uff17\uff12','\uff17']]){
     const out=sanitizeDescription(input).text;
@@ -513,6 +513,18 @@ test('repeats cannot cause unbounded D1 writes: rate-limited outcomes are consol
     const [row]=rows(db);
     assert.equal(row.count,BUCKET_WRITE_CAP);
     assert.equal(changed,BUCKET_WRITE_CAP,'no row changes after the cap');
+    // After the cap a repeat runs no batch at all.
+    let batches=0;
+    const watch={...db,batch:st=>{batches++;return db.batch(st);},prepare:sql=>db.prepare(sql)};
+    for(let i=0;i<10;i++)await capture(ON,watch,{category:'mcp_validation',subsystem:'mcp_tool',code:'invalid_arguments',outcome:'fail',requestId:rid,userId:KIMLIKE},{now:now+100+i});
+    assert.equal(batches,0);
+    // With capture off, retention is throttled to one batch per minute.
+    resetCaptureThrottle();
+    const off={...ON,DIAGNOSTICS_CAPTURE_ENABLED:'false'};
+    for(let i=0;i<10;i++)await capture(off,watch,{category:'mcp_validation',subsystem:'mcp_tool',code:'invalid_arguments',outcome:'fail',requestId:rid,userId:KIMLIKE},{now:now+i*1000});
+    assert.equal(batches,1);
+    await capture(off,watch,{category:'mcp_validation',subsystem:'mcp_tool',code:'invalid_arguments',outcome:'fail',requestId:rid,userId:KIMLIKE},{now:now+61000});
+    assert.equal(batches,2);
   }finally{db.close();}
 });
 

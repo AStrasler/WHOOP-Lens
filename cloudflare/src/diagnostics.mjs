@@ -53,6 +53,12 @@ const UPSERT='INSERT INTO diagnostic_events(user_key,category,subsystem,code,out
 // change nothing in D1 (count reads as "at least" this many).
 export const BUCKET_WRITE_CAP=20;
 // Bounded retention sweep: at most 50 expired rows per write, index-backed.
+const BUCKET_COUNT='SELECT count FROM diagnostic_events WHERE user_key=?1 AND subsystem=?2 AND code=?3 AND outcome=?4 AND bucket=?5 LIMIT 1';
+// Capture-off retention runs at most once a minute per worker instance, so
+// repeated failures do not each cost a delete batch.
+const OFF_SWEEP_INTERVAL_MS=60_000;
+let lastOffSweep=-Infinity;
+export function resetCaptureThrottle(){lastOffSweep=-Infinity;}
 const SWEEP='DELETE FROM diagnostic_events WHERE id IN (SELECT id FROM diagnostic_events WHERE last_at<?1 ORDER BY last_at LIMIT 50)';
 export async function capture(env,db,event,{now=Date.now()}={}){
   const clean=sanitizeEvent(event,{now});
@@ -72,9 +78,16 @@ export async function capture(env,db,event,{now=Date.now()}={}){
   if(!diagnosticsEnabled(env)){
     // Capture is off, but rows collected earlier still expire on schedule.
     // Before the migration the tables do not exist and this is a no-op.
+    if(now-lastOffSweep<OFF_SWEEP_INTERVAL_MS&&now>=lastOffSweep)return false;
+    lastOffSweep=now;
     try{await db.batch([db.prepare(SWEEP).bind(cutoff),...retentionStatements(db,now)]);}catch{/* retried next time */}
     return false;
   }
+  // Once a bucket reaches the cap, repeats cost one indexed read and no batch.
+  try{
+    const existing=await db.prepare(BUCKET_COUNT).bind(clean.user_key,clean.subsystem,clean.code,clean.outcome,clean.bucket).first();
+    if(existing&&Number(existing.count)>=BUCKET_WRITE_CAP)return false;
+  }catch{/* fall through: the batch below fails soft too */}
   try{
     const results=await db.batch([
       db.prepare(UPSERT).bind(clean.user_key,clean.category,clean.subsystem,clean.code,clean.outcome,
