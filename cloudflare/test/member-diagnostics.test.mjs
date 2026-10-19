@@ -66,17 +66,17 @@ async function webhook(db,token,body){
 }
 const envelope=extra=>({timestamp:'2026-10-18T21:00:00.000Z',app_version:'1.9.22',...extra});
 const HEALTH='4321';
-const FAKE_TOKEN='ira_'+'A'.repeat(43);
-// Preview, then submit with the returned approval token (the member-approved path).
+// Preview, then submit the same text with approved:true (the member-approved path).
 async function approved(db,who,args,opts){
   const preview=await reportIssue(db,who,args,{...opts,now:opts.now});
-  return reportIssue(db,who,{...args,approval_token:preview.approval_token},opts);
+  return reportIssue(db,who,{...args,approved:true},opts);
 }
-async function previewToken(db,who,args,env=ON){
-  return JSON.parse((await call(db,who,'report_issue',args,env)).result.content[0].text).approval_token;
+async function previewed(db,who,args,env=ON){
+  assert.equal(JSON.parse((await call(db,who,'report_issue',args,env)).result.content[0].text).approval_required,true);
+  return true;
 }
 async function callApproved(db,who,args,env=ON,rid){
-  return call(db,who,'report_issue',{...args,approval_token:await previewToken(db,who,args,env)},env,rid);
+  return call(db,who,'report_issue',{...args,approved:await previewed(db,who,args,env)},env,rid);
 }
 
 // ------------------------------------------------------------ capture
@@ -155,7 +155,7 @@ test('unauthenticated requests never write to D1; non-member requests are captur
   const db=await fixture();try{
     const anon=await viaRouter(db,null,'report_issue',{category:'other',description:'it broke again'});
     assert.equal(anon.status,401);
-    const outsider=await viaRouter(db,OUTSIDER,'report_issue',{category:'other',description:'it broke again',approval_token:FAKE_TOKEN});
+    const outsider=await viaRouter(db,OUTSIDER,'report_issue',{category:'other',description:'it broke again',approved:true});
     assert.equal(outsider.status,403);
     const r=rows(db);
     assert.deepEqual(r.map(x=>[x.category,x.code,x.user_key]),[['authorization','membership_inactive',OUTSIDER]]);
@@ -224,34 +224,34 @@ test('submission needs a server-issued approval for this member and this exact t
     const t0=Date.parse('2026-10-18T12:00:00Z'),rid=newRequestId(),opts={requestId:rid,env:ON,now:t0};
     const args={category:'other',description:'Charts stopped loading today'};
     const count=()=>db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports').get().n;
-    // A made-up token (the client skipped the preview) is refused.
-    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approval_token:FAKE_TOKEN},opts),/fresh preview.*no reference was created/);
+    // Claiming approval without a preview is refused.
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approved:true},opts),/fresh preview.*no reference was created/);
     const preview=await reportIssue(db,AMYLIKE,args,opts);
-    assert.match(preview.approval_token,/^ira_[A-Za-z0-9_-]{43}$/);
-    // Only a digest is stored.
-    assert.ok(!JSON.stringify(db.sqlite.prepare('SELECT * FROM issue_report_approvals').all()).includes(preview.approval_token));
+    // No secret is handed out, and the pending approval stores digests only.
+    assert.equal(preview.approval_token,undefined);
+    assert.ok(!JSON.stringify(db.sqlite.prepare('SELECT * FROM issue_report_approvals').all()).includes('Charts'));
     // Another member cannot use it, and different text cannot use it.
-    await assert.rejects(reportIssue(db,KIMLIKE,{...args,approval_token:preview.approval_token},opts),/fresh preview/);
-    await assert.rejects(reportIssue(db,AMYLIKE,{...args,description:'Something else entirely broke',approval_token:preview.approval_token},opts),/fresh preview/);
-    await assert.rejects(reportIssue(db,AMYLIKE,{...args,category:'temporary',approval_token:preview.approval_token},opts),/fresh preview/);
+    await assert.rejects(reportIssue(db,KIMLIKE,{...args,approved:true},opts),/fresh preview/);
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,description:'Something else entirely broke',approved:true},opts),/fresh preview/);
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,category:'temporary',approved:true},opts),/fresh preview/);
     // Expired approvals are refused.
-    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},{...opts,now:t0+APPROVAL_TTL_MS+1}),/fresh preview/);
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approved:true},{...opts,now:t0+APPROVAL_TTL_MS+1}),/fresh preview/);
     assert.equal(count(),0);
     // A second approval held from before the first submission.
     const second=await reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},opts);
-    const ok=await reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},opts);
+    const ok=await reportIssue(db,AMYLIKE,{...args,approved:true},opts);
     assert.equal(ok.submitted,true);
     // Used once.
-    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},{...opts,now:t0+120000}),/fresh preview/);
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approved:true},{...opts,now:t0+120000}),/fresh preview/);
     assert.equal(count(),1);
     // A rate-limited submission spends its approval (so it cannot be retried
     // indefinitely); a fresh preview after the wait succeeds.
     // Previews are throttled during the minute too.
     await assert.rejects(reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},{...opts,now:t0+1000}),/Too many reports/);
-    await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+1000}),/Too many reports.*preview the report again/);
-    await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+62000}),/fresh preview/);
+    await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approved:true},{...opts,now:t0+1000}),/Too many reports.*preview the report again/);
+    await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approved:true},{...opts,now:t0+62000}),/fresh preview/);
     const third=await reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},{...opts,now:t0+62000});
-    assert.equal((await reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:third.approval_token},{...opts,now:t0+62000})).submitted,true);
+    assert.equal((await reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approved:true},{...opts,now:t0+62000})).submitted,true);
     // Open previews are capped per member.
     for(let i=0;i<10;i++)await reportIssue(db,KIMLIKE,{category:'other',description:'Preview number '+'abcdefghijk'[i]+' only'},opts).catch(()=>{});
     await assert.rejects(reportIssue(db,KIMLIKE,{category:'other',description:'One preview too many'},opts),/Too many reports/);
@@ -284,13 +284,13 @@ test('a failed write never returns a reference or claims submission',async()=>{
   const db=await fixture();try{
     const broken={...db,batch:async()=>{throw Error('D1 down');}};
     const args={category:'other',description:'Something is wrong here'};
-    const r=await call(broken,AMYLIKE,'report_issue',{...args,approval_token:await previewToken(db,AMYLIKE,args)});
+    const r=await call(broken,AMYLIKE,'report_issue',{...args,approved:await previewed(db,AMYLIKE,args)});
     assert.equal(r.result.isError,true);
     assert.match(text(r),/was not submitted and no reference was created/);
     assert.doesNotMatch(text(r),/WL-/);
     // A write that reports success but cannot be read back is also not confirmed.
     const ghost={...db,batch:async()=>[{success:true,meta:{changes:1}},{success:true}]};
-    const g=await call(ghost,AMYLIKE,'report_issue',{...args,approval_token:await previewToken(db,AMYLIKE,args)});
+    const g=await call(ghost,AMYLIKE,'report_issue',{...args,approved:await previewed(db,AMYLIKE,args)});
     assert.equal(g.result.isError,true);assert.doesNotMatch(text(g),/WL-/);
     // Without the migration the tool fails closed with the same message.
     const old=await fixture({upTo:'0016_whoop_connection_generations.sql'});
@@ -609,14 +609,14 @@ test('an approval retried after a limit is spent once, then each retry is one re
     const preview=await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0});
     await approved(db,AMYLIKE,{category:'other',description:'First problem today here'},{requestId:rid,env:ON,now:t0});
     const m=meter(db);
-    await assert.rejects(reportIssue(m.db,AMYLIKE,{...args,approval_token:preview.approval_token},{requestId:rid,env:ON,now:t0+2000}),/Too many reports/);
+    await assert.rejects(reportIssue(m.db,AMYLIKE,{...args,approved:true},{requestId:rid,env:ON,now:t0+2000}),/Too many reports/);
     assert.equal(m.batches,0,'no insert batch for a capped submit');
     assert.equal(m.statements,2,'one limit read plus one delete that spends the approval');
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_report_approvals WHERE user_id=?').get(AMYLIKE).n,0,'approval spent');
     // Retrying the spent token: bounded to one read, no batch, no write, even after the wait.
     const before=m.statements;
     for(let i=0;i<20;i++)
-      await assert.rejects(reportIssue(m.db,AMYLIKE,{...args,approval_token:preview.approval_token},{requestId:rid,env:ON,now:t0+3000+i*10000}),/fresh preview/);
+      await assert.rejects(reportIssue(m.db,AMYLIKE,{...args,approved:true},{requestId:rid,env:ON,now:t0+3000+i*10000}),/fresh preview/);
     assert.equal(m.statements-before,20);assert.equal(m.batches,0);
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports WHERE user_id=?').get(AMYLIKE).n,1);
     // Daily limit: same behavior for a token obtained before the limit was reached.
@@ -624,12 +624,12 @@ test('an approval retried after a limit is spent once, then each retry is one re
     const held=await reportIssue(db,AMYLIKE,{category:'other',description:'Held approval for later'},{requestId:rid,env:ON,now:t1});
     for(let i=0;i<LIMITS.perMemberPerDay;i++)await approved(db,AMYLIKE,{category:'other',description:'Daily problem '+'abcde'[i]+' seen'},{requestId:rid,env:ON,now:t1+(i+1)*61000});
     const m2=meter(db);
-    await assert.rejects(reportIssue(m2.db,AMYLIKE,{category:'other',description:'Held approval for later',approval_token:held.approval_token},{requestId:rid,env:ON,now:t1+400000}),/Too many reports/);
-    await assert.rejects(reportIssue(m2.db,AMYLIKE,{category:'other',description:'Held approval for later',approval_token:held.approval_token},{requestId:rid,env:ON,now:t1+500000}),/fresh preview/);
+    await assert.rejects(reportIssue(m2.db,AMYLIKE,{category:'other',description:'Held approval for later',approved:true},{requestId:rid,env:ON,now:t1+400000}),/Too many reports/);
+    await assert.rejects(reportIssue(m2.db,AMYLIKE,{category:'other',description:'Held approval for later',approved:true},{requestId:rid,env:ON,now:t1+500000}),/fresh preview/);
     assert.equal(m2.batches,0);
     // Kim's approvals are untouched by Amy's spent tokens.
     const kim=await reportIssue(db,KIMLIKE,args,{requestId:rid,env:ON,now:t0+5000});
-    assert.equal((await reportIssue(db,KIMLIKE,{...args,approval_token:kim.approval_token},{requestId:rid,env:ON,now:t0+5000})).submitted,true);
+    assert.equal((await reportIssue(db,KIMLIKE,{...args,approved:true},{requestId:rid,env:ON,now:t0+5000})).submitted,true);
   }finally{db.close();}
 });
 
@@ -743,8 +743,8 @@ test('approval binds the exact cleaned text: a case change needs a fresh preview
     const opts={requestId:newRequestId(),env:ON,now:t};
     const args={category:'other',description:'Charts stay blank after sync'};
     const preview=await reportIssue(db,AMYLIKE,args,opts);
-    await assert.rejects(reportIssue(db,AMYLIKE,{...args,description:'CHARTS STAY BLANK AFTER SYNC',approval_token:preview.approval_token},opts),/fresh preview.*no reference was created/);
-    const ok=await reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},opts);
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,description:'CHARTS STAY BLANK AFTER SYNC',approved:true},opts),/fresh preview.*no reference was created/);
+    const ok=await reportIssue(db,AMYLIKE,{...args,approved:true},opts);
     assert.equal(ok.submitted,true);
   }finally{db.close();}
 });
@@ -829,4 +829,65 @@ test('0018 rebuilds issue_reports in place: rows, indexes and other tables are u
     assert.deepEqual(rowsOf(),before.rows);assert.deepEqual(idx(),before.idx);assert.equal(others(),before.others);
     assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM d1_migrations WHERE name='0018_issue_report_reference_check.sql'").get().n,0);
   }finally{sqlite.close();}
+});
+
+// Regression for the live owner smoke test: ChatGPT showed the preview, the
+// member approved it, and on the next turn the model no longer had the opaque
+// approval token, so no submission was ever attempted. A host only reliably
+// carries what the member saw (category and text) into the next turn.
+const carriedToNextTurn=(args,preview)=>({category:args.category,description:args.description,sanitized:preview.sanitized_description});
+const SECRETISH=/\b(?:ira|sk|tok)_[A-Za-z0-9_-]{16,}|[A-Za-z0-9_-]{32,}/;
+test('approval survives a turn boundary: the next call needs only what the member saw, never a secret',async()=>{
+  const db=await fixture();try{
+    const args={category:'other',description:'Charts stay blank after sync on 10/18'};
+    for(const modern of [false,true]){
+      const r=await handleMcpRpc({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'report_issue',arguments:args}},
+        {db,userId:modern?KIMLIKE:AMYLIKE,env:ON,requestId:newRequestId()},{...transport,modern});
+      // The preview result (content text, structuredContent, _meta) carries no token-like value to lose.
+      const whole=JSON.stringify(r.result);
+      assert.ok(!SECRETISH.test(whole),'no opaque token in the preview result');
+      assert.equal(r.result._meta,undefined);
+      const preview=JSON.parse(r.result.content[0].text);
+      assert.equal(preview.approval_required,true);
+      assert.match(preview.next_step,/approved: true/);
+      // Next turn, a separate call built only from what the member saw.
+      const next=carriedToNextTurn(args,preview);
+      const done=await handleMcpRpc({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'report_issue',
+        arguments:{category:next.category,description:modern?next.sanitized:next.description,approved:true}}},
+        {db,userId:modern?KIMLIKE:AMYLIKE,env:ON,requestId:newRequestId()},{...transport,modern});
+      const out=JSON.parse(done.result.content[0].text);
+      assert.equal(out.submitted,true,'submits across separate calls');assert.match(out.reference,/^WL-[A-Z0-9]{8}$/);
+    }
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports').get().n,2);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_report_approvals').get().n,0,'both approvals consumed');
+  }finally{db.close();}
+});
+
+test('server-side approval: exact text, own member, once, before expiry; old token argument and approved:false are invalid',async()=>{
+  const db=await fixture();try{
+    const t0=Date.parse('2026-10-19T15:00:00Z'),opts={requestId:newRequestId(),env:ON,now:t0};
+    const args={category:'backend_failure',description:'Report button says unavailable'};
+    const count=()=>db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports').get().n;
+    // The old secret-token argument and approved:false fail validation (no D1 work).
+    for(const extra of [{approval_token:'ira_'+'A'.repeat(43)},{approved:false},{approved:'true'}]){
+      const r=await call(db,AMYLIKE,'report_issue',{...args,...extra});
+      assert.equal(r.error?.message,'Invalid tool arguments');
+    }
+    await reportIssue(db,AMYLIKE,args,opts);
+    // Two previews of the same text: one submission consumes both, so neither replays.
+    await reportIssue(db,AMYLIKE,args,{...opts,now:t0+1000});
+    // Modified or substituted text (even only its case), other category, other member: refused.
+    for(const [who,a] of [[AMYLIKE,{...args,description:'Report button says UNAVAILABLE'}],[AMYLIKE,{...args,description:'Something else entirely broke'}],
+      [AMYLIKE,{...args,category:'other'}],[KIMLIKE,args]])
+      await assert.rejects(reportIssue(db,who,{...a,approved:true},{...opts,now:t0+2000}),/fresh preview.*no reference was created/);
+    assert.equal(count(),0);
+    assert.equal((await reportIssue(db,AMYLIKE,{...args,approved:true},{...opts,now:t0+2000})).submitted,true);
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,approved:true},{...opts,now:t0+70000}),/fresh preview/,'replay refused');
+    assert.equal(count(),1);
+    // Expiry is enforced.
+    const late={category:'other',description:'Sync never finished today'};
+    await reportIssue(db,AMYLIKE,late,{...opts,now:t0+70000});
+    await assert.rejects(reportIssue(db,AMYLIKE,{...late,approved:true},{...opts,now:t0+70000+APPROVAL_TTL_MS+1}),/fresh preview/);
+    assert.equal(count(),1);
+  }finally{db.close();}
 });

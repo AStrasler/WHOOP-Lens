@@ -34,7 +34,7 @@ test('real D1: an approved report is stored and returns a reference',async()=>{
     const args={category:'other',description:'Charts stay blank after sync'};
     const preview=await reportIssue(db,MEMBER,args,{requestId:newRequestId(),env:ENV});
     assert.equal(preview.approval_required,true);
-    const done=await reportIssue(db,MEMBER,{...args,approval_token:preview.approval_token},{requestId:newRequestId(),env:ENV});
+    const done=await reportIssue(db,MEMBER,{...args,approved:true},{requestId:newRequestId(),env:ENV});
     assert.equal(done.submitted,true);
     assert.match(done.reference,/^WL-[A-Z0-9]{8}$/);
     const owner=await reviewIssueReports(db,OWNER,{},{env:ENV});
@@ -48,8 +48,28 @@ test('real D1: modified text is refused with the earlier approval and nothing is
   try{
     const args={category:'other',description:'Charts stay blank after sync'};
     const preview=await reportIssue(db,MEMBER,args,{requestId:newRequestId(),env:ENV});
-    await assert.rejects(reportIssue(db,MEMBER,{...args,description:'CHARTS STAY BLANK AFTER SYNC',approval_token:preview.approval_token},{requestId:newRequestId(),env:ENV}),/fresh preview/);
+    await assert.rejects(reportIssue(db,MEMBER,{...args,description:'CHARTS STAY BLANK AFTER SYNC',approved:true},{requestId:newRequestId(),env:ENV}),/fresh preview/);
     assert.equal((await db.prepare('SELECT COUNT(*) n FROM issue_reports').first()).n,0);
+  }finally{await close();}
+});
+
+test('real D1: approval without a token works across separate calls; other member, replay and expiry are refused',async()=>{
+  const {db,close}=await realD1();
+  try{
+    const OTHER='0c0c0c0c-0000-4000-8000-00000000000c';
+    await db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?1,'supabase',?1)").bind(OTHER).run();
+    await db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?1,1)').bind(OTHER).run();
+    const t0=Date.now(),args={category:'backend_failure',description:'Report button says unavailable'};
+    const preview=await reportIssue(db,MEMBER,args,{requestId:newRequestId(),env:ENV,now:t0});
+    assert.equal(preview.approval_token,undefined);
+    await assert.rejects(reportIssue(db,OTHER,{...args,approved:true},{requestId:newRequestId(),env:ENV,now:t0+1000}),/fresh preview/);
+    await assert.rejects(reportIssue(db,MEMBER,{...args,approved:true},{requestId:newRequestId(),env:ENV,now:t0+600001}),/fresh preview/);
+    // Resending the cleaned text shown to the member is the same exact text.
+    const done=await reportIssue(db,MEMBER,{category:args.category,description:preview.sanitized_description,approved:true},{requestId:newRequestId(),env:ENV,now:t0+1000});
+    assert.equal(done.submitted,true);
+    await assert.rejects(reportIssue(db,MEMBER,{...args,approved:true},{requestId:newRequestId(),env:ENV,now:t0+70000}),/fresh preview/);
+    assert.equal((await db.prepare('SELECT COUNT(*) n FROM issue_reports').first()).n,1);
+    assert.equal((await db.prepare('SELECT COUNT(*) n FROM issue_report_approvals').first()).n,0);
   }finally{await close();}
 });
 
@@ -75,7 +95,7 @@ test('real D1: the 0018 rollback succeeds with stored reports and keeps them',as
     await db.prepare('INSERT INTO d1_migrations(name) VALUES(?1)').bind('0018_issue_report_reference_check.sql').run();
     const args={category:'other',description:'Charts stay blank after sync'};
     const preview=await reportIssue(db,MEMBER,args,{requestId:newRequestId(),env:ENV});
-    const done=await reportIssue(db,MEMBER,{...args,approval_token:preview.approval_token},{requestId:newRequestId(),env:ENV});
+    const done=await reportIssue(db,MEMBER,{...args,approved:true},{requestId:newRequestId(),env:ENV});
     await db.exec(oneLine(readFileSync(new URL('../../migration/rollback/0018_issue_report_reference_check.down.sql',import.meta.url),'utf8')));
     assert.equal((await db.prepare('SELECT reference FROM issue_reports').first()).reference,done.reference);
     assert.equal((await db.prepare("SELECT COUNT(*) n FROM d1_migrations WHERE name='0018_issue_report_reference_check.sql'").first()).n,0);

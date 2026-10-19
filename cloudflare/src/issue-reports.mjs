@@ -9,7 +9,6 @@ import {KINDS,validRequestId,retentionStatements,REPORT_RETENTION_DAYS,diagnosti
 export {REPORT_RETENTION_DAYS};
 
 export const APPROVAL_TTL_MS=10*60*1000;
-const APPROVAL_RE=/^ira_[A-Za-z0-9_-]{43}$/;
 const MAX_OPEN_APPROVALS=10;
 export const STATUSES=Object.freeze(['new','acknowledged','resolved','recurring']);
 // Per UTC day; duplicates count as submissions.
@@ -141,7 +140,7 @@ const INSERT='INSERT INTO issue_reports(reference,user_id,category,severity,stat
   ' AND (SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE user_id=?1 AND day_key=?11)<?13'+
   ' AND NOT EXISTS (SELECT 1 FROM issue_reports WHERE user_id=?1 AND last_submitted_at>?12)'+
   ' AND (SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE day_key=?11)<?14'+
-  ' AND EXISTS (SELECT 1 FROM issue_report_approvals WHERE token_hash=?15 AND user_id=?1 AND dedupe_key=?17 AND expires_at>?16) '+
+  ' AND EXISTS (SELECT 1 FROM issue_report_approvals WHERE user_id=?1 AND dedupe_key=?16 AND expires_at>?15) '+
   'ON CONFLICT(user_id,dedupe_key) DO UPDATE SET occurrences=occurrences+1,'+
   'day_submissions=CASE WHEN day_key=excluded.day_key THEN day_submissions+1 ELSE 1 END,'+
   'day_key=excluded.day_key,last_submitted_at=excluded.last_submitted_at,'+
@@ -152,7 +151,9 @@ const CONFIRM_SQL='SELECT reference,occurrences,status,created_at FROM issue_rep
   'WHERE user_id=?1 AND dedupe_key=?2 AND request_id=?3 AND last_submitted_at=?4 LIMIT 1';
 const PREVIEW='INSERT INTO issue_report_approvals(token_hash,user_id,dedupe_key,expires_at) SELECT ?2,?1,?3,?4 WHERE '+
   `EXISTS (${ACTIVE_MEMBER_SQL})`+' AND (SELECT COUNT(*) FROM issue_report_approvals WHERE user_id=?1 AND expires_at>?5)<?6';
-const CONSUME='DELETE FROM issue_report_approvals WHERE token_hash=?1 AND user_id=?2 AND EXISTS '+
+// Consuming removes every pending approval for this member and exact text, so
+// a second preview of the same text cannot be replayed after a submission.
+const CONSUME='DELETE FROM issue_report_approvals WHERE user_id=?2 AND dedupe_key=?1 AND EXISTS '+
   '(SELECT 1 FROM issue_reports WHERE user_id=?2 AND dedupe_key=?3 AND request_id=?4 AND last_submitted_at=?5)';
 // One indexed read that answers every cap before any batch runs: open
 // previews, the member's and the server's submissions today, the member's last
@@ -163,21 +164,23 @@ const LIMIT_SQL='SELECT '+
   '(SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE user_id=?1 AND day_key=?3) AS member_today,'+
   '(SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE day_key=?3) AS server_today,'+
   'EXISTS (SELECT 1 FROM issue_reports WHERE user_id=?1 AND last_submitted_at>?4) AS recent,'+
-  'EXISTS (SELECT 1 FROM issue_report_approvals WHERE token_hash=?5 AND user_id=?1 AND dedupe_key=?6 AND expires_at>?2) AS approval_ok';
-// A capped submit spends its approval: the token is deleted, so retrying it
-// costs one read and is rejected as needing a fresh preview.
-const SPEND='DELETE FROM issue_report_approvals WHERE token_hash=?1 AND user_id=?2';
-async function limitState(db,userId,now,tokenHash=null,key=null){
+  'EXISTS (SELECT 1 FROM issue_report_approvals WHERE user_id=?1 AND dedupe_key=?5 AND expires_at>?2) AS approval_ok';
+// A capped submit spends its approval: the member's pending approvals for that
+// exact text are deleted, so retrying costs one read and needs a fresh preview.
+const SPEND='DELETE FROM issue_report_approvals WHERE dedupe_key=?1 AND user_id=?2';
+async function limitState(db,userId,now,key=null){
   try{
     return await db.prepare(LIMIT_SQL).bind(userId,now,new Date(now).toISOString().slice(0,10),
-      new Date(now-LIMITS.perMemberIntervalMs).toISOString(),tokenHash,key).first();
+      new Date(now-LIMITS.perMemberIntervalMs).toISOString(),key).first();
   }catch{throw new ReportNotSubmitted('unavailable');}
 }
 const dailyCapped=st=>Number(st?.member_today??0)>=LIMITS.perMemberPerDay||Number(st?.server_today??0)>=LIMITS.serverPerDay;
-async function spendApproval(db,tokenHash,userId){
-  try{await db.prepare(SPEND).bind(tokenHash,userId).run();}catch{/* expires on its own within the TTL */}
+async function spendApproval(db,approvalKey,userId){
+  try{await db.prepare(SPEND).bind(approvalKey,userId).run();}catch{/* expires on its own within the TTL */}
 }
-function approvalToken(){
+// Row id for a pending approval. It is never returned or accepted: approval is
+// bound server-side to the verified member and the exact cleaned text.
+function approvalRowId(){
   const bytes=crypto.getRandomValues(new Uint8Array(32));
   return 'ira_'+btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
 }
@@ -194,18 +197,19 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
   const key=await sha256Hex(userId+'\n'+kind+'\n'+clean.text.toLowerCase());
   // Approvals bind the exact (case-sensitive) cleaned text; key above only dedupes reports.
   const approvalKey=await sha256Hex('approval\n'+userId+'\n'+kind+'\n'+clean.text);
-  if(args.approval_token===undefined){
-    // Preview: store only a digest of a random approval token bound to this
-    // member and this exact cleaned text. No report exists yet.
+  if(args.approved!==true){
+    // Preview: record a pending approval bound server-side to this verified
+    // member and this exact cleaned text. No report exists yet, and no secret
+    // is handed to the host: a token in a tool result did not survive to the
+    // next turn in ChatGPT, so submissions never happened.
     const st=await limitState(db,userId,now);
     // The minute throttle applies to previews too, so preview-then-capped-submit
     // cycles cannot turn into a write loop while a submission is still recent.
     if(!st||Number(st.open_previews??0)>=MAX_OPEN_APPROVALS||dailyCapped(st)||Number(st.recent)===1)throw new ReportNotSubmitted('rate_limited');
-    const token=approvalToken();
     let run;
     try{
       const results=await db.batch([
-        db.prepare(PREVIEW).bind(userId,await sha256Hex(token),approvalKey,now+APPROVAL_TTL_MS,now,MAX_OPEN_APPROVALS),
+        db.prepare(PREVIEW).bind(userId,await sha256Hex(approvalRowId()),approvalKey,now+APPROVAL_TTL_MS,now,MAX_OPEN_APPROVALS),
         ...retentionStatements(db,now)
       ]);
       run=results?.[0];
@@ -213,17 +217,15 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     if(!run?.success)throw new ReportNotSubmitted('unavailable');
     if((run.meta?.changes??0)!==1)throw new ReportNotSubmitted('rate_limited');
     return {submitted:false,approval_required:true,category:kind,sanitized_description:clean.text,removed:clean.removed,
-      approval_token:token,approval_expires_in_seconds:APPROVAL_TTL_MS/1000,
+      approval_expires_in_seconds:APPROVAL_TTL_MS/1000,
       will_attach:['this request id','up to 10 recent sanitized diagnostic codes for this account (no health data)'],
       shared_as_written:'Cleaning is best-effort: it removes numbers, links, contact details and recognizable credentials, but can miss a password or secret written in another form (for example "bluehorse is my password"). Every other word, including any health or personal details, goes to the server owner as written.',
-      next_step:'Show sanitized_description to the member and tell them it goes to the server owner as written; if it mentions health or personal details, ask them to remove those first, and check that no password, PIN or other secret remains. Only if they approve it, call report_issue again with the same category and description and this approval_token. No report exists yet.'};
+      next_step:'Show sanitized_description to the member and tell them it goes to the server owner as written; if it mentions health or personal details, ask them to remove those first, and check that no password, PIN or other secret remains. Only if they approve it, call report_issue again with the same category and description and approved: true. No report exists yet.'};
   }
-  if(typeof args.approval_token!=='string'||!APPROVAL_RE.test(args.approval_token))throw new ReportNotSubmitted('approval_invalid');
-  const tokenHash=await sha256Hex(args.approval_token);
-  const st=await limitState(db,userId,now,tokenHash,approvalKey);
+  const st=await limitState(db,userId,now,approvalKey);
   if(!st||Number(st.approval_ok)!==1)throw new ReportNotSubmitted('approval_invalid');
   if(dailyCapped(st)||Number(st.recent)===1){
-    await spendApproval(db,tokenHash,userId);
+    await spendApproval(db,approvalKey,userId);
     throw new ReportNotSubmitted('rate_limited');
   }
   if(!await activeMembership(db,userId))throw new ReportNotSubmitted('unavailable');
@@ -237,8 +239,8 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     const results=await db.batch([
       db.prepare(INSERT).bind(userId,newReference(),kind,severityFor(kind,evidence),clean.text,key,requestId,
         JSON.stringify(evidence),subsystems,at,at.slice(0,10),new Date(now-LIMITS.perMemberIntervalMs).toISOString(),
-        LIMITS.perMemberPerDay,LIMITS.serverPerDay,tokenHash,now,approvalKey),
-      db.prepare(CONSUME).bind(tokenHash,userId,key,requestId,at),
+        LIMITS.perMemberPerDay,LIMITS.serverPerDay,now,approvalKey),
+      db.prepare(CONSUME).bind(approvalKey,userId,key,requestId,at),
       ...retentionStatements(db,now)
     ]);
     run=results?.[0];
@@ -246,7 +248,7 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
   if(!run?.success)throw new ReportNotSubmitted('unavailable');
   if((run.meta?.changes??0)!==1){
     // Lost a race with a concurrent submission: the approval is spent too.
-    await spendApproval(db,tokenHash,userId);
+    await spendApproval(db,approvalKey,userId);
     throw new ReportNotSubmitted('rate_limited');
   }
   // Confirmation is the stored row itself, read back for this member and request.
@@ -300,11 +302,11 @@ export async function updateIssueReport(db,userId,args,{env,now=Date.now()}={}){
 }
 export const reportIssueTool=Object.freeze({
   name:'report_issue',
-  description:'Report a problem with WHOOP Lens to the server owner. First call without approval_token to get the cleaned text and an approval_token; show the text to the member and call again with the same category, description and approval_token only if they approve. Cleaning is best-effort: numbers, links, addresses and recognizable credentials are removed, but a secret written in another form can be missed; every other word, including any health or personal details, reaches the server owner as written, so leave those and any passwords out. A reference is returned only after the report is saved.',
+  description:'Report a problem with WHOOP Lens to the server owner. First call without approved to get the cleaned text; show it to the member and, only if they approve it, call again with the same category and description and approved: true (within 10 minutes; one submission per approval). Cleaning is best-effort: numbers, links, addresses and recognizable credentials are removed, but a secret written in another form can be missed; every other word, including any health or personal details, reaches the server owner as written, so leave those and any passwords out. A reference is returned only after the report is saved.',
   inputSchema:{type:'object',properties:{
     category:{type:'string',enum:[...KINDS]},
     description:{type:'string',minLength:1,maxLength:MAX_INPUT,description:'What went wrong, in plain words. Do not include health values or personal details.'},
-    approval_token:{type:'string',pattern:'^ira_[A-Za-z0-9_-]{43}$',description:'From the preview call, only after the member approved that cleaned text. Expires after 10 minutes.'}
+    approved:{type:'boolean',const:true,description:'Set only on the second call, after the member approved the cleaned text from the preview. Send the same category and description as the preview. Approval expires after 10 minutes and works once.'}
   },required:['category','description'],additionalProperties:false},
   annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}
 });
@@ -328,11 +330,11 @@ export function issueArguments(name,args){
   const keys=Object.keys(args);
   const only=allowed=>keys.every(k=>allowed.includes(k));
   if(name==='report_issue'){
-    if(!only(['category','description','approval_token']))return null;
+    if(!only(['category','description','approved']))return null;
     if(!KINDS.includes(args.category))return null;
     if(typeof args.description!=='string'||args.description.length<1||args.description.length>MAX_INPUT)return null;
-    if(args.approval_token!==undefined&&(typeof args.approval_token!=='string'||!APPROVAL_RE.test(args.approval_token)))return null;
-    return {category:args.category,description:args.description,approval_token:args.approval_token};
+    if(args.approved!==undefined&&args.approved!==true)return null;
+    return {category:args.category,description:args.description,approved:args.approved};
   }
   if(name==='review_issue_reports'){
     if(!only(['status','category','limit','offset']))return null;
