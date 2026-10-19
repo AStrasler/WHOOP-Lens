@@ -66,6 +66,8 @@ function dayWindow(day){
   const end=new Date(startMs+86400000).toISOString().replace(".000Z","Z");
   return {start:day+"T00:00:00Z",end};
 }
+// Presence and format only, for capability reporting. Never returns a value.
+export function analyticsConfigured(env){return configured(env)!==null;}
 function configured(env){
   const accountId=env?.[ANALYTICS_ACCOUNT_ID];
   const token=env?.[ANALYTICS_TOKEN_SECRET];

@@ -2,6 +2,7 @@ import {readBounded} from './bounded-body.mjs';
 // HC Webhook (com.hcwebhook.app) JSON ingest. The phone authenticates with a
 // per-user bearer. The owner is the token's member, never a field in the body.
 import {activeMembership} from './storage.mjs';
+import {ISSUE_GUIDANCE} from './member-guidance.mjs';
 
 export const WEBHOOK_PATH='/api/health-connect/webhook';
 export const ISSUE_CONSENT='enable-health-connect-webhook';
@@ -280,7 +281,8 @@ export async function issueIngestToken(db,userId,consent){
     header_value:'Bearer '+token,
     replaced_previous:(results[0].meta?.changes??0)>0,
     consent:'granted',
-    shown_once:true
+    shown_once:true,
+    ...ISSUE_GUIDANCE
   };
 }
 export async function revokeIngestTokens(db,userId,confirm){

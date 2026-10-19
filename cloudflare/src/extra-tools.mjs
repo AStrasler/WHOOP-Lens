@@ -1,8 +1,9 @@
 // Local record reads never accept an owner from the client. Membership is checked
 // by the router before dispatch; each SQL statement also binds the verified ID.
 import manifest from '../../supabase/functions/whoop-mcp/capabilities.json' with {type:'json'};
-import {activeMembership,connectionStatus} from './storage.mjs';
+import {activeMembership} from './storage.mjs';
 import {ISSUE_CONSENT,REVOKE_CONFIRM} from './health-connect-webhook.mjs';
+import {featureStates,accountStatus} from './member-guidance.mjs';
 export const SAMSUNG_METRICS=['sleep','heart_rate','spo2','steps','activity','exercise','body_composition','skin_temperature','energy_score','blood_pressure','profile'];
 export const HC_METRICS=['steps_daily','sleep_session','heart_rate','exercise_session'];
 const categories=['whoop','optional','explore','advocacy','planned','unsupported'];
@@ -11,7 +12,7 @@ const definitions=[
   ['get_samsung_health','Read the signed-in account’s uploaded Samsung Health records, separately attributed from WHOOP.',{...paging,metric:{type:'string',enum:SAMSUNG_METRICS}}],
   ['get_health_connect','Read the signed-in account’s stored Health Connect records from a file import or phone ingest. This tool does not sync a phone.',{...paging,metric:{type:'string',enum:HC_METRICS}}],
   ['get_medical_context','Read only explicitly reviewed, source-labeled medical context belonging to the signed-in account.',paging],
-  ['get_capabilities','Describe registered tools, account data availability and limitations.',{
+  ['get_capabilities','Describe registered tools, server feature states (enabled, disabled, not configured), this account\'s seat role and data status, and limitations.',{
     category:{type:'string',enum:categories},limit:{type:'integer',minimum:1,maximum:25},
     offset:{type:'integer',minimum:0,maximum:1000},include_planned:{type:'boolean'}}],
   ['connect_whoop','Create a short-lived WHOOP consent link for the signed-in account. Requires user completion.',{}],
@@ -21,7 +22,7 @@ const definitions=[
     file_json:{type:'string',minLength:2,maxLength:400000}}],
   ['withdraw_health_connect_import','Delete stored Health Connect records for the signed-in account, record consent withdrawal, and revoke phone ingest tokens.',{
     confirm:{type:'string',enum:['delete-my-health-connect-records']}}],
-  ['issue_health_connect_ingest_token','Issue this account’s Health Connect webhook token. Replaces any current token, grants storage consent, and shows the secret once.',{
+  ['issue_health_connect_ingest_token','Issue this account’s Health Connect webhook token. Replaces any current token, grants storage consent, and shows the secret once. Issuing a token does not mean data has arrived; records appear only after the phone app delivers them.',{
     consent:{type:'string',enum:[ISSUE_CONSENT]}}],
   ['revoke_health_connect_ingest_token','Revoke this account’s Health Connect webhook tokens. Stored records remain until withdrawal.',{
     confirm:{type:'string',enum:[REVOKE_CONFIRM]}}]
@@ -105,13 +106,30 @@ export const STRESS_CAPABILITY=Object.freeze({
   example_prompts:['What was my experimental stress estimate this week, and how confident is it?']
 });
 async function catalog(db,userId,{category,limit=25,offset=0,include_planned=true},env=null){
-  const connected=(await connectionStatus(db,userId)).connected;
+  // One connection read for the whole response: the capability entries and the
+  // account block come from the same snapshot. If it cannot be read, WHOOP
+  // capabilities are not advertised as available.
+  const account=await accountStatus(db,userId,env);
+  const connected=account.whoop_connected===true;
+  const unreadable=account.whoop_connected==='unknown';
   const available={};
   for(const [id,sql] of Object.entries({
     samsung:'SELECT id FROM samsung_health_records WHERE user_id=?1 LIMIT 1',
     'health-connect':'SELECT id FROM health_connect_records WHERE user_id=?1 LIMIT 1',
     'medical-context':'SELECT id FROM medical_context WHERE user_id=?1 AND reviewed_at IS NOT NULL LIMIT 1'
-  }))available[id]=!!await db.prepare(sql).bind(userId).first();
+  })){
+    // Health Connect availability comes from the same status snapshot as
+    // account.health_connect, so the two cannot disagree. The table is read
+    // again only when that snapshot is unavailable.
+    const hcCount=account.health_connect?.records_stored;
+    if(id==='health-connect'){
+      if(Number.isSafeInteger(hcCount)){available[id]=hcCount>0;continue;}
+      // Fail soft, like the account block: unknown rather than an aborted response.
+      try{available[id]=!!await db.prepare(sql).bind(userId).first();}catch{available[id]=null;}
+      continue;
+    }
+    available[id]=!!await db.prepare(sql).bind(userId).first();
+  }
   const localTools={'samsung':'get_samsung_health','health-connect':'get_health_connect','medical-context':'get_medical_context'};
   // Same rule as the summary path, the only path that can return the estimate.
   const stressOn=env?.STRESS_ESTIMATE_ENABLED==='true'&&env?.AI_SUMMARY_ENABLED==='true';
@@ -129,19 +147,23 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
       return {...value,category:'optional',delivery:'mcp_tool',
         name:health?'Health Connect records':value.name,
         description:health?'Reads Health Connect records stored for this account from a file import or phone ingest.':value.description,
-        tools:[localTools[item.id]],status:available[item.id]?'available':'requires_connection_or_data',
+        tools:[localTools[item.id]],status:available[item.id]===true?'available':'requires_connection_or_data',
         provides:health?'Reads stored Health Connect records. Phone ingest requires its own token and server flag.':'Reads existing authorized records; does not import or sync new data.',
         data_requirements:health?['A stored file import, or an issued phone ingest token while that server flag is on.']:value.data_requirements,
-        limitations:['Records are source-labeled and account-scoped. Phone ingest stays off until a token is issued and the server flag is on.'],
-        availability_reason:available[item.id]?'Authorized records exist.':'No authorized records are present for this account.'};
+        limitations:['Records are source-labeled and account-scoped. Phone ingest stays off until a token is issued and the server flag is on.',
+          'An issued ingest token is not evidence of data: check records_stored in account.health_connect.'],
+        availability_reason:available[item.id]===null?'Stored records could not be checked right now; treat availability as unknown.':
+          available[item.id]?'Authorized records exist.':'No authorized records are present for this account.'};
     }
     const needsWhoop=item.tools.some(t=>['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles'].includes(t));
     return {...value,status:needsWhoop&&!connected?'requires_connection_or_data':item.status,
-      availability_reason:needsWhoop&&!connected?'Connect WHOOP first.':
+      availability_reason:needsWhoop&&unreadable?'The WHOOP connection could not be confirmed right now; get_capabilities again shortly.':
+        needsWhoop&&!connected?'Connect WHOOP first.':
         item.delivery==='host_assisted'?'Depends on the AI host and sufficient user-provided or connected data.':
         item.status==='planned'||item.status==='unsupported'?'Not provided by this service.':'Registered; record completeness is not guaranteed.'};
   }).filter(item=>(!category||item.category===category)&&(include_planned||!['planned','unsupported'].includes(item.status)));
-  return {schema_version:manifest.schema_version,registry_version:'cloudflare-1.2',source:'bundled_cloudflare_catalog',
+  return {schema_version:manifest.schema_version,registry_version:'cloudflare-1.3',source:'bundled_cloudflare_catalog',
+    server_features:featureStates(env),account,
     global_limitations:[...manifest.global_limitations.filter(s=>!s.startsWith('Android Health Connect')),
       'Local record tools read stored records for the signed-in account.',
       'Health Connect phone ingest stays off until an ingest token is issued and the server flag is on. File import is a separate consent.',

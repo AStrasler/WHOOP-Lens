@@ -3,6 +3,7 @@
 // Source Supabase WHOOP OAuth redirect remains unchanged until separate cutover approval.
 import { activeMembership, ACTIVE_MEMBER_SQL } from "./storage.mjs";
 import { sealWithKeyring, tokenKeyring } from "./token-crypto.mjs";
+import { SECRET_RULES } from "./secrets.mjs";
 import { assertSeatAvailable, seatAvailableSql, seatLimit, SeatsFull } from "./seat-limit.mjs";
 const AUTH="https://api.prod.whoop.com/oauth/oauth2/auth";
 const TOKEN="https://api.prod.whoop.com/oauth/oauth2/token";
@@ -18,6 +19,17 @@ function requireConfig(env) {
   if(env.WHOOP_REDIRECT_URI!==REDIRECT)
     throw Error("WHOOP redirect not configured for approved domain");
   return env;
+}
+// Same check connect_whoop runs, for capability reporting. Never returns a value.
+// Also checks the client credential formats and the format of the key a callback seals with (SECRET_RULES).
+// tokenKeyring seals with NEXT whenever it is set, so a malformed NEXT is not configured, while an older key that
+// a callback never uses does not block reconnecting.
+export function whoopConnectConfigured(env){
+  try{requireConfig(env);}catch{return false;}
+  if(!SECRET_RULES.WHOOP_CLIENT_ID(env.WHOOP_CLIENT_ID)||!SECRET_RULES.WHOOP_CLIENT_SECRET(env.WHOOP_CLIENT_SECRET))return false;
+  let keys;try{keys=tokenKeyring(env);}catch{return false;}
+  const name=keys.current==="k2"?"WHOOP_TOKEN_AES256_KEY_NEXT":"WHOOP_TOKEN_AES256_KEY";
+  return SECRET_RULES[name](keys[keys.current]);
 }
 function validateUser(userId) {
   if(typeof userId!=="string"||!UUID.test(userId))throw Error("Invalid user");
