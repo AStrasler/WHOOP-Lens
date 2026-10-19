@@ -122,7 +122,13 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
     // account.health_connect, so the two cannot disagree. The table is read
     // again only when that snapshot is unavailable.
     const hcCount=account.health_connect?.records_stored;
-    available[id]=id==='health-connect'&&Number.isSafeInteger(hcCount)?hcCount>0:!!await db.prepare(sql).bind(userId).first();
+    if(id==='health-connect'){
+      if(Number.isSafeInteger(hcCount)){available[id]=hcCount>0;continue;}
+      // Fail soft, like the account block: unknown rather than an aborted response.
+      try{available[id]=!!await db.prepare(sql).bind(userId).first();}catch{available[id]=null;}
+      continue;
+    }
+    available[id]=!!await db.prepare(sql).bind(userId).first();
   }
   const localTools={'samsung':'get_samsung_health','health-connect':'get_health_connect','medical-context':'get_medical_context'};
   // Same rule as the summary path, the only path that can return the estimate.
@@ -141,12 +147,13 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
       return {...value,category:'optional',delivery:'mcp_tool',
         name:health?'Health Connect records':value.name,
         description:health?'Reads Health Connect records stored for this account from a file import or phone ingest.':value.description,
-        tools:[localTools[item.id]],status:available[item.id]?'available':'requires_connection_or_data',
+        tools:[localTools[item.id]],status:available[item.id]===true?'available':'requires_connection_or_data',
         provides:health?'Reads stored Health Connect records. Phone ingest requires its own token and server flag.':'Reads existing authorized records; does not import or sync new data.',
         data_requirements:health?['A stored file import, or an issued phone ingest token while that server flag is on.']:value.data_requirements,
         limitations:['Records are source-labeled and account-scoped. Phone ingest stays off until a token is issued and the server flag is on.',
           'An issued ingest token is not evidence of data: check records_stored in account.health_connect.'],
-        availability_reason:available[item.id]?'Authorized records exist.':'No authorized records are present for this account.'};
+        availability_reason:available[item.id]===null?'Stored records could not be checked right now; treat availability as unknown.':
+          available[item.id]?'Authorized records exist.':'No authorized records are present for this account.'};
     }
     const needsWhoop=item.tools.some(t=>['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles'].includes(t));
     return {...value,status:needsWhoop&&!connected?'requires_connection_or_data':item.status,
