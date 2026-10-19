@@ -12,6 +12,8 @@ Each event has: category, subsystem, fixed code, outcome (`success`/`fail`/`part
 
 Sources: MCP tool errors and invalid arguments, WHOOP API, auth and 429s, AI summary failure and template fallback (with the fixed reason), Health Connect token issuance and storage errors, webhook outcomes (`hc_delivery_stored`, `hc_only_unsupported_types`, `hc_records_rejected`, `hc_empty_delivery`, token, consent, payload and rate-limit failures), the WHOOP callback, unauthenticated MCP calls, inactive membership and DB failures.
 
+Only events tied to an authenticated member are written to D1. Pre-authentication failures (unauthenticated MCP calls, rejected webhook tokens, WHOOP callbacks without a known member) are console-only, so an anonymous caller cannot cause database writes.
+
 Retention: 30 days. Each write sweeps at most 50 expired rows. The sweep keeps running on failure events even after capture is turned off.
 
 ## Member reports (`src/issue-reports.mjs`)

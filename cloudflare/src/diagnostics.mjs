@@ -58,6 +58,10 @@ export async function capture(env,db,event,{now=Date.now()}={}){
   try{console.log(JSON.stringify({event:'diag',category:clean.category,subsystem:clean.subsystem,code:clean.code,
     outcome:clean.outcome,retryable:clean.retryable,request_id:clean.request_id}));}catch{/* diagnostics only */}
   if(!db||typeof db.prepare!=='function'||typeof db.batch!=='function')return false;
+  // Only events tied to an authenticated member reach D1. Anyone on the
+  // internet can produce pre-authentication failures (bad bearer, unknown
+  // client), so those stay console-only and never cause a database write.
+  if(!clean.user_key)return false;
   const cutoff=new Date(now-RETENTION_DAYS*86400000).toISOString();
   if(!diagnosticsEnabled(env)){
     // Capture is off, but rows collected earlier still expire on schedule.

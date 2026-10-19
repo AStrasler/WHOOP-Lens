@@ -118,8 +118,8 @@ test('capture rejects free text, unknown categories and bad ids; never throws wi
 test('retention sweep removes events older than the retention window',async()=>{
   const db=await fixture();try{
     const now=Date.parse('2026-10-18T22:00:00Z'),rid=newRequestId();
-    await capture(ON,db,{category:'auth',subsystem:'mcp',code:'old_one',outcome:'fail',requestId:rid},{now:now-(RETENTION_DAYS+1)*86400000});
-    await capture(ON,db,{category:'auth',subsystem:'mcp',code:'new_one',outcome:'fail',requestId:rid},{now});
+    await capture(ON,db,{category:'auth',subsystem:'mcp',code:'old_one',outcome:'fail',requestId:rid,userId:AMYLIKE},{now:now-(RETENTION_DAYS+1)*86400000});
+    await capture(ON,db,{category:'auth',subsystem:'mcp',code:'new_one',outcome:'fail',requestId:rid,userId:AMYLIKE},{now});
     assert.deepEqual(rows(db).map(r=>r.code),['new_one']);
   }finally{db.close();}
 });
@@ -149,14 +149,20 @@ test('MCP failures are captured with the router request id and the authenticated
   }finally{db.close();}
 });
 
-test('unauthenticated and non-member requests are captured without a member id and get no tool access',async()=>{
+test('unauthenticated requests never write to D1; non-member requests are captured for that account; neither gets tool access',async()=>{
   const db=await fixture();try{
     const anon=await viaRouter(db,null,'report_issue',{category:'other',description:'it broke again'});
     assert.equal(anon.status,401);
     const outsider=await viaRouter(db,OUTSIDER,'report_issue',{category:'other',description:'it broke again',approval_token:FAKE_TOKEN});
     assert.equal(outsider.status,403);
     const r=rows(db);
-    assert.deepEqual(r.map(x=>[x.category,x.code,x.user_key]),[['auth','unauthenticated',''],['authorization','membership_inactive',OUTSIDER]]);
+    assert.deepEqual(r.map(x=>[x.category,x.code,x.user_key]),[['authorization','membership_inactive',OUTSIDER]]);
+    // A flood of unauthenticated requests causes no database writes at all.
+    let writes=0;
+    const counting={...db,batch(s){writes++;return db.batch(s);},prepare(sql){if(/^\s*(INSERT|UPDATE|DELETE)/i.test(sql))writes++;return db.prepare(sql);}};
+    for(let i=0;i<20;i++)await viaRouter(counting,null,'get_capabilities',{});
+    for(let i=0;i<20;i++)await webhook(counting,'hct_'+'B'.repeat(43),envelope({}));
+    assert.equal(writes,0);
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports').get().n,0);
   }finally{db.close();}
 });
@@ -170,9 +176,9 @@ test('Kimberly-like delivery that stores nothing is captured as partial for her 
     const bad=await webhook(db,'hct_'+'A'.repeat(43),envelope({}));
     assert.equal(bad.status,401);
     const r=rows(db);
+    // The rejected token is console-only: pre-authentication, so no D1 row.
     assert.deepEqual(r.map(x=>[x.subsystem,x.code,x.outcome,x.user_key]),[
-      ['hc_webhook','hc_only_unsupported_types','partial',KIMLIKE],
-      ['hc_webhook','hc_token_rejected','fail','']]);
+      ['hc_webhook','hc_only_unsupported_types','partial',KIMLIKE]]);
     const dump=JSON.stringify(r);
     assert.ok(!dump.includes(HEALTH)&&!dump.includes(token)&&!dump.includes('weight'));
     // Stored records produce a success event for the member.
@@ -250,7 +256,7 @@ test('retention runs on any diagnostic write, independent of new reports',async(
     const r=await approved(db,AMYLIKE,{category:'other',description:'An old resolved problem'},{requestId:rid,env:ON,now:t0});
     db.sqlite.prepare("UPDATE issue_reports SET status='resolved'").run();
     const later=t0+(REPORT_RETENTION_DAYS+1)*86400000;
-    await capture(ON,db,{category:'auth',subsystem:'mcp',code:'unauthenticated',outcome:'fail',requestId:rid},{now:later});
+    await capture(ON,db,{category:'auth',subsystem:'mcp',code:'membership_inactive',outcome:'fail',requestId:rid,userId:KIMLIKE},{now:later});
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports WHERE reference=?').get(r.reference).n,0);
   }finally{db.close();}
 });
@@ -261,7 +267,7 @@ test('retention keeps running after capture is turned off',async()=>{
     await capture(ON,db,{category:'auth',subsystem:'mcp',code:'old_event',outcome:'fail',requestId:rid,userId:AMYLIKE},{now:t0});
     assert.equal(rows(db).length,1);
     const off={...ON,DIAGNOSTICS_CAPTURE_ENABLED:'false'};
-    assert.equal(await capture(off,db,{category:'auth',subsystem:'mcp',code:'new_event',outcome:'fail',requestId:rid},{now:t0+(RETENTION_DAYS+1)*86400000}),false);
+    assert.equal(await capture(off,db,{category:'auth',subsystem:'mcp',code:'new_event',outcome:'fail',requestId:rid,userId:KIMLIKE},{now:t0+(RETENTION_DAYS+1)*86400000}),false);
     assert.equal(rows(db).length,0,'expired row swept, nothing new written');
   }finally{db.close();}
 });
