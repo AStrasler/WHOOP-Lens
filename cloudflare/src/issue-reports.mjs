@@ -141,7 +141,7 @@ const INSERT='INSERT INTO issue_reports(reference,user_id,category,severity,stat
   ' AND (SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE user_id=?1 AND day_key=?11)<?13'+
   ' AND NOT EXISTS (SELECT 1 FROM issue_reports WHERE user_id=?1 AND last_submitted_at>?12)'+
   ' AND (SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE day_key=?11)<?14'+
-  ' AND EXISTS (SELECT 1 FROM issue_report_approvals WHERE token_hash=?15 AND user_id=?1 AND dedupe_key=?6 AND expires_at>?16) '+
+  ' AND EXISTS (SELECT 1 FROM issue_report_approvals WHERE token_hash=?15 AND user_id=?1 AND dedupe_key=?17 AND expires_at>?16) '+
   'ON CONFLICT(user_id,dedupe_key) DO UPDATE SET occurrences=occurrences+1,'+
   'day_submissions=CASE WHEN day_key=excluded.day_key THEN day_submissions+1 ELSE 1 END,'+
   'day_key=excluded.day_key,last_submitted_at=excluded.last_submitted_at,'+
@@ -192,6 +192,8 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
   const kind=args.category;
   const since=new Date(now-86400000).toISOString();
   const key=await sha256Hex(userId+'\n'+kind+'\n'+clean.text.toLowerCase());
+  // Approvals bind the exact (case-sensitive) cleaned text; key above only dedupes reports.
+  const approvalKey=await sha256Hex('approval\n'+userId+'\n'+kind+'\n'+clean.text);
   if(args.approval_token===undefined){
     // Preview: store only a digest of a random approval token bound to this
     // member and this exact cleaned text. No report exists yet.
@@ -203,7 +205,7 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     let run;
     try{
       const results=await db.batch([
-        db.prepare(PREVIEW).bind(userId,await sha256Hex(token),key,now+APPROVAL_TTL_MS,now,MAX_OPEN_APPROVALS),
+        db.prepare(PREVIEW).bind(userId,await sha256Hex(token),approvalKey,now+APPROVAL_TTL_MS,now,MAX_OPEN_APPROVALS),
         ...retentionStatements(db,now)
       ]);
       run=results?.[0];
@@ -213,12 +215,12 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     return {submitted:false,approval_required:true,category:kind,sanitized_description:clean.text,removed:clean.removed,
       approval_token:token,approval_expires_in_seconds:APPROVAL_TTL_MS/1000,
       will_attach:['this request id','up to 10 recent sanitized diagnostic codes for this account (no health data)'],
-      shared_as_written:'Only numbers, links, contact details and credentials are removed. Every other word, including any health or personal details, goes to the server owner as written.',
-      next_step:'Show sanitized_description to the member and tell them it goes to the server owner as written; if it mentions health or personal details, ask them to remove those first. Only if they approve it, call report_issue again with the same category and description and this approval_token. No report exists yet.'};
+      shared_as_written:'Cleaning is best-effort: it removes numbers, links, contact details and recognizable credentials, but can miss a password or secret written in another form (for example "bluehorse is my password"). Every other word, including any health or personal details, goes to the server owner as written.',
+      next_step:'Show sanitized_description to the member and tell them it goes to the server owner as written; if it mentions health or personal details, ask them to remove those first, and check that no password, PIN or other secret remains. Only if they approve it, call report_issue again with the same category and description and this approval_token. No report exists yet.'};
   }
   if(typeof args.approval_token!=='string'||!APPROVAL_RE.test(args.approval_token))throw new ReportNotSubmitted('approval_invalid');
   const tokenHash=await sha256Hex(args.approval_token);
-  const st=await limitState(db,userId,now,tokenHash,key);
+  const st=await limitState(db,userId,now,tokenHash,approvalKey);
   if(!st||Number(st.approval_ok)!==1)throw new ReportNotSubmitted('approval_invalid');
   if(dailyCapped(st)||Number(st.recent)===1){
     await spendApproval(db,tokenHash,userId);
@@ -235,7 +237,7 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     const results=await db.batch([
       db.prepare(INSERT).bind(userId,newReference(),kind,severityFor(kind,evidence),clean.text,key,requestId,
         JSON.stringify(evidence),subsystems,at,at.slice(0,10),new Date(now-LIMITS.perMemberIntervalMs).toISOString(),
-        LIMITS.perMemberPerDay,LIMITS.serverPerDay,tokenHash,now),
+        LIMITS.perMemberPerDay,LIMITS.serverPerDay,tokenHash,now,approvalKey),
       db.prepare(CONSUME).bind(tokenHash,userId,key,requestId,at),
       ...retentionStatements(db,now)
     ]);
@@ -298,7 +300,7 @@ export async function updateIssueReport(db,userId,args,{env,now=Date.now()}={}){
 }
 export const reportIssueTool=Object.freeze({
   name:'report_issue',
-  description:'Report a problem with WHOOP Lens to the server owner. First call without approval_token to get the cleaned text and an approval_token; show the text to the member and call again with the same category, description and approval_token only if they approve. Numbers, links, addresses and credentials are removed; every other word, including any health or personal details, reaches the server owner as written, so leave those out. A reference is returned only after the report is saved.',
+  description:'Report a problem with WHOOP Lens to the server owner. First call without approval_token to get the cleaned text and an approval_token; show the text to the member and call again with the same category, description and approval_token only if they approve. Cleaning is best-effort: numbers, links, addresses and recognizable credentials are removed, but a secret written in another form can be missed; every other word, including any health or personal details, reaches the server owner as written, so leave those and any passwords out. A reference is returned only after the report is saved.',
   inputSchema:{type:'object',properties:{
     category:{type:'string',enum:[...KINDS]},
     description:{type:'string',minLength:1,maxLength:MAX_INPUT,description:'What went wrong, in plain words. Do not include health values or personal details.'},

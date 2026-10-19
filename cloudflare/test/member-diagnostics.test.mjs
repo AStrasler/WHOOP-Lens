@@ -736,3 +736,35 @@ test('free text is disclosed as shared as written: no surface claims reports car
     }
   }finally{db.close();}
 });
+
+test('approval binds the exact cleaned text: a case change needs a fresh preview',async()=>{
+  const db=await fixture();try{
+    const t=Date.parse('2026-10-18T22:00:00.000Z');
+    const opts={requestId:newRequestId(),env:ON,now:t};
+    const args={category:'other',description:'Charts stay blank after sync'};
+    const preview=await reportIssue(db,AMYLIKE,args,opts);
+    await assert.rejects(reportIssue(db,AMYLIKE,{...args,description:'CHARTS STAY BLANK AFTER SYNC',approval_token:preview.approval_token},opts),/fresh preview.*no reference was created/);
+    const ok=await reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},opts);
+    assert.equal(ok.submitted,true);
+  }finally{db.close();}
+});
+
+test('credential cleaning is described as best-effort everywhere it is disclosed',async()=>{
+  // A secret before its label survives cleaning, so no surface may promise removal.
+  assert.match(sanitizeDescription('bluehorse is my password and login fails').text,/bluehorse/);
+  const db=await fixture();try{
+    const t=Date.parse('2026-10-18T22:00:00.000Z');
+    const preview=await reportIssue(db,AMYLIKE,{category:'other',description:'Login keeps failing on the site'},{requestId:newRequestId(),env:ON,now:t});
+    const {reportIssueTool}=await import('../src/issue-reports.mjs');
+    const member=(await accountStatus(db,AMYLIKE,ON)).role_boundaries.filter(s=>/issue report/i.test(s));
+    const owner=(await accountStatus(db,OWNER,ON)).role_boundaries.filter(s=>/only cross-account view/.test(s));
+    const surfaces=[preview.shared_as_written,reportIssueTool.description,hostInstructionsFor({ISSUE_REPORTS_ENABLED:'true'}),...member,...owner];
+    assert.equal(surfaces.length,5);
+    for(const s of surfaces){
+      assert.match(s,/best-effort/,s);
+      assert.match(s,/recognizable credentials/,s);
+      assert.doesNotMatch(s,/\b(?:and|,) credentials (?:are )?removed/,s);
+    }
+    assert.match(preview.next_step,/no password, PIN or other secret remains/);
+  }finally{db.close();}
+});
