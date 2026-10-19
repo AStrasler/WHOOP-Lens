@@ -359,3 +359,14 @@ test('get_capabilities takes Health Connect availability from the account snapsh
     assert.equal(hcCap(fallback).status,'available');
   }finally{db.close();}
 });
+
+test('request budget is not reported as enforced when the limiter table is absent',async()=>{
+  const db=await fixture();try{
+    assert.equal((await accountStatus(db,AMYLIKE,flagsOn)).request_budget.state,'enabled');
+    const lagging={...db,prepare(sql){if(/whoop_member_request_budget/.test(sql))throw Error('D1_ERROR: no such table: whoop_member_request_budget');return db.prepare(sql);}};
+    const missing=(await accountStatus(lagging,AMYLIKE,flagsOn)).request_budget;
+    assert.equal(missing.state,'not_configured');assert.match(missing.reason,/no per-member limit is enforced/);
+    const flaky={...db,prepare(sql){if(/whoop_member_request_budget/.test(sql))throw Error('D1_ERROR: network');return db.prepare(sql);}};
+    assert.equal((await accountStatus(flaky,AMYLIKE,flagsOn)).request_budget.state,'unknown');
+  }finally{db.close();}
+});

@@ -5,7 +5,7 @@
 import {whoopConnectConfigured} from './whoop-oauth.mjs';
 import {analyticsConfigured} from './ai-account.mjs';
 import {selectModel,aiSummaryEnabled} from './ai-summary.mjs';
-import {memberLimits,memberLimitEnabled} from './member-rate-limit.mjs';
+import {memberLimits,memberLimitEnabled,missingTable} from './member-rate-limit.mjs';
 
 // A listed tool whose server flag is off throws this, so the member is told the
 // feature is off instead of a generic "WHOOP data is unavailable" message.
@@ -75,6 +75,7 @@ function boundaries(seatRole,owner,env){
     ...(env?.DIAGNOSTICS_CAPTURE_ENABLED==='true'?[REPORT_BOUNDARIES.diagnostics]:[])];
   return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...usage,...reports];
 }
+const BUDGET_PROBE_SQL='SELECT 1 FROM whoop_member_request_budget WHERE user_id=?1 LIMIT 1';
 const ROLE_SQL='SELECT seat_role FROM whoop_connections WHERE user_id=?1 LIMIT 1';
 // One statement, so token, consent and record fields come from one consistent
 // database snapshot (a concurrent issue, revoke or withdrawal cannot split it).
@@ -112,9 +113,16 @@ export async function accountStatus(db,userId,env,{now=Date.now()}={}){
   // Same seat class the limiter uses: whoop_connections.seat_role. Without a
   // connection row no WHOOP request is made, so no budget applies. Reported in
   // both response paths.
-  const request_budget=!memberLimitEnabled(env)?{state:'disabled'}:roleRow===UNREAD?{state:'unknown'}:!roleRow?
+  let request_budget=!memberLimitEnabled(env)?{state:'disabled'}:roleRow===UNREAD?{state:'unknown'}:!roleRow?
       {state:'not_applicable',reason:'No WHOOP connection, so no WHOOP requests are made.'}:
       {state:'enabled',...memberLimits(env)[role==='developer'?'developer':'public']};
+  // The limiter skips enforcement when its table (migration 0015) is absent,
+  // so "enabled" is reported only when that table is readable.
+  if(request_budget.state==='enabled'){
+    try{await db.prepare(BUDGET_PROBE_SQL).bind(userId).first();}
+    catch(error){request_budget=missingTable(error,'whoop_member_request_budget')?
+      {state:'not_configured',reason:'The request limiter is not set up on this server, so no per-member limit is enforced.'}:{state:'unknown'};}
+  }
   const hc=await read(db,HC_STATUS_SQL,userId);
   if(hc===UNREAD||!hc)return {
     as_of:new Date(now).toISOString(),seat_role:seat_role??'unknown',seat_role_source,
