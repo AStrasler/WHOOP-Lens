@@ -101,3 +101,15 @@ test("every tool keeps readOnlyHint, destructiveHint, and openWorldHint", () => 
     "annotations: closed",
   ]);
 });
+
+test("privacy notice covers owner-visible diagnostics and issue reports", () => {
+  for (const page of [privacy, read("../Privacy.md")]) {
+    assert.match(page, /Optional diagnostics and issue reports \(owner-visible\)/);
+    assert.match(page, /best-effort/);
+    assert.match(page, /health or personal details the member writes, is stored and shown to the server owner as written/);
+    assert.match(page, /deleted after 30 days/);
+    assert.match(page, /180 days after their last update/);
+    assert.match(page, /pseudonymous member reference/);
+  }
+  assert.match(read("../Privacy.md"), /except the owner-visible diagnostics and issue reports/);
+});
