@@ -18,7 +18,7 @@ const ENV={ISSUE_REPORTS_ENABLED:'true',DIAGNOSTICS_CAPTURE_ENABLED:'true',WHOOP
 const oneLine=sql=>sql.replace(/--[^\n]*/g,'').replace(/\s*\n\s*/g,' ').trim();
 
 async function realD1(upTo){
-  const mf=new Miniflare({modules:true,script:'export default {fetch(){return new Response("")}}',d1Databases:{DB:'issue-reports-'+Date.now()+Math.random()}});
+  const mf=new Miniflare({cf:false,modules:true,script:'export default {fetch(){return new Response("")}}',d1Databases:{DB:'issue-reports-'+Date.now()+Math.random()}});
   const db=await mf.getD1Database('DB');
   for(const f of MIGRATIONS){if(upTo&&f>upTo)break;await db.exec(oneLine(readFileSync(new URL(f,DIR),'utf8')));}
   for(const id of [OWNER,MEMBER]){
