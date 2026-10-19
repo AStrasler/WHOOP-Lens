@@ -17,7 +17,7 @@ const ENV={MCP_ENABLED:'true',WHOOP_READS_ENABLED:'true',MIGRATION_API_ENABLED:'
 const VARIANTS=[ENV,{...ENV,FLARE_JOURNAL_ENABLED:'true'},{...ENV,STRESS_ESTIMATE_ENABLED:'true',AI_SUMMARY_ENABLED:'true'},{...ENV,ISSUE_REPORTS_ENABLED:'true'}];
 const RULE_WORDS=[/WHOOP measurements are authoritative/,/supplementary.*source label/,/only when the user directs it.*Never bring one in at your own discretion/,
   /Ground every interpretation in measurements retrieved.*separate from hypotheses/,/missing or stale.*Never silently fill the gap/,/required, not an optional recommendation.*Only the user decides/,
-  /User-entered WHOOP records.*authoritative records of what the person reported.*Do not dispute, dismiss or demand verification.*never silently correct, overwrite, reinterpret or discard.*keep both.*without automatically favoring the sensor.*only with specific evidence/,
+  /User-entered WHOOP records.*authoritative records of what the person reported.*Do not dispute, dismiss or demand verification.*never silently correct, overwrite, reinterpret or discard.*only when the origin is explicit.*entry_origin is unknown, keep it unknown and do not infer origin.*keep both.*without automatically favoring the sensor.*only with specific evidence/,
   /sensor measurements establish what WHOOP measured, manual entries establish what the person recorded, and user-provided context establishes what the person reports experiencing/];
 const O={entry_origin:'unknown',entry_origin_note:'The WHOOP API does not mark records as user-entered or sensor-generated. Records are passed through unmodified; nap is WHOOP\'s own field.'};
 const SUBSTITUTION=/(use|fall ?back to|switch to|rely on|substitute)[^.]{0,40}(Health Connect|Samsung|another source|other source)[^.]{0,30}(instead|when WHOOP|if WHOOP)/i;
@@ -47,6 +47,10 @@ for(const version of ['2025-11-25','2025-06-18']){
         for(const rule of SOURCE_HIERARCHY)assert.ok(text.includes(rule));
         for(const re of RULE_WORDS)assert.match(text,re);
         assert.doesNotMatch(text,SUBSTITUTION);
+        // External sources (ChatGPT Health) are consulted only when the user asks.
+        assert.doesNotMatch(text,/consult Health when relevant|do not finalize after retrieving WHOOP alone/);
+        assert.match(text,/offer to include them, and only when the user asks for Health data call the Health connection/);
+        assert.match(text,/consult Health only when the user asks for it/);
         assert.match(init.result.serverInfo.description,/authoritative WHOOP.*supplementary.*never substituted/);
       }
     }finally{db.close();}
