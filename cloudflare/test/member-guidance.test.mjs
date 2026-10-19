@@ -357,6 +357,12 @@ test('get_capabilities takes Health Connect availability from the account snapsh
     const fallback=await readExtraTool(broken,KIMLIKE,'get_capabilities',{},flagsOn);
     assert.equal(fallback.account.health_connect.status,'unknown');
     assert.equal(hcCap(fallback).status,'available');
+    // If the fallback read fails too, the response still succeeds and says unknown.
+    const down={...db,prepare(sql){if(/health_connect/.test(sql))throw Error('synthetic D1 outage');return db.prepare(sql);}};
+    const soft=await readExtraTool(down,KIMLIKE,'get_capabilities',{},flagsOn);
+    assert.equal(soft.account.health_connect.status,'unknown');
+    assert.equal(hcCap(soft).status,'requires_connection_or_data');
+    assert.match(hcCap(soft).availability_reason,/could not be checked right now/);
   }finally{db.close();}
 });
 
