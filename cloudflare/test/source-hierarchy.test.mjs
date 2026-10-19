@@ -20,6 +20,7 @@ const RULE_WORDS=[/WHOOP measurements are authoritative/,/supplementary.*source 
   /User-entered WHOOP records.*authoritative records of what the person reported.*Do not dispute, dismiss or demand verification.*never silently correct, overwrite, reinterpret or discard.*only when the origin is explicit.*entry_origin is unknown, keep it unknown and do not infer origin.*keep both.*without automatically favoring the sensor.*only with specific evidence/,
   /sensor measurements establish what WHOOP measured, manual entries establish what the person recorded, and user-provided context establishes what the person reports experiencing/];
 const O={entry_origin:'unknown',entry_origin_note:'The WHOOP API does not mark records as user-entered or sensor-generated. Records are passed through unmodified; nap is WHOOP\'s own field.'};
+const AUTO_HEALTH=/consult Health when relevant|do not finalize after retrieving WHOOP alone|call the Health connection in this request and check relevant dated records before answering;(?! prior)|always (call|check|consult) (ChatGPT |Apple )?Health/i;
 const SUBSTITUTION=/(use|fall ?back to|switch to|rely on|substitute)[^.]{0,40}(Health Connect|Samsung|another source|other source)[^.]{0,30}(instead|when WHOOP|if WHOOP)/i;
 
 async function fixture(){
@@ -51,6 +52,7 @@ for(const version of ['2025-11-25','2025-06-18']){
         assert.doesNotMatch(text,/consult Health when relevant|do not finalize after retrieving WHOOP alone/);
         assert.match(text,/offer to include them, and only when the user asks for Health data call the Health connection/);
         assert.match(text,/consult Health only when the user asks for it/);
+        assert.match(text,/WHOOP Lens's own instructions; the AI host platform may have separate requirements of its own, which WHOOP Lens cannot override/);
         assert.match(init.result.serverInfo.description,/authoritative WHOOP.*supplementary.*never substituted/);
       }
     }finally{db.close();}
@@ -69,6 +71,11 @@ for(const version of ['2025-11-25','2025-06-18']){
         assert.match(by[n].description,/Supplementary: cite them as (Health Connect|Samsung Health), never as WHOOP data or a substitute for missing WHOOP measurements\./);
       assert.match(by.get_medical_context.description,/only when the user asks for it; never as a substitute for WHOOP measurements/);
       for(const t of tools)assert.doesNotMatch(t.description,SUBSTITUTION);
+      // No client-facing text tells a client to consult external Health records automatically.
+      const cap=out(await rpc(db,'tools/call',{name:'get_capabilities',arguments:{include_planned:true,limit:25}})).text;
+      const fixture=readFileSync(new URL('./fixtures/host-instructions-main.txt',import.meta.url),'utf8');
+      for(const surface of [JSON.stringify(tools),JSON.stringify(cap),fixture])
+        assert.doesNotMatch(surface,AUTO_HEALTH);
     }finally{db.close();}
   });
 
@@ -118,6 +125,15 @@ for(const version of ['2025-11-25','2025-06-18']){
       const w=out(await rpc(db,'tools/call',{name:'get_workouts',arguments:{}},ENV,async()=>({records:[manualActivity,sensorActivity],next_token:null}))).text;
       assert.deepEqual(w.records,[manualActivity,sensorActivity]);
       assert.equal(w.whoop_measurements.records_returned,2);
+      // Origin is never inferred: naps, unscored records, odd shapes, even a non-WHOOP
+      // "manual" key all stay unknown, because WHOOP v2 has no provenance field.
+      const odd=[{id:'c1',nap:true,score_state:'PENDING_SCORE'},{id:'c2',score_state:'UNSCORABLE'},{id:'c3'},{},{id:'c5',manual:true,source:'user'},{id:'c6',score:{percent_recorded:0}}];
+      for(const tool of ['get_sleep','get_workouts','get_cycles','get_recovery']){
+        const o=out(await rpc(db,'tools/call',{name:tool,arguments:{}},ENV,async()=>({records:odd.map(r=>({...r})),next_token:null}))).text;
+        assert.equal(o.whoop_measurements.entry_origin,'unknown');
+        assert.deepEqual(o.records,odd,'records unchanged');
+        for(const r of o.records)assert.equal(Object.hasOwn(r,'entry_origin'),false,'no per-record guess');
+      }
     }finally{db.close();}
   });
 
