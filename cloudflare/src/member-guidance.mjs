@@ -7,6 +7,17 @@ import {analyticsConfigured} from './ai-account.mjs';
 import {selectModel,aiSummaryEnabled} from './ai-summary.mjs';
 import {memberLimits,memberLimitEnabled,missingTable} from './member-rate-limit.mjs';
 
+// Source hierarchy for every AI host on this server. Returned verbatim by
+// get_capabilities (source_hierarchy) and included in the host instructions.
+export const SOURCE_HIERARCHY=Object.freeze([
+  'WHOOP measurements are authoritative for the WHOOP data they represent (recovery, sleep, cycles, workouts, body measurements, profile). WHOOP Lens read tools label them source "whoop".',
+  'Health Connect, Samsung Health and other existing integrations are supplementary. Keep their source label on every value you cite, and never present them as WHOOP data.',
+  'Add other external sources or medical records only when the user directs it. Never bring one in at your own discretion or as a substitute for WHOOP data.',
+  'Ground every interpretation in measurements retrieved in this conversation, citing tool and date. Keep measured facts separate from hypotheses and label hypotheses as such.',
+  'When WHOOP measurements are missing or stale (whoop_measurements.missing or stale is true, or the latest record is older than the period asked about), say so plainly. Never silently fill the gap from another source.',
+  'While WHOOP Lens is connected and in use, this hierarchy is required, not an optional recommendation. Only the user decides which additional sources to add; do not reorder or redefine it.'
+]);
+export const sourceHierarchyGuidance='Source hierarchy (required): '+SOURCE_HIERARCHY.map((r,i)=>`(${i+1}) ${r}`).join(' ');
 // A listed tool whose server flag is off throws this, so the member is told the
 // feature is off instead of a generic "WHOOP data is unavailable" message.
 export class FeatureDisabled extends Error{

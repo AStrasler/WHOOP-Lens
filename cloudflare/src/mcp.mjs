@@ -53,8 +53,24 @@ const toolLabels=Object.freeze({
   get_workouts:"Read the signed-in user's WHOOP workout history.",
   get_cycles:"Read the signed-in user's WHOOP cycle history."
 });
+const WHOOP_NOTE=" Authoritative WHOOP measurements (source \"whoop\"); if they are missing or stale, say so and never fill the gap from another source.";
+// WHOOP read results are labeled with their source. History pages also get
+// whoop_measurements: how many records came back, the newest record time, and
+// (on a first page of recovery, sleep or cycles) whether it is over 36 hours old.
+const STALE_MS=36*3600*1000;
+export function attributeWhoop(data,name,firstPage,now=Date.now()){
+  if(!data||typeof data!=='object'||Array.isArray(data)||'source' in data)return data;
+  const out={source:'whoop',source_authority:'authoritative',...data};
+  if(!Array.isArray(data.records))return out;
+  const times=data.records.map(r=>Date.parse(r?.end??r?.start??r?.created_at??'')).filter(Number.isFinite);
+  const latest=times.length?Math.max(...times):null;
+  const m={records_returned:data.records.length,missing:data.records.length===0,latest_record_at:latest===null?null:new Date(latest).toISOString()};
+  if(firstPage&&name!=='get_workouts')m.stale=latest===null||now-latest>STALE_MS;
+  out.whoop_measurements=m;
+  return out;
+}
 export const mcpTools=Object.freeze([...Object.keys(toolToResource).map(name=>({
-  name,description:toolLabels[name],
+  name,description:toolLabels[name]+WHOOP_NOTE,
   inputSchema:historyTools.has(name)?schemaHistory:schemaNoArgs,
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
 })),...extraTools]);
@@ -278,11 +294,11 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     }else if(extraTools.some(t=>t.name===name)){
       data=await readExtraTool(db,userId,name,queryArgs(args),env);
     }else if(!historyTools.has(name)){
-      data=await whoopRequest(db,userId,resource,env,queryArgs(args));
+      data=attributeWhoop(await whoopRequest(db,userId,resource,env,queryArgs(args)),name,false);
     }else{
       // userId is the verified member from the router, never a tool argument.
-      data=await readHistoryPages({db,userId,resource,env,whoopRequest,
-        limit:args.limit,cursor:args.next_token,auto:args.auto_page===true});
+      data=attributeWhoop(await readHistoryPages({db,userId,resource,env,whoopRequest,
+        limit:args.limit,cursor:args.next_token,auto:args.auto_page===true}),name,args.next_token==null);
     }
     if(args.summary===true&&aiSummaryEnabled(env)){
       try{
