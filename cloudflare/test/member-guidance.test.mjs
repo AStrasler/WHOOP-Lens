@@ -338,3 +338,24 @@ test('get_capabilities reads the WHOOP connection once, so capabilities and acco
     assert.ok(whoopCaps(unknown).every(x=>x.status==='requires_connection_or_data'&&/could not be confirmed/.test(x.availability_reason)));
   }finally{db.close();}
 });
+
+test('get_capabilities takes Health Connect availability from the account snapshot',async()=>{
+  const db=await fixture();try{
+    const hcCap=c=>c.capabilities.find(x=>x.id==='health-connect');
+    let reads=0;
+    const counting={...db,prepare(sql){if(/FROM health_connect_records/.test(sql)&&!/COUNT\(\*\)/.test(sql))reads++;return db.prepare(sql);}};
+    const none=await readExtraTool(counting,KIMLIKE,'get_capabilities',{},flagsOn);
+    assert.equal(reads,0,'no second records read when the snapshot is available');
+    assert.equal(none.account.health_connect.records_stored,0);
+    assert.equal(hcCap(none).status,'requires_connection_or_data');
+    db.sqlite.prepare("INSERT INTO health_connect_records(id,user_id,metric,record_key,observed_at,unit,payload_json) VALUES('hc-syn-1',?,'steps_daily','syn-1','2026-10-18T12:00:00Z','count','{}')").run(KIMLIKE);
+    const some=await readExtraTool(db,KIMLIKE,'get_capabilities',{},flagsOn);
+    assert.equal(some.account.health_connect.records_stored,1);
+    assert.equal(hcCap(some).status,'available');
+    // If the snapshot cannot be read, availability falls back to its own read.
+    const broken={...db,prepare(sql){if(/active_tokens|ingest_tokens/.test(sql))throw Error('synthetic status failure');return db.prepare(sql);}};
+    const fallback=await readExtraTool(broken,KIMLIKE,'get_capabilities',{},flagsOn);
+    assert.equal(fallback.account.health_connect.status,'unknown');
+    assert.equal(hcCap(fallback).status,'available');
+  }finally{db.close();}
+});

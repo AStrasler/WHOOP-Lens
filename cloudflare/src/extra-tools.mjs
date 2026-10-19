@@ -117,7 +117,13 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
     samsung:'SELECT id FROM samsung_health_records WHERE user_id=?1 LIMIT 1',
     'health-connect':'SELECT id FROM health_connect_records WHERE user_id=?1 LIMIT 1',
     'medical-context':'SELECT id FROM medical_context WHERE user_id=?1 AND reviewed_at IS NOT NULL LIMIT 1'
-  }))available[id]=!!await db.prepare(sql).bind(userId).first();
+  })){
+    // Health Connect availability comes from the same status snapshot as
+    // account.health_connect, so the two cannot disagree. The table is read
+    // again only when that snapshot is unavailable.
+    const hcCount=account.health_connect?.records_stored;
+    available[id]=id==='health-connect'&&Number.isSafeInteger(hcCount)?hcCount>0:!!await db.prepare(sql).bind(userId).first();
+  }
   const localTools={'samsung':'get_samsung_health','health-connect':'get_health_connect','medical-context':'get_medical_context'};
   // Same rule as the summary path, the only path that can return the estimate.
   const stressOn=env?.STRESS_ESTIMATE_ENABLED==='true'&&env?.AI_SUMMARY_ENABLED==='true';
