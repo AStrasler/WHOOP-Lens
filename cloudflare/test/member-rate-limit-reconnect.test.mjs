@@ -62,7 +62,8 @@ const generation=(d,id)=>rawGeneration(d,id)-(seeds.get(d)?.get(id)??0);
 // ---------------------------------------------------------------- migrations
 
 test("migrations 0015/0016: apply in order after 0001-0014, roll back, re-apply; existing rows untouched",async()=>{
-  const files=readdirSync(new URL("../migrations/",import.meta.url)).filter(f=>f.endsWith(".sql")).sort();
+  // Later migrations (0017+) have their own preservation tests.
+  const files=readdirSync(new URL("../migrations/",import.meta.url)).filter(f=>f.endsWith(".sql")&&f<"0017").sort();
   assert.deepEqual(files.slice(-2),[BUDGET,GENERATIONS],"next migration numbers");
   const sqlite=new DatabaseSync(":memory:");
   try{

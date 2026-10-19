@@ -10,6 +10,23 @@ import { handleMcpRpc, validateMcpTransport } from "./mcp.mjs";
 import { CursorError, cursorShapeOk, readHistoryPages } from "./history-pagination.mjs";
 import { healthConnectHttp } from "./health-import.mjs";
 import { healthConnectWebhook, WEBHOOK_PATH } from "./health-connect-webhook.mjs";
+import { capture, classifyWebhookStatus, newRequestId } from "./diagnostics.mjs";
+
+// Sanitized outcome of one webhook delivery: codes and counts, never content.
+export function webhookEvent(status,observe){
+  const userId=observe?.userId;
+  if(status===200&&observe?.result){
+    const {stored,skipped,rejected}=observe.result;
+    if(stored>0&&rejected===0)return {category:"health_connect",code:"hc_delivery_stored",outcome:"success",retryable:false,userId};
+    if(stored>0)return {category:"health_connect",code:"hc_some_records_rejected",outcome:"partial",retryable:false,userId};
+    return {category:"health_connect",code:rejected>0?"hc_records_rejected":skipped>0?"hc_only_unsupported_types":"hc_empty_delivery",
+      outcome:"partial",retryable:false,userId};
+  }
+  if(status===403&&observe?.reason==="consent")return {category:"consent",code:"hc_consent_missing",outcome:"fail",retryable:false,userId};
+  if(status===403&&observe?.reason==="membership")return {category:"authorization",code:"membership_inactive",outcome:"fail",retryable:false,userId};
+  const kind=classifyWebhookStatus(status);
+  return kind?{...kind,outcome:"fail",userId}:null;
+}
 
 function json(data, status=200) {
   return new Response(JSON.stringify(data), {
@@ -26,6 +43,7 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
   whoopAuthorize = createWhoopAuthorization, whoopCallback = acceptWhoopCallback } = {}) {
   return async function stagingFetch(request, rawEnv) {
     const env = await resolveSecrets(rawEnv);
+    const requestId = newRequestId();
     // Deliberately disabled. This is not enabled by creating a D1 database or
     // deploying a Worker; a separately reviewed release must opt in explicitly.
     if (env?.MIGRATION_API_ENABLED !== "true")
@@ -66,20 +84,31 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       if(transport.error)return json({error:transport.error},transport.status);
       try {
         const userId=await verifyIdentity(request,env);
-        if(!await activeMembership(env.DB,userId))
+        if(!await activeMembership(env.DB,userId)){
+          await capture(env,env.DB,{category:"authorization",subsystem:"mcp",code:"membership_inactive",outcome:"fail",retryable:false,requestId,userId});
           return json({error:"Not authorized for WHOOP Lens"},403);
+        }
         const result=await handleMcpRpc(message,{
-          db:env.DB,userId,env,whoopRequest,whoopAuthorize
+          db:env.DB,userId,env,whoopRequest,whoopAuthorize,requestId
         },transport);
         if(result===null)return new Response(null,{status:202,headers:{"cache-control":"no-store"}});
         return json(result);
       }catch(error){
-        if(error instanceof AccessDenied)return json({error:"Unauthorized"},error.status);
+        if(error instanceof AccessDenied){
+          await capture(env,env.DB,{category:"auth",subsystem:"mcp",code:"unauthenticated",outcome:"fail",retryable:false,requestId});
+          return json({error:"Unauthorized"},error.status);
+        }
+        await capture(env,env.DB,{category:"infrastructure",subsystem:"mcp",code:"mcp_unavailable",outcome:"fail",retryable:true,requestId});
         return json({error:"MCP staging unavailable"},503);
       }
     }
-    if(preliminaryUrl.pathname===WEBHOOK_PATH)
-      return healthConnectWebhook(request,env);
+    if(preliminaryUrl.pathname===WEBHOOK_PATH){
+      const observe={};
+      const response=await healthConnectWebhook(request,env,{observe});
+      const event=webhookEvent(response.status,observe);
+      if(event)await capture(env,env?.DB,{...event,subsystem:"hc_webhook",requestId});
+      return response;
+    }
     if(preliminaryUrl.pathname==="/v1/health-connect"||
        preliminaryUrl.pathname==="/v1/health-connect/import"||
        preliminaryUrl.pathname==="/v1/health-connect/status"){
@@ -120,6 +149,8 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
         const result = await whoopCallback(env.DB,url,env);
         return json(result);
       } catch (error) {
+        await capture(env,env.DB,{category:error instanceof SeatsFull?"authorization":"auth",subsystem:"whoop_oauth",
+          code:error instanceof SeatsFull?"seats_full":"whoop_callback_failed",outcome:"fail",retryable:false,requestId});
         if (error instanceof SeatsFull) return json({error:error.message,seat_limit:error.limit},409);
         // Never disclose WHOOP authorization codes, states or exchanged tokens.
         return json({error:"WHOOP authorization could not be completed"},400);

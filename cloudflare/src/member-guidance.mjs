@@ -53,7 +53,7 @@ export function featureStates(env){
 }
 export const ROLE_BOUNDARIES=Object.freeze({
   shared:['Every seat, including the owner, reads, imports, connects and deletes only its own account data.',
-    'No MCP tool approves members, changes seats or roles, rotates another account\'s token, or reads another account.'],
+    'No MCP tool approves members, changes seats or roles, rotates another account\'s token, or reads another account\'s data.'],
   developer:['This is the owner/developer seat.','Member approval and seat changes happen outside this MCP, by the owner.'],
   // Only when the owner setting names this account: the same rule get_ai_usage uses.
   ownerUsage:'get_ai_usage also returns a server-wide AI summary total with no per-member breakdown.',
@@ -61,9 +61,19 @@ export const ROLE_BOUNDARIES=Object.freeze({
   // Only while get_ai_usage is listed (AI_SUMMARY_ENABLED).
   memberUsage:'get_ai_usage shows this account only.'
 });
+// Issue reports (ISSUE_REPORTS_ENABLED) are the one cross-account view: the
+// owner reads every member's sanitized reports. Say so on both sides.
+const REPORT_BOUNDARIES=Object.freeze({
+  member:'Issue reports this account submits with report_issue are visible to the server owner: the approved description after best-effort cleaning (numbers, links, contact details and recognizable credentials removed; a secret written in another form can be missed; other words, including any health or personal details the member writes, are shared as written), plus diagnostic codes (no health data). Leave health and personal details and any passwords out of a report.',
+  owner:'review_issue_reports shows every member\'s issue reports without account ids: member-written descriptions after best-effort cleaning (numbers, links, contact details and recognizable credentials removed, though a secret in another form can be missed; other words, which may include health or personal details, are as written), and diagnostic codes (no health data). It is the only cross-account view.',
+  // Captured whether or not the member ever submits a report.
+  diagnostics:'This server records sanitized failure codes for every signed-in member, whether or not they submit a report (codes, counts and times only; no health data, message text or tokens). The server owner can see them, as server-wide 24-hour counts in review_issue_reports, and they expire after 30 days.'
+});
 function boundaries(seatRole,owner,env){
   const usage=aiSummaryEnabled(env)?[owner?ROLE_BOUNDARIES.ownerUsage:ROLE_BOUNDARIES.memberUsage]:[];
-  return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...usage];
+  const reports=[...(env?.ISSUE_REPORTS_ENABLED==='true'?[owner?REPORT_BOUNDARIES.owner:REPORT_BOUNDARIES.member]:[]),
+    ...(env?.DIAGNOSTICS_CAPTURE_ENABLED==='true'?[REPORT_BOUNDARIES.diagnostics]:[])];
+  return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...usage,...reports];
 }
 const BUDGET_PROBE_SQL='SELECT 1 FROM whoop_member_request_budget WHERE user_id=?1 LIMIT 1';
 const ROLE_SQL='SELECT seat_role FROM whoop_connections WHERE user_id=?1 LIMIT 1';
