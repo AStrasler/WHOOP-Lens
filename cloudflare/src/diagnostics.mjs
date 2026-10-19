@@ -48,7 +48,10 @@ export function sanitizeEvent(event,{now=Date.now()}={}){
 }
 const UPSERT='INSERT INTO diagnostic_events(user_key,category,subsystem,code,outcome,retryable,bucket,count,first_at,last_at,request_id) '+
   'VALUES(?1,?2,?3,?4,?5,?6,?7,1,?8,?8,?9) ON CONFLICT(user_key,subsystem,code,outcome,bucket) DO UPDATE SET '+
-  'count=MIN(count+1,1000000),last_at=excluded.last_at,request_id=excluded.request_id';
+  'count=count+1,last_at=excluded.last_at,request_id=excluded.request_id WHERE diagnostic_events.count<?10';
+// Writes per member, code and 10-minute bucket stop here: further repeats
+// change nothing in D1 (count reads as "at least" this many).
+export const BUCKET_WRITE_CAP=20;
 // Bounded retention sweep: at most 50 expired rows per write, index-backed.
 const SWEEP='DELETE FROM diagnostic_events WHERE id IN (SELECT id FROM diagnostic_events WHERE last_at<?1 ORDER BY last_at LIMIT 50)';
 export async function capture(env,db,event,{now=Date.now()}={}){
@@ -62,6 +65,9 @@ export async function capture(env,db,event,{now=Date.now()}={}){
   // internet can produce pre-authentication failures (bad bearer, unknown
   // client), so those stay console-only and never cause a database write.
   if(!clean.user_key)return false;
+  // Rate-limited retries are the flood case by definition: the limiter already
+  // logs them, so they never cause a D1 write either.
+  if(clean.category==='rate_limit')return false;
   const cutoff=new Date(now-RETENTION_DAYS*86400000).toISOString();
   if(!diagnosticsEnabled(env)){
     // Capture is off, but rows collected earlier still expire on schedule.
@@ -72,7 +78,7 @@ export async function capture(env,db,event,{now=Date.now()}={}){
   try{
     const results=await db.batch([
       db.prepare(UPSERT).bind(clean.user_key,clean.category,clean.subsystem,clean.code,clean.outcome,
-        clean.retryable?1:0,clean.bucket,clean.at,clean.request_id),
+        clean.retryable?1:0,clean.bucket,clean.at,clean.request_id,BUCKET_WRITE_CAP),
       db.prepare(SWEEP).bind(cutoff),
       // Report retention also runs here, so it does not depend on new reports.
       ...retentionStatements(db,now)

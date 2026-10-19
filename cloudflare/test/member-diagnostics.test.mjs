@@ -9,7 +9,7 @@ import {connect} from './audit-fixtures.mjs';
 import {createStagingRouter} from '../src/router.mjs';
 import {handleMcpRpc,validateMcpTransport} from '../src/mcp.mjs';
 import {ISSUE_CONSENT} from '../src/health-connect-webhook.mjs';
-import {capture,sanitizeEvent,classifyToolError,newRequestId,BUCKET_MS,RETENTION_DAYS} from '../src/diagnostics.mjs';
+import {capture,sanitizeEvent,classifyToolError,newRequestId,BUCKET_MS,RETENTION_DAYS,BUCKET_WRITE_CAP} from '../src/diagnostics.mjs';
 import {sanitizeDescription,LIMITS,reportIssue,reviewIssueReports,updateIssueReport,APPROVAL_TTL_MS,REPORT_RETENTION_DAYS} from '../src/issue-reports.mjs';
 import {hostInstructionsFor} from '../src/host-instructions.mjs';
 import {FeatureDisabled} from '../src/member-guidance.mjs';
@@ -498,5 +498,30 @@ test('owner review never returns or changes expired resolved reports, even beyon
     assert.equal(review.counts.resolved,0);assert.equal(review.counts.new,1);
     const leftover=db.sqlite.prepare("SELECT reference FROM issue_reports WHERE status='resolved' LIMIT 1").get().reference;
     await assert.rejects(updateIssueReport(db,OWNER,{reference:leftover,status:'recurring'},{env:ON,now}),/not submitted/);
+  }finally{db.close();}
+});
+
+test('repeats cannot cause unbounded D1 writes: rate-limited outcomes are console-only and each bucket stops at a cap',async()=>{
+  const db=await fixture();try{
+    const now=Date.parse('2026-10-18T22:00:00Z'),rid=newRequestId();
+    let changed=0;
+    const counting={...db,batch:async st=>{const r=await db.batch(st);changed+=r[0]?.meta?.changes??0;return r;},prepare:sql=>db.prepare(sql)};
+    for(let i=0;i<30;i++)assert.equal(await capture(ON,counting,{category:'rate_limit',subsystem:'hc_webhook',code:'hc_rate_limited',outcome:'fail',retryable:true,requestId:rid,userId:KIMLIKE},{now:now+i}),false);
+    assert.equal(rows(db).length,0,'rate-limited retries never stored');
+    for(let i=0;i<BUCKET_WRITE_CAP+30;i++)await capture(ON,counting,{category:'mcp_validation',subsystem:'mcp_tool',code:'invalid_arguments',outcome:'fail',requestId:rid,userId:KIMLIKE},{now:now+i});
+    const [row]=rows(db);
+    assert.equal(row.count,BUCKET_WRITE_CAP);
+    assert.equal(changed,BUCKET_WRITE_CAP,'no row changes after the cap');
+  }finally{db.close();}
+});
+
+test('a token holder retrying past the webhook limit causes no further D1 writes',async()=>{
+  const db=await fixture();try{
+    const issued=data(await call(db,KIMLIKE,'issue_health_connect_ingest_token',{consent:ISSUE_CONSENT}));
+    const token=issued.header_value.slice(7);
+    let limited=0;
+    for(let i=0;i<60&&limited<5;i++){if((await webhook(db,token,envelope({}))).status===429)limited++;}
+    assert.ok(limited>0,'synthetic limiter reached');
+    assert.ok(!rows(db).some(r=>r.code==='hc_rate_limited'));
   }finally{db.close();}
 });
