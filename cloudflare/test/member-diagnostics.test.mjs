@@ -12,7 +12,7 @@ import {ISSUE_CONSENT} from '../src/health-connect-webhook.mjs';
 import {capture,sanitizeEvent,classifyToolError,newRequestId,BUCKET_MS,RETENTION_DAYS,BUCKET_WRITE_CAP} from '../src/diagnostics.mjs';
 import {sanitizeDescription,LIMITS,reportIssue,reviewIssueReports,updateIssueReport,APPROVAL_TTL_MS,REPORT_RETENTION_DAYS} from '../src/issue-reports.mjs';
 import {hostInstructionsFor} from '../src/host-instructions.mjs';
-import {FeatureDisabled} from '../src/member-guidance.mjs';
+import {FeatureDisabled,accountStatus} from '../src/member-guidance.mjs';
 
 const OWNER='0a0a0a0a-0000-4000-8000-00000000000a';
 const AMYLIKE='0b0b0b0b-0000-4000-8000-00000000000b';
@@ -523,5 +523,16 @@ test('a token holder retrying past the webhook limit causes no further D1 writes
     for(let i=0;i<60&&limited<5;i++){if((await webhook(db,token,envelope({}))).status===429)limited++;}
     assert.ok(limited>0,'synthetic limiter reached');
     assert.ok(!rows(db).some(r=>r.code==='hc_rate_limited'));
+  }finally{db.close();}
+});
+
+test('role boundaries disclose that diagnostics are owner-visible even without a report',async()=>{
+  const db=await fixture();try{
+    const boundariesFor=async env=>(await accountStatus(db,KIMLIKE,env)).role_boundaries.join(' ');
+    const off={...ON,DIAGNOSTICS_CAPTURE_ENABLED:'false'};
+    assert.doesNotMatch(await boundariesFor(off),/whether or not they submit a report/);
+    const on=await boundariesFor({...ON,DIAGNOSTICS_CAPTURE_ENABLED:'true'});
+    assert.match(on,/failure codes for every signed-in member, whether or not they submit a report/);
+    assert.match(on,/server owner can see them/);
   }finally{db.close();}
 });

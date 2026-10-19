@@ -65,11 +65,14 @@ export const ROLE_BOUNDARIES=Object.freeze({
 // owner reads every member's sanitized reports. Say so on both sides.
 const REPORT_BOUNDARIES=Object.freeze({
   member:'Issue reports this account submits with report_issue are visible to the server owner (sanitized text and diagnostic codes, no health data).',
-  owner:'review_issue_reports shows every member\'s sanitized issue reports and diagnostic codes, without account ids or health data. It is the only cross-account view.'
+  owner:'review_issue_reports shows every member\'s sanitized issue reports and diagnostic codes, without account ids or health data. It is the only cross-account view.',
+  // Captured whether or not the member ever submits a report.
+  diagnostics:'This server records sanitized failure codes for every signed-in member, whether or not they submit a report (codes, counts and times only; no health data, message text or tokens). The server owner can see them, as server-wide 24-hour counts in review_issue_reports, and they expire after 30 days.'
 });
 function boundaries(seatRole,owner,env){
   const usage=aiSummaryEnabled(env)?[owner?ROLE_BOUNDARIES.ownerUsage:ROLE_BOUNDARIES.memberUsage]:[];
-  const reports=env?.ISSUE_REPORTS_ENABLED==='true'?[owner?REPORT_BOUNDARIES.owner:REPORT_BOUNDARIES.member]:[];
+  const reports=[...(env?.ISSUE_REPORTS_ENABLED==='true'?[owner?REPORT_BOUNDARIES.owner:REPORT_BOUNDARIES.member]:[]),
+    ...(env?.DIAGNOSTICS_CAPTURE_ENABLED==='true'?[REPORT_BOUNDARIES.diagnostics]:[])];
   return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...usage,...reports];
 }
 const ROLE_SQL='SELECT seat_role FROM whoop_connections WHERE user_id=?1 LIMIT 1';
