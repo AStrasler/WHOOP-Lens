@@ -119,12 +119,12 @@ test('three members with owner, diagnostics and reports on: journaling, reports 
     const args={category:'unavailable_data',description:'My journal page looked empty once'};
     const preview=await tool(db,FULL,AMYLIKE,'report_issue',args);
     assert.equal(preview.submitted,false);
-    const stolen=await tool(db,FULL,KIMLIKE,'report_issue',{...args,approval_token:preview.approval_token});
+    const stolen=await tool(db,FULL,KIMLIKE,'report_issue',{...args,approved:true});
     assert.ok(stolen.error&&/not submitted/.test(stolen.error));
-    const amy=await tool(db,FULL,AMYLIKE,'report_issue',{...args,approval_token:preview.approval_token});
+    const amy=await tool(db,FULL,AMYLIKE,'report_issue',{...args,approved:true});
     assert.equal(amy.submitted,true);assert.match(amy.reference,/^WL-/);
     const kimPreview=await tool(db,FULL,KIMLIKE,'report_issue',{category:'other',description:'Charts did not load for me'});
-    const kim=await tool(db,FULL,KIMLIKE,'report_issue',{category:'other',description:'Charts did not load for me',approval_token:kimPreview.approval_token});
+    const kim=await tool(db,FULL,KIMLIKE,'report_issue',{category:'other',description:'Charts did not load for me',approved:true});
     assert.equal(kim.submitted,true);
     // Each report's evidence holds only its own member's diagnostics.
     const stored=db.sqlite.prepare('SELECT user_id,evidence_json,description FROM issue_reports').all();
