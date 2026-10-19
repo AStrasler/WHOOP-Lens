@@ -12,3 +12,16 @@ Every seat on this server gets the same guidance. Nothing here grants a permissi
 Status reads are for the signed-in account only: counts and timestamps, never record content, token values or digests, or other members. If a status read fails, `get_capabilities` still answers and reports Health Connect status as `unknown`.
 
 Synthetic scenarios (owner, a member whose phone data arrives, a member whose token is issued but whose delivery stores nothing) are in `test/member-guidance.test.mjs`.
+
+## Source hierarchy (client-facing contract)
+Every MCP client gets the same six rules, with no custom instructions of its own: `SOURCE_HIERARCHY` in `src/member-guidance.mjs`. They come first in every `initialize` `instructions` variant, so a host that truncates instructions keeps them. `get_capabilities` also returns them as `source_hierarchy`, and short versions appear in the `serverInfo.description` and in tool descriptions.
+
+**Enforced by the server, in its own responses**
+- WHOOP read results (`get_profile`, `get_body_measurements`, `get_recovery`, `get_sleep`, `get_workouts`, `get_cycles`) carry `source: "whoop"` and `source_authority: "authoritative"`, in both the content text and `structuredContent`.
+- WHOOP history pages carry `whoop_measurements`: `records_returned`, `missing` (no records), `latest_record_at`, and, on a first page of recovery, sleep or cycles, `stale` (no record or the newest is over 36 hours old). Workouts are irregular, so they get no `stale` judgement.
+- Health Connect and Samsung Health results carry their own `source` and `source_authority: "supplementary"`. Medical context carries `source_authority: "user_directed"`.
+- The server never fills a missing or failed WHOOP result with another source. Each tool returns only its own source.
+
+**Depends on the consuming AI's compliance**
+- Calling the WHOOP tools at all, citing sources, separating facts from hypotheses, disclosing missing or stale data, and not adding external sources or medical records unless the user directs it.
+- MCP metadata cannot force an external AI to call a tool or obey instructions. Hosts may truncate, summarize or ignore `instructions` and `serverInfo`, and the model may ignore tool descriptions or result fields. The server can only label what it returns and keep sources apart.
