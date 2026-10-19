@@ -25,7 +25,8 @@ export function featureStates(env){
   // Summaries need the AI binding and the account analytics budget settings;
   // without the budget settings every summary falls back to a template.
   // An unsupported AI_SUMMARY_MODEL also means template-only.
-  const ai=!!env?.AI&&analyticsConfigured(env)&&selectModel(env)!==null;
+  // Same binding check attachSummary uses: AI must be a callable Workers AI binding.
+  const ai=typeof env?.AI?.run==='function'&&analyticsConfigured(env)&&selectModel(env)!==null;
   const features=[
     {id:'whoop_connection',tools:['connect_whoop','disconnect_whoop'],
       state:state(on(env,'WHOOP_OAUTH_ENABLED'),whoopConfigured)},
