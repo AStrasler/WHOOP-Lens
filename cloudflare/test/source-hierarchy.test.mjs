@@ -16,7 +16,10 @@ const OWNER='0a0a0a0a-0000-4000-8000-00000000000a';
 const ENV={MCP_ENABLED:'true',WHOOP_READS_ENABLED:'true',MIGRATION_API_ENABLED:'true',WHOOP_LENS_DEVELOPER_USER_ID:OWNER};
 const VARIANTS=[ENV,{...ENV,FLARE_JOURNAL_ENABLED:'true'},{...ENV,STRESS_ESTIMATE_ENABLED:'true',AI_SUMMARY_ENABLED:'true'},{...ENV,ISSUE_REPORTS_ENABLED:'true'}];
 const RULE_WORDS=[/WHOOP measurements are authoritative/,/supplementary.*source label/,/only when the user directs it.*Never bring one in at your own discretion/,
-  /Ground every interpretation in measurements retrieved.*separate from hypotheses/,/missing or stale.*Never silently fill the gap/,/required, not an optional recommendation.*Only the user decides/];
+  /Ground every interpretation in measurements retrieved.*separate from hypotheses/,/missing or stale.*Never silently fill the gap/,/required, not an optional recommendation.*Only the user decides/,
+  /User-entered WHOOP records.*authoritative records of what the person reported.*Do not dispute, dismiss or demand verification.*never silently correct, overwrite, reinterpret or discard.*keep both.*without automatically favoring the sensor.*only with specific evidence/,
+  /sensor measurements establish what WHOOP measured, manual entries establish what the person recorded, and user-provided context establishes what the person reports experiencing/];
+const O={entry_origin:'unknown',entry_origin_note:'The WHOOP API does not mark records as user-entered or sensor-generated. Records are passed through unmodified; nap is WHOOP\'s own field.'};
 const SUBSTITUTION=/(use|fall ?back to|switch to|rely on|substitute)[^.]{0,40}(Health Connect|Samsung|another source|other source)[^.]{0,30}(instead|when WHOOP|if WHOOP)/i;
 
 async function fixture(){
@@ -55,6 +58,7 @@ for(const version of ['2025-11-25','2025-06-18']){
       const by=Object.fromEntries(tools.map(t=>[t.name,t]));
       for(const n of ['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles']){
         assert.match(by[n].description,/Authoritative WHOOP measurements \(source "whoop"\); if they are missing or stale, say so and never fill the gap from another source\./);
+        assert.match(by[n].description,/user-entered ones such as manual sleep, naps and activities, are returned exactly as WHOOP provides them/);
         assert.equal(by[n].annotations.readOnlyHint,true);
       }
       for(const n of ['get_health_connect','get_samsung_health'])
@@ -68,9 +72,9 @@ for(const version of ['2025-11-25','2025-06-18']){
     const db=await fixture();try{
       const fresh=new Date(Date.now()-3600e3).toISOString(),old=new Date(Date.now()-72*3600e3).toISOString();
       const cases=[
-        [{records:[],next_token:null},{records_returned:0,missing:true,latest_record_at:null,stale:true}],
-        [{records:[{created_at:fresh,score:{recovery_score:55}}],next_token:null},{records_returned:1,missing:false,latest_record_at:new Date(Date.parse(fresh)).toISOString(),stale:false}],
-        [{records:[{created_at:old,score:{recovery_score:55}}],next_token:null},{records_returned:1,missing:false,latest_record_at:new Date(Date.parse(old)).toISOString(),stale:true}]
+        [{records:[],next_token:null},{...O,records_returned:0,missing:true,latest_record_at:null,stale:true}],
+        [{records:[{created_at:fresh,score:{recovery_score:55}}],next_token:null},{...O,records_returned:1,missing:false,latest_record_at:new Date(Date.parse(fresh)).toISOString(),stale:false}],
+        [{records:[{created_at:old,score:{recovery_score:55}}],next_token:null},{...O,records_returned:1,missing:false,latest_record_at:new Date(Date.parse(old)).toISOString(),stale:true}]
       ];
       for(const [page,flags] of cases){
         const r=out(await rpc(db,'tools/call',{name:'get_recovery',arguments:{limit:5}},ENV,async()=>page));
@@ -83,9 +87,33 @@ for(const version of ['2025-11-25','2025-06-18']){
       }
       // Workouts are irregular, so no stale judgement; profile gets the source label.
       const w=out(await rpc(db,'tools/call',{name:'get_workouts',arguments:{}},ENV,async()=>({records:[],next_token:null}))).text;
-      assert.deepEqual(w.whoop_measurements,{records_returned:0,missing:true,latest_record_at:null});
+      assert.deepEqual(w.whoop_measurements,{...O,records_returned:0,missing:true,latest_record_at:null});
       const p=out(await rpc(db,'tools/call',{name:'get_profile',arguments:{}},ENV,async()=>({first_name:'Synthetic'}))).text;
       assert.equal(p.source,'whoop');assert.equal(p.source_authority,'authoritative');
+    }finally{db.close();}
+  });
+
+  test(`[${version}] tools/call: manual sleep, naps, manual activities and manual-vs-sensor conflicts are all returned unmodified`,async()=>{
+    const db=await fixture();try{
+      const t=h=>new Date(Date.now()-h*3600e3).toISOString();
+      // Synthetic. The WHOOP API has no manual marker, so these differ only in the fields WHOOP does return.
+      const manualSleep={id:'aaaaaaaa-0000-4000-8000-000000000001',cycle_id:1,start:t(30),end:t(22),nap:false,score_state:'UNSCORABLE'};
+      const nap={id:'aaaaaaaa-0000-4000-8000-000000000002',cycle_id:2,start:t(6),end:t(5),nap:true,score_state:'SCORED',score:{stage_summary:{total_in_bed_time_milli:3600000}}};
+      // Conflict: the person logged 8h in bed; the sensor scored an overlapping 5h sleep. Both stay.
+      const sensorSleep={id:'aaaaaaaa-0000-4000-8000-000000000003',cycle_id:1,start:t(28),end:t(23),nap:false,score_state:'SCORED',score:{stage_summary:{total_in_bed_time_milli:18000000}}};
+      const page={records:[nap,manualSleep,sensorSleep],next_token:null};
+      const frozen=JSON.parse(JSON.stringify(page.records));
+      const r=await rpc(db,'tools/call',{name:'get_sleep',arguments:{}},ENV,async()=>page);
+      for(const v of [out(r).text,...(out(r).structured?[out(r).structured]:[])]){
+        assert.deepEqual(v.records,frozen,'every record, in WHOOP order, with original values');
+        assert.equal(v.whoop_measurements.records_returned,3);assert.equal(v.whoop_measurements.naps_returned,1);
+        assert.equal(v.whoop_measurements.entry_origin,'unknown');
+      }
+      const manualActivity={id:'bbbbbbbb-0000-4000-8000-000000000001',start:t(50),end:t(49),sport_name:'yoga',score_state:'SCORED',score:{strain:4.1,percent_recorded:0}};
+      const sensorActivity={id:'bbbbbbbb-0000-4000-8000-000000000002',start:t(50),end:t(49.5),sport_name:'activity',score_state:'SCORED',score:{strain:6.3,percent_recorded:100}};
+      const w=out(await rpc(db,'tools/call',{name:'get_workouts',arguments:{}},ENV,async()=>({records:[manualActivity,sensorActivity],next_token:null}))).text;
+      assert.deepEqual(w.records,[manualActivity,sensorActivity]);
+      assert.equal(w.whoop_measurements.records_returned,2);
     }finally{db.close();}
   });
 
@@ -104,7 +132,7 @@ for(const version of ['2025-11-25','2025-06-18']){
 }
 
 test('guidance text contains each rule once and never recommends substituting sources',()=>{
-  assert.equal(SOURCE_HIERARCHY.length,6);
+  assert.equal(SOURCE_HIERARCHY.length,8);
   for(const re of RULE_WORDS)assert.equal(SOURCE_HIERARCHY.filter(r=>re.test(r)).length,1);
   for(const text of [hostInstructions,memberGuidance,...SOURCE_HIERARCHY])assert.doesNotMatch(text,SUBSTITUTION);
 });
