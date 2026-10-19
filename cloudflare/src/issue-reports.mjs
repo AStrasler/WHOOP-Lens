@@ -51,11 +51,12 @@ export function sanitizeDescription(input){
     ['credential',/\beyJ[A-Za-z0-9_-]{5,}(?:\.[A-Za-z0-9_-]+)*/g,'[credential]'],
     ['id',/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,'[id]'],
     ['credential',/\b[A-Za-z0-9_+/=-]{24,}\b/g,'[credential]'],
-    // A labeled value ("password: x", "api key = y", "my pin is z") is removed
+    // A labeled value ("password: x", "api key = y", "my pin is z", JSON-style
+    // {"password":"x"} or 'token' => 'y', quoted values with spaces) is removed
     // whatever its shape. "is/was" only counts for secret-only labels, so
     // ordinary sentences such as "the token was issued" survive.
-    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|token|secret|api[\s_-]?key|access[\s_-]?key|private[\s_-]?key|auth(?:orization)?|cookie|session(?:[\s_-]?id)?|credentials?|code)\s*[:=]\s*\S+/giu,'[credential]'],
-    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|secret)\s+(?:is|was)\s+\S+/giu,'[credential]'],
+    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|token|secret|api[\s_-]?key|access[\s_-]?key|private[\s_-]?key|auth(?:orization)?|cookie|session(?:[\s_-]?id)?|credentials?|code)["'`\]\)]*\s*(?:=>|[:=])\s*(?:"[^"]*"?|'[^']*'?|`[^`]*`?|\S+)/giu,'[credential]'],
+    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|secret)["'`]*\s+(?:is|was)\s+(?:"[^"]*"?|'[^']*'?|`[^`]*`?|\S+)/giu,'[credential]'],
     ['credential',/\S+\.\S+\.\S+/gu,'[credential]'],
     // Every number in any script (health values, dates, phone numbers).
     ['number',/\p{N}[\p{N}.,:/%-]*/gu,'[number]']

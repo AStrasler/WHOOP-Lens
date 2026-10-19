@@ -346,7 +346,9 @@ test('descriptions are redacted: numbers, links, addresses, ids and credentials 
   assert.match(r.text,/HRV \[number\] and RHR \[number\]/);
   assert.ok(sanitizeDescription('x'.repeat(5000)).text.length<=500);
   // Labeled credentials of any shape, and numbers in any script.
-  for(const [input,bad] of [['password: huntertwo','huntertwo'],['token: abcd.efgh.ijkl','abcd'],['my pin is swordfish','swordfish'],
+  for(const [input,bad] of [['Login failed with {"password":"huntertwo"} repeatedly','huntertwo'],["{'token': 'swordfishfish'}",'swordfish'],
+    ['"api_key" = "open sesame"','sesame'],['`secret`:`lettuce`','lettuce'],["'pin' => '4455'",'4455'],['my password is "correct horse"','horse'],
+    ['password: huntertwo','huntertwo'],['token: abcd.efgh.ijkl','abcd'],['my pin is swordfish','swordfish'],
     ['api key = letmein','letmein'],['HRV \u0664\u0665 and recovery \u0667\u0662','\u0664'],['RHR \u096a\u096b','\u096a'],['score \uff17\uff12','\uff17']]){
     const out=sanitizeDescription(input).text;
     assert.ok(!out.includes(bad),input+' -> '+out);
