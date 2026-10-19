@@ -213,7 +213,8 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     return {submitted:false,approval_required:true,category:kind,sanitized_description:clean.text,removed:clean.removed,
       approval_token:token,approval_expires_in_seconds:APPROVAL_TTL_MS/1000,
       will_attach:['this request id','up to 10 recent sanitized diagnostic codes for this account (no health data)'],
-      next_step:'Show sanitized_description to the member. Only if they approve it, call report_issue again with the same category and description and this approval_token. No report exists yet.'};
+      shared_as_written:'Only numbers, links, contact details and credentials are removed. Every other word, including any health or personal details, goes to the server owner as written.',
+      next_step:'Show sanitized_description to the member and tell them it goes to the server owner as written; if it mentions health or personal details, ask them to remove those first. Only if they approve it, call report_issue again with the same category and description and this approval_token. No report exists yet.'};
   }
   if(typeof args.approval_token!=='string'||!APPROVAL_RE.test(args.approval_token))throw new ReportNotSubmitted('approval_invalid');
   const tokenHash=await sha256Hex(args.approval_token);
@@ -297,7 +298,7 @@ export async function updateIssueReport(db,userId,args,{env,now=Date.now()}={}){
 }
 export const reportIssueTool=Object.freeze({
   name:'report_issue',
-  description:'Report a problem with WHOOP Lens to the server owner. First call without approval_token to get the cleaned text and an approval_token; show the text to the member and call again with the same category, description and approval_token only if they approve. Numbers, links, addresses and credentials are removed. A reference is returned only after the report is saved.',
+  description:'Report a problem with WHOOP Lens to the server owner. First call without approval_token to get the cleaned text and an approval_token; show the text to the member and call again with the same category, description and approval_token only if they approve. Numbers, links, addresses and credentials are removed; every other word, including any health or personal details, reaches the server owner as written, so leave those out. A reference is returned only after the report is saved.',
   inputSchema:{type:'object',properties:{
     category:{type:'string',enum:[...KINDS]},
     description:{type:'string',minLength:1,maxLength:MAX_INPUT,description:'What went wrong, in plain words. Do not include health values or personal details.'},

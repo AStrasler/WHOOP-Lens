@@ -64,8 +64,8 @@ export const ROLE_BOUNDARIES=Object.freeze({
 // Issue reports (ISSUE_REPORTS_ENABLED) are the one cross-account view: the
 // owner reads every member's sanitized reports. Say so on both sides.
 const REPORT_BOUNDARIES=Object.freeze({
-  member:'Issue reports this account submits with report_issue are visible to the server owner (sanitized text and diagnostic codes, no health data).',
-  owner:'review_issue_reports shows every member\'s sanitized issue reports and diagnostic codes, without account ids or health data. It is the only cross-account view.',
+  member:'Issue reports this account submits with report_issue are visible to the server owner: the approved description, with numbers, links, contact details and credentials removed (other words, including any health or personal details the member writes, are shared as written), plus diagnostic codes (no health data). Leave health and personal details out of a report.',
+  owner:'review_issue_reports shows every member\'s issue reports without account ids: member-written descriptions with numbers, links, contact details and credentials removed (other words, which may include health or personal details, are as written), and diagnostic codes (no health data). It is the only cross-account view.',
   // Captured whether or not the member ever submits a report.
   diagnostics:'This server records sanitized failure codes for every signed-in member, whether or not they submit a report (codes, counts and times only; no health data, message text or tokens). The server owner can see them, as server-wide 24-hour counts in review_issue_reports, and they expire after 30 days.'
 });

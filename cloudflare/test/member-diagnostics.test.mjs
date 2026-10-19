@@ -713,3 +713,26 @@ test('owner-visible diagnostics hold only allowlisted codes, never free text or 
   assert.equal(sanitizeEvent({...base,code:'invalid_arguments',description:'password: hunter2',message:'secret'}).code,'invalid_arguments');
   assert.ok(!JSON.stringify(sanitizeEvent({...base,code:'invalid_arguments',description:'password: hunter2'})).includes('hunter'));
 });
+
+test('free text is disclosed as shared as written: no surface claims reports carry no health data',async()=>{
+  // Cleaning is a denylist; health words that are not numbers, links or secrets survive.
+  const text='My diagnosis and pregnancy details appear when charts fail';
+  assert.equal(sanitizeDescription(text).text,text);
+  const db=await fixture();try{
+    const t=Date.parse('2026-10-18T22:00:00.000Z');
+    const preview=await reportIssue(db,AMYLIKE,{category:'other',description:text},{requestId:newRequestId(),env:ON,now:t});
+    assert.match(preview.shared_as_written,/health or personal details.*as written/);
+    assert.match(preview.next_step,/as written.*remove/);
+    const member=(await accountStatus(db,AMYLIKE,ON)).role_boundaries;
+    const owner=(await accountStatus(db,OWNER,ON)).role_boundaries;
+    const host=hostInstructionsFor({ISSUE_REPORTS_ENABLED:'true'});
+    const {reportIssueTool}=await import('../src/issue-reports.mjs');
+    const surfaces=[host,reportIssueTool.description,...member.filter(s=>/issue report/i.test(s)),...owner.filter(s=>/only cross-account view/.test(s))];
+    assert.equal(surfaces.length,4);
+    for(const s of surfaces){
+      assert.match(s,/health or personal details/,s);
+      // "no health data" may describe diagnostic codes only, never the report text.
+      assert.doesNotMatch(s.replace(/diagnostic codes \(no health data\)/g,''),/no health data|without[^.]*health data/,s);
+    }
+  }finally{db.close();}
+});
