@@ -67,3 +67,17 @@ test('real D1: the 0017 reference CHECK alone rejects every insert; 0018 accepts
       await assert.rejects(db.prepare(row).bind(bad,MEMBER).run(),/CHECK constraint/,bad);
   }finally{await close();}
 });
+
+test('real D1: the 0018 rollback succeeds with stored reports and keeps them',async()=>{
+  const {db,close}=await realD1();
+  try{
+    await db.exec("CREATE TABLE IF NOT EXISTS d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE)");
+    await db.prepare('INSERT INTO d1_migrations(name) VALUES(?1)').bind('0018_issue_report_reference_check.sql').run();
+    const args={category:'other',description:'Charts stay blank after sync'};
+    const preview=await reportIssue(db,MEMBER,args,{requestId:newRequestId(),env:ENV});
+    const done=await reportIssue(db,MEMBER,{...args,approval_token:preview.approval_token},{requestId:newRequestId(),env:ENV});
+    await db.exec(oneLine(readFileSync(new URL('../../migration/rollback/0018_issue_report_reference_check.down.sql',import.meta.url),'utf8')));
+    assert.equal((await db.prepare('SELECT reference FROM issue_reports').first()).reference,done.reference);
+    assert.equal((await db.prepare("SELECT COUNT(*) n FROM d1_migrations WHERE name='0018_issue_report_reference_check.sql'").first()).n,0);
+  }finally{await close();}
+});

@@ -804,7 +804,7 @@ test('every LIKE/GLOB pattern in the final schema and in runtime SQL fits D1\'s 
   }finally{sqlite.close();}
 });
 
-test('0018 rebuilds issue_reports in place: rows, indexes and other tables are unchanged; rollback restores 0017',()=>{
+test('0018 rebuilds issue_reports in place: rows, indexes and other tables are unchanged; rollback keeps rows and the D1-safe schema',()=>{
   const sqlite=new DatabaseSync(':memory:');
   try{
     sqlite.exec("CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE)");
@@ -824,8 +824,8 @@ test('0018 rebuilds issue_reports in place: rows, indexes and other tables are u
     assert.throws(()=>sqlite.prepare("UPDATE issue_reports SET reference='WL-abcd2345'").run(),/CHECK/);
     sqlite.prepare('INSERT INTO d1_migrations(name) VALUES(?)').run('0018_issue_report_reference_check.sql');
     sqlite.exec(readFileSync(new URL('../migration/rollback/0018_issue_report_reference_check.down.sql',import.meta.url),'utf8'));
-    // RENAME quotes the table name; the definition is otherwise 0017's.
-    assert.equal(sqlite.prepare("SELECT sql FROM sqlite_master WHERE name='issue_reports'").get().sql.replace('"issue_reports"','issue_reports'),before.sql.replace('IF NOT EXISTS ',''));
+    // The rollback keeps the D1-safe CHECK (0017's cannot hold any row on D1).
+    assert.match(sqlite.prepare("SELECT sql FROM sqlite_master WHERE name='issue_reports'").get().sql,/substr\(reference,4\) NOT GLOB/);
     assert.deepEqual(rowsOf(),before.rows);assert.deepEqual(idx(),before.idx);assert.equal(others(),before.others);
     assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM d1_migrations WHERE name='0018_issue_report_reference_check.sql'").get().n,0);
   }finally{sqlite.close();}
