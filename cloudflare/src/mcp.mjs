@@ -53,7 +53,11 @@ const toolLabels=Object.freeze({
   get_workouts:"Read the signed-in user's WHOOP workout history.",
   get_cycles:"Read the signed-in user's WHOOP cycle history."
 });
-const WHOOP_NOTE=" Authoritative WHOOP measurements (source \"whoop\"); if they are missing or stale, say so and never fill the gap from another source.";
+const WHOOP_NOTE=" Authoritative WHOOP measurements (source \"whoop\"); if they are missing or stale, say so and never fill the gap from another source."+
+  " Records, including user-entered ones such as manual sleep, naps and activities, are returned exactly as WHOOP provides them; treat user-entered records as authoritative records of what the person reported.";
+// The WHOOP v2 API has no field that marks a record as user-entered or
+// sensor-generated, so origin is reported as unknown rather than guessed.
+const ENTRY_ORIGIN_NOTE="The WHOOP API does not mark records as user-entered or sensor-generated. Records are passed through unmodified; nap is WHOOP's own field.";
 // WHOOP read results are labeled with their source. History pages also get
 // whoop_measurements: how many records came back, the newest record time, and
 // (on a first page of recovery, sleep or cycles) whether it is over 36 hours old.
@@ -64,7 +68,9 @@ export function attributeWhoop(data,name,firstPage,now=Date.now()){
   if(!Array.isArray(data.records))return out;
   const times=data.records.map(r=>Date.parse(r?.end??r?.start??r?.created_at??'')).filter(Number.isFinite);
   const latest=times.length?Math.max(...times):null;
-  const m={records_returned:data.records.length,missing:data.records.length===0,latest_record_at:latest===null?null:new Date(latest).toISOString()};
+  const m={records_returned:data.records.length,missing:data.records.length===0,latest_record_at:latest===null?null:new Date(latest).toISOString(),
+    entry_origin:'unknown',entry_origin_note:ENTRY_ORIGIN_NOTE};
+  if(name==='get_sleep')m.naps_returned=data.records.filter(r=>r?.nap===true).length;
   if(firstPage&&name!=='get_workouts')m.stale=latest===null||now-latest>STALE_MS;
   out.whoop_measurements=m;
   return out;

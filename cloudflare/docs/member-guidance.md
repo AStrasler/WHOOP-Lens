@@ -22,6 +22,11 @@ Every MCP client gets the same six rules, with no custom instructions of its own
 - Health Connect and Samsung Health results carry their own `source` and `source_authority: "supplementary"`. Medical context carries `source_authority: "user_directed"`.
 - The server never fills a missing or failed WHOOP result with another source. Each tool returns only its own source.
 
+**User-entered WHOOP records**
+- Rules 7 and 8 make user-entered records (manual sleep and naps, manual activities, journal entries, symptoms) authoritative records of what the person reported. Sensor data establishes what WHOOP measured, manual entries what the person recorded, and user context what they report experiencing.
+- The WHOOP v2 API (developer.whoop.com/api, checked 2026-10-19) has no field marking a sleep, workout, cycle or recovery as user-entered or sensor-generated. `nap` is the only related field. So `whoop_measurements.entry_origin` is `"unknown"`, with a note, instead of a guessed per-record value. `get_sleep` also reports `naps_returned`. Flare journal entries are labeled `source: "user_reported"`.
+- WHOOP records pass through unmodified: same values, order and fields. No tool drops, merges or deduplicates them, or prefers sensor records. Two derived features compute over a subset, but the raw records in the same result are untouched. The opt-in AI summary limits stats to dated records in its window and pairs sleep with recovery by WHOOP id. The experimental stress estimate (flag-gated) skips naps and unscored sleeps and ignores repeated ids when computing its index.
+
 **Depends on the consuming AI's compliance**
 - Calling the WHOOP tools at all, citing sources, separating facts from hypotheses, disclosing missing or stale data, and not adding external sources or medical records unless the user directs it.
 - MCP metadata cannot force an external AI to call a tool or obey instructions. Hosts may truncate, summarize or ignore `instructions` and `serverInfo`, and the model may ignore tool descriptions or result fields. The server can only label what it returns and keep sources apart.
