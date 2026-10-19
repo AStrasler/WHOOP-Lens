@@ -1,7 +1,7 @@
 // Sanitized diagnostics and member issue reports. Synthetic members only:
 // an owner, an "Amy-like" member and a "Kimberly-like" member.
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test,{beforeEach} from 'node:test';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 import {d1Database} from './d1-sqlite.mjs';
@@ -24,6 +24,8 @@ const MIGRATIONS=readdirSync(new URL('../migrations/',import.meta.url)).filter(f
 const sqlOf=f=>readFileSync(new URL('../migrations/'+f,import.meta.url),'utf8');
 const transport=validateMcpTransport(new Request('https://whooplens.tech/mcp',{headers:{'mcp-protocol-version':'2025-11-25'}}),{jsonrpc:'2.0',id:1,method:'tools/call'});
 
+// The per-instance capture throttle is module state: start every test fresh.
+beforeEach(()=>resetCaptureThrottle());
 async function fixture({upTo=null}={}){
   const sqlite=new DatabaseSync(':memory:');
   for(const f of MIGRATIONS){if(upTo&&f>upTo)break;sqlite.exec(sqlOf(f));}
@@ -656,10 +658,16 @@ test('parallel bursts cannot exceed the bucket cap in database work, not just in
     assert.equal(row.count,BUCKET_WRITE_CAP);
     assert.equal(results.filter(Boolean).length,BUCKET_WRITE_CAP,'only writes that counted report success');
     assert.ok(m.batches<=1,'retention batch at most once per bucket, got '+m.batches);
-    // Each capped call is one conditional statement that changes nothing.
+    // Past the cap, repeats do no database work at all on this worker instance.
+    assert.ok(m.statements<=BUCKET_WRITE_CAP+5,'statements bounded by the cap, got '+m.statements);
     const before={s:m.statements,b:m.batches};
     await Promise.all(Array.from({length:50},(_,i)=>capture(ON,m.db,ev,{now:now+200+i})));
-    assert.equal(m.statements-before.s,50);assert.equal(m.batches,before.b);
+    assert.equal(m.statements-before.s,0);assert.equal(m.batches,before.b);
+    // Another instance (fresh memory) reaching a capped bucket does one statement, then nothing.
+    resetCaptureThrottle();
+    const s2=m.statements;
+    for(let i=0;i<30;i++)await capture(ON,m.db,ev,{now:now+300+i});
+    assert.equal(m.statements-s2,1);
     assert.equal(rows(db)[0].count,BUCKET_WRITE_CAP);
     // Kim's cap does not affect Amy.
     assert.equal(await capture(ON,db,{...ev,userId:AMYLIKE},{now}),true);

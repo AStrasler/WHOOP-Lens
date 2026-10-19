@@ -59,8 +59,26 @@ export const BUCKET_WRITE_CAP=20;
 // Capture-off retention runs at most once a minute per worker instance, so
 // repeated failures do not each cost a delete batch.
 const OFF_SWEEP_INTERVAL_MS=60_000;
+// Per worker instance: attempts per member/code/bucket. Once a key has used
+// the cap here (or the database reports it capped), later repeats do no
+// database work at all. Across instances the total is bounded by the cap per
+// instance per 10-minute bucket. Old buckets are dropped; the map is bounded.
+const attempts=new Map();
+const ATTEMPT_KEYS_MAX=5000;
+function attemptKey(clean){return clean.user_key+'|'+clean.subsystem+'|'+clean.code+'|'+clean.outcome+'|'+clean.bucket;}
+function takeAttempt(clean){
+  if(attempts.size>=ATTEMPT_KEYS_MAX){
+    for(const [k,v] of attempts)if(v.bucket<clean.bucket)attempts.delete(k);
+    if(attempts.size>=ATTEMPT_KEYS_MAX)return false;
+  }
+  const key=attemptKey(clean),entry=attempts.get(key)??{bucket:clean.bucket,n:0};
+  if(entry.n>=BUCKET_WRITE_CAP)return false;
+  entry.n++;attempts.set(key,entry);
+  return true;
+}
+function markCapped(clean){attempts.set(attemptKey(clean),{bucket:clean.bucket,n:BUCKET_WRITE_CAP});}
 let lastOffSweep=-Infinity;
-export function resetCaptureThrottle(){lastOffSweep=-Infinity;}
+export function resetCaptureThrottle(){lastOffSweep=-Infinity;attempts.clear();}
 const SWEEP='DELETE FROM diagnostic_events WHERE id IN (SELECT id FROM diagnostic_events WHERE last_at<?1 ORDER BY last_at LIMIT 50)';
 export async function capture(env,db,event,{now=Date.now()}={}){
   const clean=sanitizeEvent(event,{now});
@@ -88,12 +106,13 @@ export async function capture(env,db,event,{now=Date.now()}={}){
   // One atomic conditional write decides everything: concurrent calls cannot
   // all pass a separate check. Past the cap it changes nothing and returns no
   // row, and that is all the database work a capped call does.
+  if(!takeAttempt(clean))return false;
   let counted;
   try{
     counted=await db.prepare(UPSERT).bind(clean.user_key,clean.category,clean.subsystem,clean.code,clean.outcome,
       clean.retryable?1:0,clean.bucket,clean.at,clean.request_id,BUCKET_WRITE_CAP).first();
   }catch{return false;}
-  if(!counted)return false;
+  if(!counted){markCapped(clean);return false;}
   // Retention runs once per new bucket row (the first write in it), so its
   // work is bounded too. Report retention also runs here, independent of new reports.
   if(Number(counted.count)===1){
