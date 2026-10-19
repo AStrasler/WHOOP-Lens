@@ -14,7 +14,7 @@ Status reads are for the signed-in account only: counts and timestamps, never re
 Synthetic scenarios (owner, a member whose phone data arrives, a member whose token is issued but whose delivery stores nothing) are in `test/member-guidance.test.mjs`.
 
 ## Source hierarchy (client-facing contract)
-Every MCP client gets the same six rules, with no custom instructions of its own: `SOURCE_HIERARCHY` in `src/member-guidance.mjs`. They come first in every `initialize` `instructions` variant, so a host that truncates instructions keeps them. `get_capabilities` also returns them as `source_hierarchy`, and short versions appear in the `serverInfo.description` and in tool descriptions.
+Every client of the Cloudflare MCP server (`whoop-lens`) gets the same eight rules, with no custom instructions of its own: `SOURCE_HIERARCHY` in `src/member-guidance.mjs`. They come first in every `initialize` `instructions` variant, so a host that truncates instructions keeps them. `get_capabilities` also returns them as `source_hierarchy`, and short versions appear in the `serverInfo.description` and in tool descriptions.
 
 **Enforced by the server, in its own responses**
 - WHOOP read results (`get_profile`, `get_body_measurements`, `get_recovery`, `get_sleep`, `get_workouts`, `get_cycles`) carry `source: "whoop"` and `source_authority: "authoritative"`, in both the content text and `structuredContent`.
