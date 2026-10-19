@@ -515,10 +515,11 @@ test('repeats cannot cause unbounded D1 writes: rate-limited outcomes are consol
     const counting={...db,batch:async st=>{const r=await db.batch(st);changed+=r[0]?.meta?.changes??0;return r;},prepare:sql=>db.prepare(sql)};
     for(let i=0;i<30;i++)assert.equal(await capture(ON,counting,{category:'rate_limit',subsystem:'hc_webhook',code:'hc_rate_limited',outcome:'fail',retryable:true,requestId:rid,userId:KIMLIKE},{now:now+i}),false);
     assert.equal(rows(db).length,0,'rate-limited retries never stored');
-    for(let i=0;i<BUCKET_WRITE_CAP+30;i++)await capture(ON,counting,{category:'mcp_validation',subsystem:'mcp_tool',code:'invalid_arguments',outcome:'fail',requestId:rid,userId:KIMLIKE},{now:now+i});
+    let counted=0;
+    for(let i=0;i<BUCKET_WRITE_CAP+30;i++)if(await capture(ON,counting,{category:'mcp_validation',subsystem:'mcp_tool',code:'invalid_arguments',outcome:'fail',requestId:rid,userId:KIMLIKE},{now:now+i}))counted++;
     const [row]=rows(db);
     assert.equal(row.count,BUCKET_WRITE_CAP);
-    assert.equal(changed,BUCKET_WRITE_CAP,'no row changes after the cap');
+    assert.equal(counted,BUCKET_WRITE_CAP,'no row changes after the cap');
     // After the cap a repeat runs no batch at all.
     let batches=0;
     const watch={...db,batch:st=>{batches++;return db.batch(st);},prepare:sql=>db.prepare(sql)};
@@ -642,4 +643,65 @@ test('fresh previews are refused while a submission is still recent, so preview/
     // After the minute, previews work again; the daily limit then bounds total cycles.
     assert.equal((await reportIssue(db,AMYLIKE,{category:'other',description:'Later problem here now'},{requestId:rid,env:ON,now:t0+61000})).submitted,false);
   }finally{db.close();}
+});
+
+test('parallel bursts cannot exceed the bucket cap in database work, not just in the stored count',async()=>{
+  const db=await fixture();try{
+    const now=Date.parse('2026-10-18T22:00:00Z'),rid=newRequestId();
+    const m=meter(db);
+    const ev={category:'mcp_validation',subsystem:'mcp_tool',code:'invalid_arguments',outcome:'fail',requestId:rid,userId:KIMLIKE};
+    // 100 concurrent failures for one member and code, all starting before any finishes.
+    const results=await Promise.all(Array.from({length:100},(_,i)=>capture(ON,m.db,ev,{now:now+i})));
+    const [row]=rows(db);
+    assert.equal(row.count,BUCKET_WRITE_CAP);
+    assert.equal(results.filter(Boolean).length,BUCKET_WRITE_CAP,'only writes that counted report success');
+    assert.ok(m.batches<=1,'retention batch at most once per bucket, got '+m.batches);
+    // Each capped call is one conditional statement that changes nothing.
+    const before={s:m.statements,b:m.batches};
+    await Promise.all(Array.from({length:50},(_,i)=>capture(ON,m.db,ev,{now:now+200+i})));
+    assert.equal(m.statements-before.s,50);assert.equal(m.batches,before.b);
+    assert.equal(rows(db)[0].count,BUCKET_WRITE_CAP);
+    // Kim's cap does not affect Amy.
+    assert.equal(await capture(ON,db,{...ev,userId:AMYLIKE},{now}),true);
+  }finally{db.close();}
+});
+
+test('credential labels: clear values are redacted, ambiguous ones refuse the report; ordinary prose survives',async()=>{
+  // Redacted to [credential] and stored safely.
+  for(const [input,secret] of [['Login password: correct!horse failed','horse'],['password: correct horse battery staple','battery'],
+    ['{"password":"huntertwo"}','huntertwo'],["{'token': 'swordfishfish'}",'swordfish'],['my password is "correct horse"','horse'],
+    ['pin: a.b;c,d e','c,d'],['password:\nhunter on next line','hunter'],['password - hunterfoxgo','hunterfox'],['pw: sesamekey','sesame'],
+    ['passwd=sesamekey','sesame'],['pass: sesamekey','sesame'],['api_key=letmein','letmein'],['PASSWORD : Sesame Key','Sesame'],
+    ['password→sesame','sesame'],['password -> sesame','sesame'],['passwort: geheimnis','geheimnis'],['contraseña: secreto','secreto'],
+    ['password=`hunter fox`','hunter'],['passphrase="open sesame now" then it failed','sesame']]){
+    const r=sanitizeDescription(input);
+    assert.ok(!r.text.includes(secret),input+' -> '+r.text);
+    assert.equal(r.ambiguous_credential,false,input);
+  }
+  // Label with no separator and a value that is not ordinary prose: refused.
+  const refused=['password hunter2','my password hunterfox didnt work','password hunterfox','password\nhunterfox','pw sesamekey','passwd sesamekey',
+    'pass Sesame9','passcode 4455','pin 4455','secret xyzzy','token abc123def','api key letmein','<password>hunter</password>','p a s s w o r d hunter'];
+  for(const input of refused)assert.equal(sanitizeDescription(input).ambiguous_credential,true,input);
+  // Ordinary prose about passwords and tokens is kept.
+  for(const input of ['I forgot my password and the reset email never came','password reset failed again',"my pin isn't working on the app",
+    'the token was issued but nothing synced','token expired after a day','I pass out sometimes after workouts','my password manager filled it in']){
+    const r=sanitizeDescription(input);
+    assert.equal(r.ambiguous_credential,false,input);assert.equal(r.text,input);
+  }
+  // Through report_issue: refused before anything is written, with a clear message.
+  const db=await fixture();try{
+    const m=meter(db);
+    for(const input of refused)
+      await assert.rejects(reportIssue(m.db,AMYLIKE,{category:'other',description:input+' when logging in today'},{requestId:newRequestId(),env:ON}),
+        /may include a password, PIN or other secret.*not submitted and no reference was created/);
+    assert.equal(m.statements,0);assert.equal(m.batches,0);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_report_approvals').get().n,0);
+  }finally{db.close();}
+});
+
+test('owner-visible diagnostics hold only allowlisted codes, never free text or credentials',()=>{
+  const base={category:'auth',subsystem:'mcp',outcome:'fail',requestId:newRequestId(),userId:AMYLIKE};
+  for(const code of ['password: hunter2','pw hunterfox','Bearer abc','token=abc123','a'.repeat(65)])assert.equal(sanitizeEvent({...base,code}),null,code);
+  assert.equal(sanitizeEvent({...base,code:'invalid_arguments',description:'password: hunter2',message:'secret'}).code,'invalid_arguments');
+  assert.ok(!JSON.stringify(sanitizeEvent({...base,code:'invalid_arguments',description:'password: hunter2'})).includes('hunter'));
 });

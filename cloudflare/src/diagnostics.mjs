@@ -48,12 +48,14 @@ export function sanitizeEvent(event,{now=Date.now()}={}){
 }
 const UPSERT='INSERT INTO diagnostic_events(user_key,category,subsystem,code,outcome,retryable,bucket,count,first_at,last_at,request_id) '+
   'VALUES(?1,?2,?3,?4,?5,?6,?7,1,?8,?8,?9) ON CONFLICT(user_key,subsystem,code,outcome,bucket) DO UPDATE SET '+
-  'count=count+1,last_at=excluded.last_at,request_id=excluded.request_id WHERE diagnostic_events.count<?10';
+  'count=count+1,last_at=excluded.last_at,request_id=excluded.request_id WHERE diagnostic_events.count<?10 '+
+  // RETURNING yields a row only when this call inserted or counted, so the
+  // cap decision and the write are one atomic statement.
+  'RETURNING count';
 // Writes per member, code and 10-minute bucket stop here: further repeats
 // change nothing in D1 (count reads as "at least" this many).
 export const BUCKET_WRITE_CAP=20;
 // Bounded retention sweep: at most 50 expired rows per write, index-backed.
-const BUCKET_COUNT='SELECT count FROM diagnostic_events WHERE user_key=?1 AND subsystem=?2 AND code=?3 AND outcome=?4 AND bucket=?5 LIMIT 1';
 // Capture-off retention runs at most once a minute per worker instance, so
 // repeated failures do not each cost a delete batch.
 const OFF_SWEEP_INTERVAL_MS=60_000;
@@ -83,21 +85,21 @@ export async function capture(env,db,event,{now=Date.now()}={}){
     try{await db.batch([db.prepare(SWEEP).bind(cutoff),...retentionStatements(db,now)]);}catch{/* retried next time */}
     return false;
   }
-  // Once a bucket reaches the cap, repeats cost one indexed read and no batch.
+  // One atomic conditional write decides everything: concurrent calls cannot
+  // all pass a separate check. Past the cap it changes nothing and returns no
+  // row, and that is all the database work a capped call does.
+  let counted;
   try{
-    const existing=await db.prepare(BUCKET_COUNT).bind(clean.user_key,clean.subsystem,clean.code,clean.outcome,clean.bucket).first();
-    if(existing&&Number(existing.count)>=BUCKET_WRITE_CAP)return false;
-  }catch{/* fall through: the batch below fails soft too */}
-  try{
-    const results=await db.batch([
-      db.prepare(UPSERT).bind(clean.user_key,clean.category,clean.subsystem,clean.code,clean.outcome,
-        clean.retryable?1:0,clean.bucket,clean.at,clean.request_id,BUCKET_WRITE_CAP),
-      db.prepare(SWEEP).bind(cutoff),
-      // Report retention also runs here, so it does not depend on new reports.
-      ...retentionStatements(db,now)
-    ]);
-    return Array.isArray(results)&&results[0]?.success===true;
+    counted=await db.prepare(UPSERT).bind(clean.user_key,clean.category,clean.subsystem,clean.code,clean.outcome,
+      clean.retryable?1:0,clean.bucket,clean.at,clean.request_id,BUCKET_WRITE_CAP).first();
   }catch{return false;}
+  if(!counted)return false;
+  // Retention runs once per new bucket row (the first write in it), so its
+  // work is bounded too. Report retention also runs here, independent of new reports.
+  if(Number(counted.count)===1){
+    try{await db.batch([db.prepare(SWEEP).bind(cutoff),...retentionStatements(db,now)]);}catch{/* retried next time */}
+  }
+  return true;
 }
 export function toolSubsystem(name){
   if(['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles'].includes(name))return 'whoop_api';

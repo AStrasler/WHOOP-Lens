@@ -28,11 +28,48 @@ export class ReportNotSubmitted extends Error{
     const text={rate_limited:'Too many reports were sent recently. Wait a while, then preview the report again.',
       unavailable:'Issue reporting is not available right now.',
       too_short:'Describe the problem in a few plain words first.',
+      credential_like:'This description may include a password, PIN or other secret. Describe the problem again without it (for example "my password is rejected").',
       not_found:'No report with that reference was found.',
       approval_invalid:'This report needs a fresh preview, and the member must approve that exact text.'}[reason]??'The report could not be saved.';
     super(`${text} The report was not submitted and no reference was created.`);
     this.name='ReportNotSubmitted';this.reason=reason;
   }
+}
+// Credential labels. Any of these followed by a separator (: = => -> → or a
+// spaced dash, or "is"/"was" for secret-only labels) has its value removed.
+const LABELS='pass(?:word|wd|code|phrase)?|pw|pwd|pin|otp|token|secret|api[\\s_-]?key|access[\\s_-]?key|private[\\s_-]?key|'+
+  'auth(?:orization)?|cookie|session(?:[\\s_-]?id)?|credentials?|code|passwort|kennwort|contrase[ñn]a|clave|senha|wachtwoord|mot\\s+de\\s+passe';
+const SECRET_LABELS='pass(?:word|wd|code|phrase)?|pw|pwd|pin|otp|secret|passwort|kennwort|contrase[ñn]a|clave|senha|wachtwoord|mot\\s+de\\s+passe';
+const VALUE='(?:"[^"]*"?|\'[^\']*\'?|`[^`]*`?|[^\\n\\r]+)';
+const SEP='["\'`\\]\\)]*\\s*(?:=>|->|→|⇒|[:=]|\\s[-–—]\\s)\\s*';
+// Labels whose next word, with no separator, may be the secret itself
+// ("password hunter2"). If that word is not ordinary prose, the boundary is
+// ambiguous and the report is refused rather than stored.
+const STRICT_LABELS=/\b(password|passwd|passcode|passphrase|pw|pwd|pin|otp|secret|api[\s_-]?key|access[\s_-]?key|private[\s_-]?key|passwort|kennwort|contrase[ñn]a|clave|senha|wachtwoord|mot\s+de\s+passe|pass|token)\b["'`\])]*\s+(\S+)/giu;
+const LOOSE=new Set(['pass','token']);
+const PROSE=new Set(['reset resets change changed changes changing manager field fields prompt prompts screen page box form is was '+
+  "isn't wasn't doesn't didn't don't won't can't cannot not never expired expires expiring wrong incorrect invalid again works worked "+
+  'working work fail failed fails failing error errors issue issues problem problems request requests email emails link links login '+
+  'logins entry rules rule required requirement requirements and or but for to on in at of the a an my i it its that this when after '+
+  'before still keeps kept got gets has had have will would should could does did do every each from with without anymore any so then '+
+  'because since while too also just only be been being are were appears appeared shows showed asked asks check verification verify '+
+  'sent code number numbers update updated recovery setup set new old entered typed saved through out me you we they he she them '+
+  'stopped stops stop timed times time renewal renew renewed refresh refreshed'].join('').split(' '));
+const SEPARATOR_START=/^(?:=>|->|→|⇒|[:=\-–—]|is$|was$)/iu;
+function ambiguousCredential(text){
+  const probe=text.replace(/[<>`{}\\/|]/g,' ')
+    // Spaced-out letters ("p a s s w o r d") are read as the word they spell.
+    .replace(/\b(?:\p{L}[\s._-]){3,}\p{L}\b/gu,m=>m.replace(/[\s._-]/g,''));
+  for(const m of probe.matchAll(STRICT_LABELS)){
+    const label=m[1].toLowerCase(),raw=m[2];
+    if(SEPARATOR_START.test(raw))continue;
+    const word=raw.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}']+$/gu,'');
+    if(!word)continue;
+    const secretLike=/[\p{N}]/u.test(raw)||/[^\p{L}'.,!?;:"()-]/u.test(raw)||(/\p{Lu}/u.test(raw.slice(1))&&/\p{Ll}/u.test(raw));
+    if(LOOSE.has(label)){if(secretLike)return true;continue;}
+    if(secretLike||!PROSE.has(word))return true;
+  }
+  return false;
 }
 // Removes what must never be stored: addresses, links, tokens, ids, and every
 // number (health values, dates, phone numbers). Returns the clean text and the
@@ -41,6 +78,7 @@ export function sanitizeDescription(input){
   if(typeof input!=='string')return null;
   let text=input.slice(0,MAX_INPUT).normalize('NFKC').replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f]/g,' ');
   const removed=new Set();
+  const ambiguous=ambiguousCredential(text);
   const rules=[
     ['email',/[^\s@]+@[^\s@]+\.[^\s@]+/g,'[email]'],
     ['link',/\b(?:https?:\/\/|www\.)\S+/gi,'[link]'],
@@ -58,8 +96,8 @@ export function sanitizeDescription(input){
     // entirely, at the cost of any text after it on that line
     // whatever its shape. "is/was" only counts for secret-only labels, so
     // ordinary sentences such as "the token was issued" survive.
-    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|token|secret|api[\s_-]?key|access[\s_-]?key|private[\s_-]?key|auth(?:orization)?|cookie|session(?:[\s_-]?id)?|credentials?|code)["'`\]\)]*\s*(?:=>|[:=])\s*(?:"[^"]*"?|'[^']*'?|`[^`]*`?|[^\n\r]+)/giu,'[credential]'],
-    ['credential',/\b(?:pass(?:word|code|phrase)?|pwd|pin|otp|secret)["'`]*\s+(?:is|was)\s+(?:"[^"]*"?|'[^']*'?|`[^`]*`?|[^\n\r]+)/giu,'[credential]'],
+    ['credential',new RegExp('\\b(?:'+LABELS+')'+SEP+VALUE,'giu'),'[credential]'],
+    ['credential',new RegExp('\\b(?:'+SECRET_LABELS+')["\'`]*\\s+(?:is|was)\\s+'+VALUE,'giu'),'[credential]'],
     ['credential',/\S+\.\S+\.\S+/gu,'[credential]'],
     // Every number in any script (health values, dates, phone numbers).
     ['number',/\p{N}[\p{N}.,:/%-]*/gu,'[number]']
@@ -67,7 +105,7 @@ export function sanitizeDescription(input){
   for(const [kind,re,mark] of rules)text=text.replace(re,()=>{removed.add(kind);return mark;});
   text=text.replace(/[<>`{}\\]/g,' ').replace(/\s+/g,' ').trim().slice(0,MAX_STORED).trim();
   const words=text.replace(/\[(?:email|link|credential|id|number)\]/g,' ').match(/\p{L}{2,}/gu)??[];
-  return {text,removed:[...removed].sort(),words:words.length};
+  return {text,removed:[...removed].sort(),words:words.length,ambiguous_credential:ambiguous};
 }
 async function sha256Hex(text){
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
@@ -149,6 +187,8 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
   if(!validRequestId(requestId))throw new ReportNotSubmitted('unavailable');
   const clean=sanitizeDescription(args.description);
   if(!clean||clean.words<MIN_WORDS)throw new ReportNotSubmitted('too_short');
+  // A credential label whose value cannot be cleanly separated is refused, not stored.
+  if(clean.ambiguous_credential)throw new ReportNotSubmitted('credential_like');
   const kind=args.category;
   const since=new Date(now-86400000).toISOString();
   const key=await sha256Hex(userId+'\n'+kind+'\n'+clean.text.toLowerCase());
