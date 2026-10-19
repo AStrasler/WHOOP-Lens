@@ -465,11 +465,11 @@ test('member-facing report responses contain no internal detail or health data',
 // ------------------------------------------------------------ migration
 
 test('0017 applies after 0001-0016, rolls back and re-applies; existing rows untouched',async()=>{
-  assert.equal(MIGRATIONS.at(-1),'0017_member_diagnostics.sql');
+  assert.ok(MIGRATIONS.includes('0017_member_diagnostics.sql'));
   const sqlite=new DatabaseSync(':memory:');
   try{
     sqlite.exec("CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)");
-    for(const f of MIGRATIONS.slice(0,-1)){sqlite.exec(sqlOf(f));sqlite.prepare('INSERT INTO d1_migrations(name) VALUES(?)').run(f);}
+    for(const f of MIGRATIONS.filter(f=>f<'0017')){sqlite.exec(sqlOf(f));sqlite.prepare('INSERT INTO d1_migrations(name) VALUES(?)').run(f);}
     sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(AMYLIKE,AMYLIKE);
     sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(AMYLIKE);
     sqlite.prepare("INSERT INTO health_import_consent(user_id,purpose,granted_at) VALUES(?,'health_connect_file','2026-10-01')").run(AMYLIKE);
@@ -782,4 +782,51 @@ test('with capture off, diagnostics emit no observability log line',async()=>{
     assert.equal(logs.filter(l=>String(l).includes('"event":"diag"')).length,0);
     assert.equal(rows(db).length,0);
   }finally{db.close();}
+});
+
+test('every LIKE/GLOB pattern in the final schema and in runtime SQL fits D1\'s 50-byte limit',()=>{
+  // Local SQLite allows 50,000 bytes; D1 rejects longer patterns at run time.
+  const sqlite=new DatabaseSync(':memory:');
+  try{
+    for(const f of MIGRATIONS)sqlite.exec(sqlOf(f));
+    const schema=sqlite.prepare("SELECT name,sql FROM sqlite_master WHERE sql IS NOT NULL").all();
+    const src=readdirSync(new URL('../src/',import.meta.url)).filter(f=>f.endsWith('.mjs')).map(f=>({name:f,sql:readFileSync(new URL('../src/'+f,import.meta.url),'utf8')}));
+    let seen=0;
+    for(const {name,sql} of [...schema,...src])
+      for(const m of sql.matchAll(/\b(?:GLOB|LIKE)\s+'((?:[^']|'')*)'/gi)){
+        seen++;
+        assert.ok(Buffer.byteLength(m[1])<=50,`${name}: ${m[1].length}-byte pattern ${m[1]}`);
+      }
+    assert.ok(seen>5);
+    // The rebuilt reference CHECK keeps the same meaning.
+    const ref=sqlite.prepare("SELECT sql FROM sqlite_master WHERE name='issue_reports'").get().sql;
+    assert.match(ref,/length\(reference\)=11 AND substr\(reference,1,3\)='WL-' AND substr\(reference,4\) NOT GLOB '\*\[\^A-Z0-9\]\*'/);
+  }finally{sqlite.close();}
+});
+
+test('0018 rebuilds issue_reports in place: rows, indexes and other tables are unchanged; rollback restores 0017',()=>{
+  const sqlite=new DatabaseSync(':memory:');
+  try{
+    sqlite.exec("CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE)");
+    for(const f of MIGRATIONS.filter(f=>f<'0018'))sqlite.exec(sqlOf(f));
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(AMYLIKE,AMYLIKE);
+    sqlite.prepare("INSERT INTO issue_reports(reference,user_id,category,severity,description,dedupe_key,request_id,evidence_json,day_key,last_submitted_at,created_at,updated_at) VALUES('WL-ABCD2345',?,'other','low','synthetic text',?,'req_0000000000000000','[]','2026-10-19','t','t','t')").run(AMYLIKE,'a'.repeat(64));
+    const others=()=>JSON.stringify(sqlite.prepare("SELECT type,name,sql FROM sqlite_master WHERE tbl_name<>'issue_reports' ORDER BY name").all());
+    const idx=()=>sqlite.prepare("SELECT name,sql FROM sqlite_master WHERE type='index' AND tbl_name='issue_reports' ORDER BY name").all();
+    const rowsOf=()=>sqlite.prepare('SELECT * FROM issue_reports').all();
+    const before={others:others(),idx:idx(),rows:rowsOf(),sql:sqlite.prepare("SELECT sql FROM sqlite_master WHERE name='issue_reports'").get().sql};
+    const up=sqlOf('0018_issue_report_reference_check.sql');
+    assert.doesNotMatch(up,/^\s*(UPDATE|DELETE)\b/m);
+    sqlite.exec(up);
+    assert.equal(others(),before.others);
+    assert.deepEqual(idx(),before.idx);
+    assert.deepEqual(rowsOf(),before.rows);
+    assert.throws(()=>sqlite.prepare("UPDATE issue_reports SET reference='WL-abcd2345'").run(),/CHECK/);
+    sqlite.prepare('INSERT INTO d1_migrations(name) VALUES(?)').run('0018_issue_report_reference_check.sql');
+    sqlite.exec(readFileSync(new URL('../migration/rollback/0018_issue_report_reference_check.down.sql',import.meta.url),'utf8'));
+    // RENAME quotes the table name; the definition is otherwise 0017's.
+    assert.equal(sqlite.prepare("SELECT sql FROM sqlite_master WHERE name='issue_reports'").get().sql.replace('"issue_reports"','issue_reports'),before.sql.replace('IF NOT EXISTS ',''));
+    assert.deepEqual(rowsOf(),before.rows);assert.deepEqual(idx(),before.idx);assert.equal(others(),before.others);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) n FROM d1_migrations WHERE name='0018_issue_report_reference_check.sql'").get().n,0);
+  }finally{sqlite.close();}
 });
