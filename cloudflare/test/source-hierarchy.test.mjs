@@ -85,9 +85,9 @@ for(const version of ['2025-11-25','2025-06-18']){
     const db=await fixture();try{
       const fresh=new Date(Date.now()-3600e3).toISOString(),old=new Date(Date.now()-72*3600e3).toISOString();
       const cases=[
-        [{records:[],next_token:null},{...O,records_returned:0,missing:true,latest_record_at:null,stale:true}],
-        [{records:[{created_at:fresh,score:{recovery_score:55}}],next_token:null},{...O,records_returned:1,missing:false,latest_record_at:new Date(Date.parse(fresh)).toISOString(),stale:false}],
-        [{records:[{created_at:old,score:{recovery_score:55}}],next_token:null},{...O,records_returned:1,missing:false,latest_record_at:new Date(Date.parse(old)).toISOString(),stale:true}]
+        [{records:[],next_token:null},{...O,records_returned:0,missing:true,records_status:'none_in_range',latest_record_at:null,stale:true}],
+        [{records:[{created_at:fresh,score:{recovery_score:55}}],next_token:null},{...O,records_returned:1,missing:false,records_status:'records_returned',latest_record_at:new Date(Date.parse(fresh)).toISOString(),stale:false}],
+        [{records:[{created_at:old,score:{recovery_score:55}}],next_token:null},{...O,records_returned:1,missing:false,records_status:'records_returned',latest_record_at:new Date(Date.parse(old)).toISOString(),stale:true}]
       ];
       for(const [page,flags] of cases){
         const r=out(await rpc(db,'tools/call',{name:'get_recovery',arguments:{limit:5}},ENV,async()=>page));
@@ -100,7 +100,7 @@ for(const version of ['2025-11-25','2025-06-18']){
       }
       // Workouts are irregular, so no stale judgement; profile gets the source label.
       const w=out(await rpc(db,'tools/call',{name:'get_workouts',arguments:{}},ENV,async()=>({records:[],next_token:null}))).text;
-      assert.deepEqual(w.whoop_measurements,{...O,records_returned:0,missing:true,latest_record_at:null});
+      assert.deepEqual(w.whoop_measurements,{...O,records_returned:0,missing:true,records_status:'none_in_range',latest_record_at:null});
       const p=out(await rpc(db,'tools/call',{name:'get_profile',arguments:{}},ENV,async()=>({first_name:'Synthetic'}))).text;
       assert.equal(p.source,'whoop');assert.equal(p.source_authority,'authoritative');
     }finally{db.close();}
@@ -157,4 +157,62 @@ test('guidance text contains each rule once and never recommends substituting so
   assert.equal(SOURCE_HIERARCHY.length,8);
   for(const re of RULE_WORDS)assert.equal(SOURCE_HIERARCHY.filter(r=>re.test(r)).length,1);
   for(const text of [hostInstructions,memberGuidance,...SOURCE_HIERARCHY])assert.doesNotMatch(text,SUBSTITUTION);
+});
+
+// Edge cases in attributeWhoop (final review of PR #72).
+test('timestamp fallback uses the first valid of end, start, created_at',async()=>{
+  const {attributeWhoop}=await import('../src/mcp.mjs');
+  const now=Date.parse('2026-10-19T12:00:00Z'),v='2026-10-19T10:00:00.000Z',v2='2026-10-18T10:00:00.000Z';
+  const cases=[[{end:'',start:v},v],[{end:'garbage',start:v},v],[{end:null,start:'',created_at:v},v],[{end:'x',start:'y',created_at:v},v],
+    [{start:v},v],[{created_at:v},v],[{end:v2,start:v},v2],[{end:42,start:v},v],[{end:'',start:'',created_at:''},null],[{},null]];
+  for(const [r,want] of cases){
+    const out=attributeWhoop({records:[r],next_token:null,complete:true},'get_sleep',true,now);
+    assert.equal(out.whoop_measurements.latest_record_at,want,JSON.stringify(r));
+    assert.deepEqual(out.records,[r],'record unchanged');
+  }
+  assert.equal(attributeWhoop({records:[{end:'bad',start:v}],complete:true},'get_sleep',true,now).whoop_measurements.stale,false);
+});
+
+test('an empty page is "no records" only on a complete first page',async()=>{
+  const {attributeWhoop}=await import('../src/mcp.mjs');
+  const now=Date.parse('2026-10-19T12:00:00Z');
+  const m=(d,first)=>attributeWhoop(d,'get_recovery',first,now).whoop_measurements;
+  let x=m({records:[],next_token:null,complete:true},true);
+  assert.equal(x.missing,true);assert.equal(x.records_status,'none_in_range');assert.equal(x.stale,true);
+  x=m({records:[],next_token:'sealed',complete:false},true);
+  assert.equal(x.missing,false);assert.equal(x.records_status,'empty_page_more_may_exist');assert.equal(x.stale,null);assert.equal(x.stale_reason,'page_incomplete');
+  x=m({records:[],next_token:null,complete:false,incomplete_reason:'page_limit'},true);
+  assert.equal(x.missing,false);assert.equal(x.records_status,'empty_page_more_may_exist');
+  x=m({records:[],next_token:null,complete:true},false);
+  assert.equal(x.missing,false);assert.equal(x.records_status,'continuation_page_empty');assert.equal(Object.hasOwn(x,'stale'),false);
+  x=m({records:[],next_token:'sealed',complete:false},false);
+  assert.equal(x.missing,false);assert.equal(x.records_status,'empty_page_more_may_exist');
+  // Existing pagination fields are unchanged.
+  const page={records:[],next_token:'sealed',complete:false};
+  const out=attributeWhoop(page,'get_recovery',true,now);
+  assert.equal(out.next_token,'sealed');assert.equal(out.complete,false);assert.deepEqual(out.records,[]);
+});
+
+test('a WHOOP fetch error is an error, never reported as missing data',async()=>{
+  const {handleMcpRpc,validateMcpTransport}=await import('../src/mcp.mjs');
+  const db=await fixture();try{
+    const t=validateMcpTransport(new Request('https://whooplens.tech/mcp',{headers:{'mcp-protocol-version':'2025-11-25'}}),{jsonrpc:'2.0',id:1,method:'tools/call'});
+    const r=await handleMcpRpc({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'get_recovery',arguments:{}}},
+      {db,userId:MEMBER,env:ENV,whoopRequest:async()=>{throw Error('WHOOP 503');}},t);
+    const body=JSON.stringify(r);
+    assert.ok(r.result?.isError===true||r.error,'error result');
+    assert.doesNotMatch(body,/whoop_measurements|"missing"|none_in_range/);
+  }finally{db.close();}
+});
+
+test('history tools take no start/end window, so stale only ever applies to the latest first page',async()=>{
+  const {handleMcpRpc,validateMcpTransport}=await import('../src/mcp.mjs');
+  const db=await fixture();try{
+    const t=validateMcpTransport(new Request('https://whooplens.tech/mcp',{headers:{'mcp-protocol-version':'2025-11-25'}}),{jsonrpc:'2.0',id:1,method:'tools/call'});
+    const call=a=>handleMcpRpc({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'get_sleep',arguments:a}},{db,userId:MEMBER,env:ENV,whoopRequest:async()=>({records:[],next_token:null})},t);
+    for(const a of [{start:'2025-01-01T00:00:00Z'},{end:'2025-02-01T00:00:00Z'},{start:'2025-01-01T00:00:00Z',end:'2025-02-01T00:00:00Z'}])
+      assert.equal((await call(a)).error?.message,'Invalid tool arguments');
+    // Default (current) request: stale is computed.
+    assert.equal(Object.hasOwn(JSON.parse((await call({})).result.content[0].text).whoop_measurements,'stale'),true);
+  }finally{db.close();}
 });

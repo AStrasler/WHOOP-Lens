@@ -18,7 +18,7 @@ Every client of the Cloudflare MCP server (`whoop-lens`) gets the same eight rul
 
 **Enforced by the server, in its own responses**
 - WHOOP read results (`get_profile`, `get_body_measurements`, `get_recovery`, `get_sleep`, `get_workouts`, `get_cycles`) carry `source: "whoop"` and `source_authority: "authoritative"`, in both the content text and `structuredContent`.
-- WHOOP history pages carry `whoop_measurements`: `records_returned`, `missing` (no records), `latest_record_at`, and, on a first page of recovery, sleep or cycles, `stale` (no record or the newest is over 36 hours old). Workouts are irregular, so they get no `stale` judgement.
+- WHOOP history pages carry `whoop_measurements`: `records_returned`, `missing` (no records), `latest_record_at`, and, on a first page of recovery, sleep or cycles, `stale` (no record or the newest is over 36 hours old). Workouts are irregular, so they get no `stale` judgement. `records_status` separates `none_in_range` (an empty, complete first page; only then is `missing` true) from `empty_page_more_may_exist` (an empty page with more to fetch; `stale` is null with `stale_reason: "page_incomplete"`) and `continuation_page_empty`. A fetch error returns an error, never `missing`. The newest-record time uses the first valid timestamp of `end`, `start` and `created_at`. History tools take no start/end window, so `stale` only ever describes the latest first page.
 - Health Connect and Samsung Health results carry their own `source` and `source_authority: "supplementary"`. Medical context carries `source_authority: "user_directed"`.
 - The server never fills a missing or failed WHOOP result with another source. Each tool returns only its own source.
 

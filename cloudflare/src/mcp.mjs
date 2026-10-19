@@ -66,12 +66,21 @@ export function attributeWhoop(data,name,firstPage,now=Date.now()){
   if(!data||typeof data!=='object'||Array.isArray(data)||'source' in data)return data;
   const out={source:'whoop',source_authority:'authoritative',...data};
   if(!Array.isArray(data.records))return out;
-  const times=data.records.map(r=>Date.parse(r?.end??r?.start??r?.created_at??'')).filter(Number.isFinite);
+  // First timestamp that parses, so an empty or malformed end does not hide a valid start or created_at.
+  const times=data.records.map(r=>[r?.end,r?.start,r?.created_at].map(t=>typeof t==='string'?Date.parse(t):NaN).find(Number.isFinite)).filter(Number.isFinite);
   const latest=times.length?Math.max(...times):null;
-  const m={records_returned:data.records.length,missing:data.records.length===0,latest_record_at:latest===null?null:new Date(latest).toISOString(),
+  const empty=data.records.length===0;
+  // An empty page proves "no records" only when it is the first page and the sequence is complete.
+  const records_status=!empty?'records_returned':firstPage&&data.complete===true?'none_in_range':
+    data.complete===true?'continuation_page_empty':'empty_page_more_may_exist';
+  const m={records_returned:data.records.length,missing:records_status==='none_in_range',records_status,
+    latest_record_at:latest===null?null:new Date(latest).toISOString(),
     entry_origin:'unknown',entry_origin_note:ENTRY_ORIGIN_NOTE};
   if(name==='get_sleep')m.naps_returned=data.records.filter(r=>r?.nap===true).length;
-  if(firstPage&&name!=='get_workouts')m.stale=latest===null||now-latest>STALE_MS;
+  if(firstPage&&name!=='get_workouts'){
+    if(records_status==='empty_page_more_may_exist'){m.stale=null;m.stale_reason='page_incomplete';}
+    else m.stale=latest===null||now-latest>STALE_MS;
+  }
   out.whoop_measurements=m;
   return out;
 }
