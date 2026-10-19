@@ -240,10 +240,13 @@ test('submission needs a server-issued approval for this member and this exact t
     // Used once.
     await assert.rejects(reportIssue(db,AMYLIKE,{...args,approval_token:preview.approval_token},{...opts,now:t0+120000}),/fresh preview/);
     assert.equal(count(),1);
-    // A rate-limited submission does not burn the approval.
+    // A rate-limited submission spends its approval (so it cannot be retried
+    // indefinitely); a fresh preview after the wait succeeds.
     const second=await reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},{...opts,now:t0+1000});
-    await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+1000}),/Too many reports/);
-    assert.equal((await reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+62000})).submitted,true);
+    await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+1000}),/Too many reports.*preview the report again/);
+    await assert.rejects(reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:second.approval_token},{...opts,now:t0+62000}),/fresh preview/);
+    const third=await reportIssue(db,AMYLIKE,{...args,description:'Charts stopped loading again'},{...opts,now:t0+62000});
+    assert.equal((await reportIssue(db,AMYLIKE,{description:'Charts stopped loading again',category:'other',approval_token:third.approval_token},{...opts,now:t0+62000})).submitted,true);
     // Open previews are capped per member.
     for(let i=0;i<10;i++)await reportIssue(db,KIMLIKE,{category:'other',description:'Preview number '+'abcdefghijk'[i]+' only'},opts).catch(()=>{});
     await assert.rejects(reportIssue(db,KIMLIKE,{category:'other',description:'One preview too many'},opts),/Too many reports/);
@@ -557,5 +560,69 @@ test('owner review hides server-wide diagnostics once capture (and its disclosur
     assert.equal((await reviewIssueReports(db,OWNER,{},{env:ON,now})).diagnostics_last_24h.length,1);
     const off={...ON,DIAGNOSTICS_CAPTURE_ENABLED:'false'};
     assert.deepEqual((await reviewIssueReports(db,OWNER,{},{env:off,now})).diagnostics_last_24h,[]);
+  }finally{db.close();}
+});
+
+// Counts every statement prepared and every batch run, plus rows changed.
+function meter(db){
+  const m={statements:0,batches:0,written:0};
+  m.db={...db,prepare:sql=>{m.statements++;return db.prepare(sql);},
+    batch:async st=>{m.batches++;const r=await db.batch(st);for(const x of r)m.written+=x?.meta?.changes??0;return r;}};
+  return m;
+}
+
+test('previews past the open-preview cap run no batch and write nothing',async()=>{
+  const db=await fixture();try{
+    const now=Date.parse('2026-10-18T10:00:00Z'),opts={requestId:newRequestId(),env:ON,now};
+    for(let i=0;i<10;i++)await reportIssue(db,AMYLIKE,{category:'other',description:'Preview number '+'abcdefghij'[i]+' only'},opts);
+    const m=meter(db);
+    for(let i=0;i<50;i++)
+      await assert.rejects(reportIssue(m.db,AMYLIKE,{category:'other',description:'Extra preview '+'abcdefghijklmnopqrstuvwxyz'[i%26]+' here'},opts),/Too many reports.*no reference was created/);
+    assert.equal(m.batches,0);assert.equal(m.written,0);
+    assert.equal(m.statements,50,'one indexed read per capped call');
+    // Another member is unaffected by Amy's cap.
+    assert.equal((await reportIssue(db,KIMLIKE,{category:'other',description:'Kim preview works fine'},opts)).submitted,false);
+  }finally{db.close();}
+});
+
+test('previews are refused before any batch once the daily limits are used up',async()=>{
+  const db=await fixture();try{
+    const t0=Date.parse('2026-10-18T01:00:00Z'),rid=newRequestId();
+    for(let i=0;i<LIMITS.perMemberPerDay;i++)await approved(db,AMYLIKE,{category:'other',description:'Daily problem '+'abcde'[i]+' seen'},{requestId:rid,env:ON,now:t0+i*61000});
+    const m=meter(db);
+    await assert.rejects(reportIssue(m.db,AMYLIKE,{category:'other',description:'One more problem today'},{requestId:rid,env:ON,now:t0+3600000}),/Too many reports/);
+    assert.equal(m.batches,0);assert.equal(m.written,0);
+  }finally{db.close();}
+});
+
+test('an approval retried after a limit is spent once, then each retry is one read and no batch',async()=>{
+  const db=await fixture();try{
+    const t0=Date.parse('2026-10-18T01:00:00Z'),rid=newRequestId();
+    const args={category:'other',description:'Charts stopped loading today'};
+    await approved(db,AMYLIKE,{category:'other',description:'First problem today here'},{requestId:rid,env:ON,now:t0});
+    // Per-minute limit: preview allowed, submit within the minute is capped.
+    const preview=await reportIssue(db,AMYLIKE,args,{requestId:rid,env:ON,now:t0+1000});
+    const m=meter(db);
+    await assert.rejects(reportIssue(m.db,AMYLIKE,{...args,approval_token:preview.approval_token},{requestId:rid,env:ON,now:t0+2000}),/Too many reports/);
+    assert.equal(m.batches,0,'no insert batch for a capped submit');
+    assert.equal(m.statements,2,'one limit read plus one delete that spends the approval');
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_report_approvals WHERE user_id=?').get(AMYLIKE).n,0,'approval spent');
+    // Retrying the spent token: bounded to one read, no batch, no write, even after the wait.
+    const before=m.statements;
+    for(let i=0;i<20;i++)
+      await assert.rejects(reportIssue(m.db,AMYLIKE,{...args,approval_token:preview.approval_token},{requestId:rid,env:ON,now:t0+3000+i*10000}),/fresh preview/);
+    assert.equal(m.statements-before,20);assert.equal(m.batches,0);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM issue_reports WHERE user_id=?').get(AMYLIKE).n,1);
+    // Daily limit: same behavior for a token obtained before the limit was reached.
+    const t1=Date.parse('2026-10-19T01:00:00Z');
+    const held=await reportIssue(db,AMYLIKE,{category:'other',description:'Held approval for later'},{requestId:rid,env:ON,now:t1});
+    for(let i=0;i<LIMITS.perMemberPerDay;i++)await approved(db,AMYLIKE,{category:'other',description:'Daily problem '+'abcde'[i]+' seen'},{requestId:rid,env:ON,now:t1+(i+1)*61000});
+    const m2=meter(db);
+    await assert.rejects(reportIssue(m2.db,AMYLIKE,{category:'other',description:'Held approval for later',approval_token:held.approval_token},{requestId:rid,env:ON,now:t1+400000}),/Too many reports/);
+    await assert.rejects(reportIssue(m2.db,AMYLIKE,{category:'other',description:'Held approval for later',approval_token:held.approval_token},{requestId:rid,env:ON,now:t1+500000}),/fresh preview/);
+    assert.equal(m2.batches,0);
+    // Kim's approvals are untouched by Amy's spent tokens.
+    const kim=await reportIssue(db,KIMLIKE,args,{requestId:rid,env:ON,now:t0+5000});
+    assert.equal((await reportIssue(db,KIMLIKE,{...args,approval_token:kim.approval_token},{requestId:rid,env:ON,now:t0+5000})).submitted,true);
   }finally{db.close();}
 });

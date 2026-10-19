@@ -25,7 +25,7 @@ export function isOwner(env,userId){
 // says no reference exists.
 export class ReportNotSubmitted extends Error{
   constructor(reason){
-    const text={rate_limited:'Too many reports were sent recently. Wait a while and try again.',
+    const text={rate_limited:'Too many reports were sent recently. Wait a while, then preview the report again.',
       unavailable:'Issue reporting is not available right now.',
       too_short:'Describe the problem in a few plain words first.',
       not_found:'No report with that reference was found.',
@@ -114,9 +114,31 @@ const CONFIRM_SQL='SELECT reference,occurrences,status,created_at FROM issue_rep
   'WHERE user_id=?1 AND dedupe_key=?2 AND request_id=?3 AND last_submitted_at=?4 LIMIT 1';
 const PREVIEW='INSERT INTO issue_report_approvals(token_hash,user_id,dedupe_key,expires_at) SELECT ?2,?1,?3,?4 WHERE '+
   `EXISTS (${ACTIVE_MEMBER_SQL})`+' AND (SELECT COUNT(*) FROM issue_report_approvals WHERE user_id=?1 AND expires_at>?5)<?6';
-const APPROVAL_OK='SELECT 1 AS ok FROM issue_report_approvals WHERE token_hash=?1 AND user_id=?2 AND dedupe_key=?3 AND expires_at>?4';
 const CONSUME='DELETE FROM issue_report_approvals WHERE token_hash=?1 AND user_id=?2 AND EXISTS '+
   '(SELECT 1 FROM issue_reports WHERE user_id=?2 AND dedupe_key=?3 AND request_id=?4 AND last_submitted_at=?5)';
+// One indexed read that answers every cap before any batch runs: open
+// previews, the member's and the server's submissions today, the member's last
+// submission time, and (for a submit) whether the approval is valid. Capped
+// calls stop here. The batches below still enforce the same limits atomically.
+const LIMIT_SQL='SELECT '+
+  '(SELECT COUNT(*) FROM issue_report_approvals WHERE user_id=?1 AND expires_at>?2) AS open_previews,'+
+  '(SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE user_id=?1 AND day_key=?3) AS member_today,'+
+  '(SELECT COALESCE(SUM(day_submissions),0) FROM issue_reports WHERE day_key=?3) AS server_today,'+
+  'EXISTS (SELECT 1 FROM issue_reports WHERE user_id=?1 AND last_submitted_at>?4) AS recent,'+
+  'EXISTS (SELECT 1 FROM issue_report_approvals WHERE token_hash=?5 AND user_id=?1 AND dedupe_key=?6 AND expires_at>?2) AS approval_ok';
+// A capped submit spends its approval: the token is deleted, so retrying it
+// costs one read and is rejected as needing a fresh preview.
+const SPEND='DELETE FROM issue_report_approvals WHERE token_hash=?1 AND user_id=?2';
+async function limitState(db,userId,now,tokenHash=null,key=null){
+  try{
+    return await db.prepare(LIMIT_SQL).bind(userId,now,new Date(now).toISOString().slice(0,10),
+      new Date(now-LIMITS.perMemberIntervalMs).toISOString(),tokenHash,key).first();
+  }catch{throw new ReportNotSubmitted('unavailable');}
+}
+const dailyCapped=st=>Number(st?.member_today??0)>=LIMITS.perMemberPerDay||Number(st?.server_today??0)>=LIMITS.serverPerDay;
+async function spendApproval(db,tokenHash,userId){
+  try{await db.prepare(SPEND).bind(tokenHash,userId).run();}catch{/* expires on its own within the TTL */}
+}
 function approvalToken(){
   const bytes=crypto.getRandomValues(new Uint8Array(32));
   return 'ira_'+btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
@@ -133,6 +155,8 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
   if(args.approval_token===undefined){
     // Preview: store only a digest of a random approval token bound to this
     // member and this exact cleaned text. No report exists yet.
+    const st=await limitState(db,userId,now);
+    if(!st||Number(st.open_previews??0)>=MAX_OPEN_APPROVALS||dailyCapped(st))throw new ReportNotSubmitted('rate_limited');
     const token=approvalToken();
     let run;
     try{
@@ -151,9 +175,12 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
   }
   if(typeof args.approval_token!=='string'||!APPROVAL_RE.test(args.approval_token))throw new ReportNotSubmitted('approval_invalid');
   const tokenHash=await sha256Hex(args.approval_token);
-  let approved;
-  try{approved=await db.prepare(APPROVAL_OK).bind(tokenHash,userId,key,now).first();}catch{throw new ReportNotSubmitted('unavailable');}
-  if(!approved)throw new ReportNotSubmitted('approval_invalid');
+  const st=await limitState(db,userId,now,tokenHash,key);
+  if(!st||Number(st.approval_ok)!==1)throw new ReportNotSubmitted('approval_invalid');
+  if(dailyCapped(st)||Number(st.recent)===1){
+    await spendApproval(db,tokenHash,userId);
+    throw new ReportNotSubmitted('rate_limited');
+  }
   if(!await activeMembership(db,userId))throw new ReportNotSubmitted('unavailable');
   const evidence=await memberEvidence(db,userId,since);
   const subsystems=[...new Set(evidence.map(e=>e.subsystem))].join(',').slice(0,200);
@@ -172,7 +199,11 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     run=results?.[0];
   }catch{throw new ReportNotSubmitted('unavailable');}
   if(!run?.success)throw new ReportNotSubmitted('unavailable');
-  if((run.meta?.changes??0)!==1)throw new ReportNotSubmitted('rate_limited');
+  if((run.meta?.changes??0)!==1){
+    // Lost a race with a concurrent submission: the approval is spent too.
+    await spendApproval(db,tokenHash,userId);
+    throw new ReportNotSubmitted('rate_limited');
+  }
   // Confirmation is the stored row itself, read back for this member and request.
   let row;
   try{row=await db.prepare(CONFIRM_SQL).bind(userId,key,requestId,at).first();}catch{row=null;}
