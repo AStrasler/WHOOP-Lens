@@ -234,6 +234,8 @@ test('feature states: enabled, disabled and not_configured come from flags and b
   }
   assert.equal(byId({AI_SUMMARY_ENABLED:'true',AI:{run(){}},...analytics,AI_ANALYTICS_ACCOUNT_ID:'nope'}).ai_summaries,'not_configured');
   assert.ok(!JSON.stringify(featureStates({AI_SUMMARY_ENABLED:'true',AI:{run(){}},...analytics})).includes('synthetic-analytics-token'));
+  // A non-callable AI value (plain variable or malformed object) is not a binding.
+  for(const AI of ['workers-ai',{},{run:'x'}])assert.equal(byId({AI_SUMMARY_ENABLED:'true',AI,...analytics}).ai_summaries,'not_configured');
   assert.equal(full.whoop_connection,'enabled');
   assert.equal(full.ai_summaries,'enabled');
   assert.equal(full.experimental_stress_estimate,'enabled');
