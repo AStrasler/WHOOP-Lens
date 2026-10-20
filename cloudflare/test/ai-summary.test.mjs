@@ -3,7 +3,7 @@ import {groundedStatements,selectedSummaryText} from '../src/ai-summary.mjs';
 import test from "node:test";
 import {DatabaseSync} from "node:sqlite";
 import {readFileSync} from "node:fs";
-import {handleMcpRpc,mcpTools} from "../src/mcp.mjs";
+import {handleMcpRpc,mcpTools,attributeWhoop} from "../src/mcp.mjs";
 import {d1Database} from "./d1-sqlite.mjs";
 import {reconcileQuota,reserveQuota,userScope} from "../src/ai-quota.mjs";
 import {
@@ -94,9 +94,9 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
   }};
   const message=rpc("get_recovery",{limit:10});
   const expected={jsonrpc:"2.0",id:1,result:{
-    content:[{type:"text",text:JSON.stringify(returned)}],
+    content:[{type:"text",text:JSON.stringify(attributeWhoop(returned,"get_recovery",true))}],
     resultType:"complete",
-    structuredContent:returned
+    structuredContent:attributeWhoop(returned,"get_recovery",true)
   }};
   for(const flag of [undefined,"false","FALSE","0","true "]){
     const env={};
@@ -197,7 +197,7 @@ test("summary is additive, isolated, and the model never receives record text",a
     const plain=await handleMcpRpc(rpc("get_recovery",{limit:10}),{
       db,userId:A,env,whoopRequest:async()=>pageA
     },modern);
-    assert.equal(plain.result.content[0].text,JSON.stringify({...pageA,complete:true}));
+    assert.equal(plain.result.content[0].text,JSON.stringify(attributeWhoop({...pageA,complete:true},"get_recovery",true)));
   }finally{db.close();}
 });
 
