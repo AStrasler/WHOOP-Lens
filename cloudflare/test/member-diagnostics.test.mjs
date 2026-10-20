@@ -130,7 +130,8 @@ test('tool errors are classified into fixed codes; messages are never stored',()
   const e=(m,extra={})=>Object.assign(Error(m),extra);
   assert.equal(classifyToolError(e('x',{status:429,memberLimit:true}),'get_sleep').code,'member_budget_exhausted');
   assert.equal(classifyToolError(e('x',{status:429}),'get_sleep').category,'rate_limit');
-  assert.equal(classifyToolError(e('WHOOP API request failed',{status:401}),'get_sleep').code,'whoop_token_rejected');
+  assert.equal(classifyToolError(e('WHOOP API request failed',{status:401}),'get_sleep').code,'whoop_unauthorized');
+  assert.equal(classifyToolError(e('WHOOP API request failed',{status:401,resource:'sleep'}),'get_sleep').code,'whoop_unauthorized_sleep');
   assert.equal(classifyToolError(e('WHOOP API request failed',{status:502}),'get_sleep').retryable,true);
   assert.equal(classifyToolError(e('Consent required'),'issue_health_connect_ingest_token').category,'consent');
   assert.equal(classifyToolError(e('Import unavailable'),'issue_health_connect_ingest_token').subsystem,'hc_token');
