@@ -318,6 +318,26 @@ test("partial auto_page failures and later-page errors are never reported as com
       const resumed=content(await call(db,B,"get_recovery",{auto_page:true,next_token:views[1].next_token}));
       assert.deepEqual(ids(resumed.records).slice(0,1),expected(B,"recovery",50,51));
     }
+    // (1b) auto_page: an empty first page with a next token, then a failure.
+    // Nothing was read, but more may exist: never none_in_range or missing.
+    for(const [status,reason] of [[500,"upstream_error"],[429,"rate_limited"]]){
+      let n=0;
+      const whoop={fetch:async()=>++n===1?
+        new Response(JSON.stringify({records:[],next_token:btoa(`${B}:recovery:25`)}),{status:200,headers:{"content-type":"application/json"}}):
+        new Response("{}",{status})};
+      const body=await setup(whoop)(db,B,"get_recovery",{auto_page:true});
+      assert.equal(body.result.isError,undefined,status+" empty partial is not a tool error");
+      const views=both(body);assert.ok(views[1],"structuredContent present");
+      for(const v of views){
+        assert.deepEqual(v.records,[]);
+        assert.equal(v.complete,false);assert.equal(v.incomplete_reason,reason);
+        assert.equal(typeof v.next_token,"string");assert.ok(v.next_token.length>0);
+        const m=v.whoop_measurements;
+        assert.equal(m.missing,false);assert.equal(m.records_status,"empty_page_more_may_exist");
+        assert.equal(m.records_returned,0);assert.equal(m.stale,null);assert.equal(m.stale_reason,"page_incomplete");
+      }
+      assert.deepEqual(views[0],views[1],"text and structuredContent agree");
+    }
     // (2) A WHOOP failure on a later page reached with next_token (manual and
     // auto_page) is an error, never missing data or none_in_range.
     for(const status of [500,503,429]){
@@ -331,7 +351,11 @@ test("partial auto_page failures and later-page errors are never reported as com
         const err=await call(db,B,"get_sleep",args);
         assert.equal(err.result.isError,true,status+" "+JSON.stringify(Object.keys(args)));
         assert.equal(err.result.structuredContent,undefined);
-        assert.doesNotMatch(JSON.stringify(err),/whoop_measurements|"missing"|none_in_range|"complete":true|continuation_page_empty/);
+        // Check the unescaped text itself (Codex P2: JSON.stringify of the outer
+        // response escapes inner quotes, so a quoted pattern could never match).
+        const texts=err.result.content.map(c=>c.text);assert.ok(texts.length>0);
+        for(const text of texts)
+          assert.doesNotMatch(text,/whoop_measurements|"missing"|\bmissing\b\s*[:=]\s*true|none_in_range|"complete"\s*:\s*true|continuation_page_empty/);
       }
       // The same cursor still works once WHOOP recovers.
       failing=false;
