@@ -297,6 +297,9 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     }else if(name==="get_weekly_digest"){
       if(!(await connectionStatus(db,userId)).connected)throw Error("digest");
       const digest=await buildWeeklyDigest({db,userId,env,whoopRequest,weekEnding:args.week_ending});
+      // Report the real cause (member budget, WHOOP 429/401/5xx) for a member who
+      // is still connected and active, never "not connected or no data".
+      if(!digest.ok&&digest.error&&(await connectionStatus(db,userId)).connected&&await activeMembership(db,userId))throw digest.error;
       if(!digest.ok||!(await connectionStatus(db,userId)).connected||!await activeMembership(db,userId))throw Error("digest");
       data={kind:digest.kind,week_ending:digest.week_ending,period:digest.period,
         text:digest.text,chart_data:digest.chart_data,insights:digest.insights,
