@@ -169,3 +169,10 @@ test("refresh guide uses connect_whoop and the Cloudflare server, not the retire
   assert.match(md, /https:\/\/whooplens\.tech\/mcp/);
   assert.doesNotMatch(md, /supabase|astrasler\.github\.io/i);
 });
+
+test("capability and workspace guides do not present Supabase as the working path", () => {
+  const caps = read("CAPABILITIES.md");
+  assert.doesNotMatch(caps, /Supabase connector remains/);
+  assert.match(caps, /connect_whoop/);
+  assert.match(read("WEB_WORKSPACE.md"), /\*\*Retired\.\*\*/);
+});
