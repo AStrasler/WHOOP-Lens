@@ -306,7 +306,7 @@ test("partial auto_page failures and later-page errors are never reported as com
       for(const v of views){
         assert.deepEqual(ids(v.records),expected(B,"recovery",0,50),"records already read are preserved");
         assert.equal(v.complete,false);assert.equal(v.incomplete_reason,reason);
-        assert.equal(typeof v.next_token,"string");assert.ok(v.next_token.length>0);
+        assert.equal(typeof v.next_token,"string");assert.match(v.next_token,/^wlc1\.(k1|k2)\./);
         assert.equal(v.source,"whoop");
         const m=v.whoop_measurements;
         assert.equal(m.missing,false);assert.equal(m.records_status,"records_returned");assert.equal(m.records_returned,50);
@@ -321,11 +321,14 @@ test("partial auto_page failures and later-page errors are never reported as com
     // (1b) auto_page: an empty first page with a next token, then a failure.
     // Nothing was read, but more may exist: never none_in_range or missing.
     for(const [status,reason] of [[500,"upstream_error"],[429,"rate_limited"]]){
-      let n=0;
-      const whoop={fetch:async()=>++n===1?
-        new Response(JSON.stringify({records:[],next_token:btoa(`${B}:recovery:25`)}),{status:200,headers:{"content-type":"application/json"}}):
-        new Response("{}",{status})};
-      const body=await setup(whoop)(db,B,"get_recovery",{auto_page:true});
+      let n=0,recovered=false;const seen=[];const raw=btoa(`${B}:recovery:25`);
+      const whoop={fetch:async url=>{
+        seen.push(new URL(url).searchParams.get("nextToken"));
+        if(recovered)return new Response(JSON.stringify({records:[{id:"resumed"}],next_token:null}),{status:200,headers:{"content-type":"application/json"}});
+        return ++n===1?new Response(JSON.stringify({records:[],next_token:raw}),{status:200,headers:{"content-type":"application/json"}}):
+          new Response("{}",{status});}};
+      const call=setup(whoop);
+      const body=await call(db,B,"get_recovery",{auto_page:true});
       assert.equal(body.result.isError,undefined,status+" empty partial is not a tool error");
       const views=both(body);assert.ok(views[1],"structuredContent present");
       for(const v of views){
@@ -335,8 +338,14 @@ test("partial auto_page failures and later-page errors are never reported as com
         const m=v.whoop_measurements;
         assert.equal(m.missing,false);assert.equal(m.records_status,"empty_page_more_may_exist");
         assert.equal(m.records_returned,0);assert.equal(m.stale,null);assert.equal(m.stale_reason,"page_incomplete");
+        // Sealed, never the raw WHOOP token (Codex P2 on cae96a1).
+        assert.notEqual(v.next_token,raw);assert.match(v.next_token,/^wlc1\.(k1|k2)\./);
       }
       assert.deepEqual(views[0],views[1],"text and structuredContent agree");
+      // The sealed cursor resumes at the failed page: WHOOP receives the raw token.
+      recovered=true;seen.length=0;
+      const resumed=content(await call(db,B,"get_recovery",{auto_page:true,next_token:views[1].next_token}));
+      assert.deepEqual(seen,[raw]);assert.deepEqual(ids(resumed.records),["resumed"]);assert.equal(resumed.complete,true);
     }
     // (2) A WHOOP failure on a later page reached with next_token (manual and
     // auto_page) is an error, never missing data or none_in_range.
