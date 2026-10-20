@@ -108,3 +108,33 @@ test("refresh failure has its own message and code",async()=>{
     assert.ok(rows(db).some(x=>x.code==="whoop_refresh_failed"));
   }finally{db.close();}
 });
+for(const [label,tokenEndpoint] of [
+  ["timeout",()=>{throw new DOMException("The operation timed out.","TimeoutError");}],
+  ["network",()=>{throw new TypeError("fetch failed");}],
+  ["malformed body",()=>new Response("not json "+SECRET_BODY,{status:200})],
+]){
+  test(`refresh ${label} is reported as a refresh failure; stored tokens untouched`,async()=>{
+    const db=await fixture();
+    try{
+      db.sqlite.prepare("UPDATE whoop_connections SET expires_at=? WHERE user_id=?").run(new Date(Date.now()-60e3).toISOString(),M);
+      const before=db.sqlite.prepare("SELECT encrypted_access_token,encrypted_refresh_token,expires_at FROM whoop_connections WHERE user_id=?").get(M);
+      let api=0;
+      const fetcher=async raw=>{if(new URL(raw).pathname.includes("/oauth/"))return tokenEndpoint();api++;return Response.json({});};
+      const r=await call(db,fetcher,"get_recovery");
+      assert.match(r.result.content[0].text,/^WHOOP Lens could not renew this connection's WHOOP authorization\./);
+      assert.deepEqual(rows(db).map(x=>x.code),["whoop_refresh_failed"]);
+      assert.equal(api,0,"no WHOOP API call without a token");
+      assert.deepEqual(db.sqlite.prepare("SELECT encrypted_access_token,encrypted_refresh_token,expires_at FROM whoop_connections WHERE user_id=?").get(M),before);
+      assert.equal(JSON.stringify(rows(db)).includes("fetch failed"),false);
+    }finally{db.close();}
+  });
+}
+test("a decryption or parse error with no refresh attempt is not relabelled",async()=>{
+  const db=await fixture();
+  try{
+    db.sqlite.prepare("UPDATE whoop_connections SET encrypted_access_token='{bad' WHERE user_id=?").run(M);
+    const r=await call(db,whoop(()=>Response.json({records:[]})),"get_recovery");
+    assert.equal(r.result.isError,true);
+    assert.equal(rows(db).some(x=>x.code==="whoop_refresh_failed"),false);
+  }finally{db.close();}
+});

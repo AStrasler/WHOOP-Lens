@@ -174,7 +174,20 @@ export async function callWhoop(db,userId,resource,env,opts={},deps={}){
   // the REST routes unseal a member-bound cursor first (history-pagination.mjs).
   if(nextToken!=null&&(!spec.history||!validWhoopToken(nextToken)))
     throw Error("Invalid WHOOP cursor");
-  const token=await whoopAccessToken(db,userId,env,deps);
+  // A refresh whose token-endpoint call times out, fails in transit or returns
+  // an unreadable body throws a raw TypeError/DOMException/SyntaxError. Label it
+  // as a refresh failure for diagnostics and the member message. The refresh
+  // itself is unchanged: no retry, stored tokens untouched, no cause text kept.
+  let refreshAttempted=false;
+  const baseFetch=deps.fetcher||fetch;
+  const observed=(input,init)=>{if(String(input)===TOKEN_ENDPOINT)refreshAttempted=true;return baseFetch(input,init);};
+  let token;
+  try{token=await whoopAccessToken(db,userId,env,{...deps,fetcher:observed});}
+  catch(cause){
+    if(refreshAttempted&&cause instanceof Error&&(["TypeError","TimeoutError","AbortError","SyntaxError"].includes(cause.name)||cause.message==="WHOOP response too large"))
+      throw Error("WHOOP refresh failed");
+    throw cause;
+  }
   const search=new URLSearchParams();
   if(spec.history){
     search.set("limit",String(limit));
