@@ -181,10 +181,10 @@ test("audit 429: rate limits are reported as such with Retry-After / X-RateLimit
     const got=[...idx(part.records)];let cursor=part.next_token;
     while(cursor){const out=content(await call(db,A,"get_workouts",{auto_page:true,next_token:cursor}));got.push(...idx(out.records));cursor=out.next_token;}
     assert.deepEqual(got,range(0,TOTAL));
-    // Non-429 failures keep the generic message.
+    // Non-429 failures are not reported as rate limiting (5xx: temporarily unavailable).
     w=fakeWhoop({fail:()=>new Response("{}",{status:503})});
     r=await setup(w)(db,A,"get_recovery",{limit:5});
-    assert.equal(r.body.result.content[0].text,"WHOOP data is unavailable for this connection.");
+    assert.equal(r.body.result.content[0].text,"WHOOP is temporarily unavailable (reading recovery data). Retry shortly. No WHOOP data was returned and nothing was changed.");
     // REST history route: 429 with a Retry-After header.
     w=fakeWhoop({fail:()=>limited({"retry-after":"9"})});
     const route=createStagingRouter({verifyIdentity:async()=>A,

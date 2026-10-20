@@ -174,7 +174,20 @@ export async function callWhoop(db,userId,resource,env,opts={},deps={}){
   // the REST routes unseal a member-bound cursor first (history-pagination.mjs).
   if(nextToken!=null&&(!spec.history||!validWhoopToken(nextToken)))
     throw Error("Invalid WHOOP cursor");
-  const token=await whoopAccessToken(db,userId,env,deps);
+  // A refresh whose token-endpoint call times out, fails in transit or returns
+  // an unreadable body throws a raw TypeError/DOMException/SyntaxError. Label it
+  // as a refresh failure for diagnostics and the member message. The refresh
+  // itself is unchanged: no retry, stored tokens untouched, no cause text kept.
+  let refreshAttempted=false;
+  const baseFetch=deps.fetcher||fetch;
+  const observed=(input,init)=>{if(String(input)===TOKEN_ENDPOINT)refreshAttempted=true;return baseFetch(input,init);};
+  let token;
+  try{token=await whoopAccessToken(db,userId,env,{...deps,fetcher:observed});}
+  catch(cause){
+    if(refreshAttempted&&cause instanceof Error&&(["TypeError","TimeoutError","AbortError","SyntaxError"].includes(cause.name)||cause.message==="WHOOP response too large"))
+      throw Error("WHOOP refresh failed");
+    throw cause;
+  }
   const search=new URLSearchParams();
   if(spec.history){
     search.set("limit",String(limit));
@@ -194,15 +207,23 @@ export async function callWhoop(db,userId,resource,env,opts={},deps={}){
   // connection are verified and immediately before the outbound request.
   // Over budget throws a 429 (MemberRateLimited) and nothing is sent to WHOOP.
   await reserveWhoopRequest(db,userId,env,{now:deps.now});
-  const response=await (deps.fetcher||fetch)(url,{
-    method:"GET",headers:{authorization:"Bearer "+token,"accept":"application/json"},
-    redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
-  });
+  let response;
+  try{
+    response=await (deps.fetcher||fetch)(url,{
+      method:"GET",headers:{authorization:"Bearer "+token,"accept":"application/json"},
+      redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
+    });
+  }catch(cause){
+    // Network failure or the 12 s timeout: no status from WHOOP at all.
+    const error=Error("WHOOP API request failed");error.status=0;error.resource=resource;
+    error.network=cause?.name==="TimeoutError"||cause?.name==="AbortError"?"timeout":"network";throw error;
+  }
   if(!response.ok){
     // Same message as before; the status lets optional features (the stress
     // estimate) tell a WHOOP rate limit (429) apart from other failures.
-    if(response.status===429)throw rateLimited(response,"WHOOP API request failed");
-    const error=Error("WHOOP API request failed");error.status=response.status;throw error;
+    // resource lets diagnostics say which WHOOP endpoint failed.
+    if(response.status===429){const e=rateLimited(response,"WHOOP API request failed");e.resource=resource;throw e;}
+    const error=Error("WHOOP API request failed");error.status=response.status;error.resource=resource;throw error;
   }
   const data=await boundedJson(response);
   if(!data||typeof data!=="object"||Array.isArray(data))throw Error("WHOOP response invalid");

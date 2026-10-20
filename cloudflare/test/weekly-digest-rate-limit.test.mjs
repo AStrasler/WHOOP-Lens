@@ -97,6 +97,8 @@ test("a non-rate-limit digest failure for a connected member is not reported as 
   try{
     const d=await caller(w,{...base,DB:db})("get_weekly_digest",{});
     assert.equal(d.result.isError,true);
-    assert.deepEqual(codes(db),["weekly_digest/whoop_upstream_error"]);
+    // Per-resource code (diagnostic transparency): whichever WHOOP endpoint failed first.
+    assert.equal(codes(db).length,1);
+    assert.match(codes(db)[0],/^weekly_digest\/whoop_upstream_error_(recovery|sleep|workouts|cycles)$/);
   }finally{db.close();}
 });
