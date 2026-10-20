@@ -201,28 +201,9 @@ These operations apply only to the signed-in account. Deleting server records do
 | Stress or flare comparisons lack data | Check the returned coverage. Feature activation cannot supply missing measurements or user labels. |
 
 
-## Existing Supabase connector
+## Retired Supabase connector
 
-The Supabase function stays up. It is the working path for an existing WHOOP connection.
-
-- Server URL: `https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/mcp`
-- Setup and consent: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/)
-- Sign-in uses that person's Supabase user. WHOOP credentials are entered on WHOOP's authorization page.
-- WHOOP refresh tokens stay in Supabase. They are not copied to Cloudflare.
-
-### Connect WHOOP on the existing connector
-
-1. Open [WHOOP Lens setup](https://astrasler.github.io/WHOOP-Lens/).
-2. Enter the WHOOP Lens email and password, then click **Sign in securely**.
-3. Under **WHOOP connection**, click **Connect WHOOP**.
-4. On WHOOP's page, sign in with the WHOOP account and approve read access.
-5. The setup page should then say **Your WHOOP account is connected.**
-
-To add this existing connector in ChatGPT, use the Supabase server URL above, choose OAuth, and approve access with the same WHOOP Lens sign-in. A new WHOOP connection needs an open seat.
-
-## Browser workspace
-
-The Pages site includes a browser workspace at [https://astrasler.github.io/WHOOP-Lens/dashboard/](https://astrasler.github.io/WHOOP-Lens/dashboard/). It checks the Supabase sign-in and an existing WHOOP connection, then previews supported Health Connect v2 JSON and FHIR R4 bundles in the browser. Live health-file uploads stay disabled. The Android companion is an optional future bridge. See [Web workspace guide](docs/WEB_WORKSPACE.md).
+The Supabase connector and its GitHub Pages sign-in, consent and **Connect WHOOP** controls are retired. Use the Cloudflare connector at `https://whooplens.tech/mcp`: sign in with a Cloudflare Access email one-time PIN, approve the consent page at `https://auth.whooplens.tech`, then run `connect_whoop` in the chat to link WHOOP (step 2 above). The old browser workspace page depends on that retired sign-in and is no longer linked.
 
 ## Capabilities
 
@@ -269,7 +250,7 @@ The Supabase function writes one JSON object per metric through `console.log`. F
 
 ## How it is hosted
 
-The consent and connection UI in `docs/` is the GitHub Pages site: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/). That site signs a person into the existing Supabase connector. This repository does not add a separate account system for that path.
+The `docs/` folder is the public GitHub Pages site: [https://astrasler.github.io/WHOOP-Lens/](https://astrasler.github.io/WHOOP-Lens/), also built for `https://www.whooplens.tech` from `site/`. Its old Supabase sign-in and consent controls are retired; sign-in and consent for the live connector happen at `https://auth.whooplens.tech`. The Supabase notes below describe the retired function until it is removed.
 
 WHOOP requests for the existing connector are handled by the Supabase edge function `whoop-mcp`. Its source is `supabase/functions/whoop-mcp/` (`index.ts` plus `handler.mjs` and `challenge.mjs`). Those files are the bytes that should be deployed. `supabase/whoop-mcp.SOURCE.sha256` is a checksum of them, and `node --test` fails if the files drift from that lock. Supabase processes those requests.
 

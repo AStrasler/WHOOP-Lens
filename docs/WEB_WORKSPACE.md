@@ -1,5 +1,7 @@
 # WHOOP Lens browser-first workspace
 
+> **Retired.** This workspace depends on the retired Supabase sign-in and is no longer linked from the site. Use the Cloudflare connector at `https://whooplens.tech/mcp` and `connect_whoop` instead. The notes below are kept for history.
+
 **Primary interface:** The browser. Invited testers can open the Pages workspace on a phone, laptop, or tablet. No companion APK is required for that preview. The private MCP is `https://whooplens.tech/mcp`. The GitHub Pages setup page remains the sign-in and WHOOP connect flow for the existing Supabase connector.
 
 ## Entry points

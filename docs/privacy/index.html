@@ -20,32 +20,26 @@
 <span class="wordmark">WHOOP Lens</span>
 </div>
 <h1>Privacy statement</h1>
-<p class="note">Last updated: October 19, 2026</p>
+<p class="note">Last updated: October 20, 2026</p>
 </header>
 <p>WHOOP Lens is a private, read-only MCP that lets a person connect their own WHOOP account so ChatGPT and Codex can read that person's data with their permission. The project is operated by Aaron Strasler. It is not affiliated with WHOOP.</p>
-<p>Two connectors are in operation. The private MCP at https://whooplens.tech/mcp runs on Cloudflare. Its sign-in is a Cloudflare Access email one-time PIN, and its authorization server is https://auth.whooplens.tech. That connector does not currently store a WHOOP connection. The existing connector is the Supabase edge function <code>whoop-mcp</code>. Each person using that connector signs in with their own Supabase user.</p>
+<p>WHOOP Lens runs on Cloudflare. The MCP server is https://whooplens.tech/mcp and its authorization server is https://auth.whooplens.tech. Sign-in is a Cloudflare Access email one-time PIN. Access also requires an active WHOOP Lens membership granted by the owner; accounts are never created or linked automatically by email.</p>
 <h2>Data accessed and purpose</h2>
 <p>With your authorization, the plugin reads WHOOP recovery, sleep, physiological cycles and strain, workouts, profile information, and body measurements. The WHOOP connection requests read scopes only (<code>read:profile</code>, <code>read:body_measurement</code>, <code>read:recovery</code>, <code>read:sleep</code>, <code>read:workout</code>, and <code>read:cycles</code>), plus <code>offline</code> so access can be refreshed.</p>
-<p>If Samsung Health records have been uploaded for your Supabase user, the plugin can also read those stored records, such as sleep, heart rate, blood oxygen, steps, activity, exercise, body composition, skin temperature, energy score, blood pressure, and profile. Samsung Health records are kept separate from WHOOP data.</p>
+<p>If Samsung Health records are stored for your account in the WHOOP Lens Cloudflare D1 database, the plugin can also read those stored records, such as sleep, heart rate, blood oxygen, steps, activity, exercise, body composition, skin temperature, energy score, blood pressure, and profile. Samsung Health records are kept separate from WHOOP data, are read only for the signed-in account, and are not sold or used for advertising.</p>
 <p>This information is used to answer your questions and produce the summaries you request in ChatGPT or Codex.</p>
 <h2>Processing and sharing</h2>
-<p>The GitHub Pages site is the sign-in and consent screen for the existing Supabase connector. Supabase Auth handles that sign-in. The Supabase edge function <code>whoop-mcp</code> exchanges and refreshes WHOOP tokens, calls the WHOOP API, and reads Samsung Health records stored for your user. That processing runs on Supabase, not only on your computer. WHOOP refresh tokens from that connector are not copied to Cloudflare. The private Cloudflare connector stores a WHOOP connection only after a separate WHOOP authorization. That authorization is on, and no Cloudflare WHOOP connection is stored yet.</p>
+<p>The Cloudflare Workers handle sign-in, consent, the WHOOP authorization callback, WHOOP token refresh, and WHOOP API requests. WHOOP access and refresh tokens are not placed in the ChatGPT or Codex authorization grant.</p>
 <p>Data returned to ChatGPT or Codex is processed by OpenAI under your OpenAI account settings and the OpenAI privacy policy: <a href="https://openai.com/policies/privacy-policy/">https://openai.com/policies/privacy-policy/</a>.</p>
-<p>WHOOP data and Samsung Health records are not sold and are not used for advertising. This privacy statement is published at <a href="https://astrasler.github.io/WHOOP-Lens/privacy/">https://astrasler.github.io/WHOOP-Lens/privacy/</a>. WHOOP records, Samsung Health records, credentials, and access tokens are not published in the git repository.</p>
+<p>WHOOP data is not sold and is not used for advertising. This privacy statement is published at <a href="https://astrasler.github.io/WHOOP-Lens/privacy/">https://astrasler.github.io/WHOOP-Lens/privacy/</a>. WHOOP records, credentials, and access tokens are not published in the git repository.</p>
 <h2>Credentials, retention, and revocation</h2>
-<p>WHOOP access and refresh tokens are encrypted per Supabase user and stored in Supabase so the plugin can read WHOOP and refresh authorization. They are not stored only on your computer. The Pages app does not put your Supabase session in browser storage.</p>
-<p>You can revoke the plugin in your WHOOP account settings. Revocation stops future authorized WHOOP access. It does not automatically delete information already included in ChatGPT or Codex conversations. Conversations remain subject to your OpenAI settings and controls.</p>
-<p>Sign out of the Pages app to end the in-memory Supabase session. Disabling a Supabase user through the optional <code>whoop_members</code> kill switch stops that user from calling the plugin.</p>
-<p>WHOOP Lens has 9 public connection seats and 1 developer seat. A person who does not already have a WHOOP connection cannot complete a new one once the public seats are full. The developer seat is one Supabase user chosen outside this repository. When a public seat is unavailable, the plugin can store a waitlist intake for that signed-in user: the Supabase user id, the account email when it matches a normal address, the time, and the notice destination whoop-lens@outlook.com. That intake does not include WHOOP access tokens, refresh tokens, client secrets, authorization codes, or health data. Storing the intake does not send mail.</p>
+<p>WHOOP access and refresh tokens are encrypted with AES-256-GCM, bound to your account, and stored in a Cloudflare D1 database so the plugin can read WHOOP and refresh authorization. Pending WHOOP authorization requests are stored only as a hash and expire after 10 minutes.</p>
+<p>Disconnecting WHOOP through WHOOP Lens deletes your stored WHOOP connection and pending authorization requests. Disconnecting through WHOOP Lens requires an active membership. If your membership has ended, revoking in WHOOP stops future access but does not delete the stored connection; request that deletion through the support page. You can also revoke the plugin in your WHOOP account settings. Revocation stops future authorized WHOOP access. It does not automatically delete information already included in ChatGPT or Codex conversations. Conversations remain subject to your OpenAI settings and controls.</p>
+<p>WHOOP Lens has a limited number of connection seats, set by the owner and never more than 10, the owner's included. A person who does not already have a WHOOP connection cannot complete a new one when all seats are in use. Seats are granted only by the owner after a seat request; there is no self-registration. When seat requests are enabled, a request is emailed to whoop-lens@outlook.com and checked by Cloudflare Turnstile for abuse. Hashed request metadata is used for duplicate and abuse protection; form contents are not stored in the request database. The seat request form asks you not to include health information, passwords, or tokens, and it does not include WHOOP access tokens or health data from your account.</p>
 <h2>Contact</h2>
 <p>For privacy questions, contact Aaron Strasler at the contact email specified in the WHOOP developer application.</p>
 <h2>Changes</h2>
 <p>This statement will be updated if the plugin's data handling changes.</p>
-<footer>
-<a href="/WHOOP-Lens/">Sign in</a><br>
-Independent personal integration. Not affiliated with WHOOP.<br>
-<a href="/WHOOP-Lens/privacy/">Privacy statement</a> · <a href="/WHOOP-Lens/terms/">Terms</a> · <a href="/WHOOP-Lens/support/">Support</a>
-</footer>
 <h2>Private Cloudflare MCP and optional processing</h2>
 <p>The private MCP verifies OAuth identity and active membership. Health Connect phone delivery requires separate consent and a per-member token stored as a hash. Withdrawal deletes that member's Health Connect records and revokes ingest tokens. In-progress uploads cannot write after withdrawal.</p>
 <p>On-demand summaries send minimized numerical facts and precomputed statements to Cloudflare Workers AI, excluding free-text notes, credentials and account identifiers. WHOOP Lens stores daily usage counters and optional account-scoped weekly digests containing derived health facts and charts, but not model prompts. Disconnecting WHOOP through WHOOP Lens invalidates that account's digest cache. Experimental stress estimates are WHOOP Lens calculations, not WHOOP Stress Monitor measurements or clinically validated results.</p>
@@ -57,6 +51,11 @@ Independent personal integration. Not affiliated with WHOOP.<br>
 <h2>Optional flare journal (separate opt-in)</h2>
 <p>When enabled, the private flare journal requires explicit consent to store user-provided condition names, optional medication context, dated flare/non-flare/unknown labels, severity, symptoms, confounders and notes in account-scoped Cloudflare D1 tables. A separate explicit consent permits on-demand descriptive comparison with that member's WHOOP measurements. Membership and existing health consent grant neither purpose. No context is inferred from chat memory.</p>
 <p>Entries remain until deleted or journal consent is withdrawn. Analysis can be paused independently. Withdrawal deletes the account's context and journal and revokes both purposes; a minimal consent state remains to enforce withdrawal. Journal data is not sent to Workers AI, used for training, shared across members or included in developer analytics. Analyses are not persisted or cached and do not produce validated predictions or notifications. Requested results appear in the user's chat under the host's retention rules. Deletion does not erase existing chat messages or separate WHOOP/Health Connect records.</p>
+<footer>
+<a href="/WHOOP-Lens/">Home</a><br>
+Independent personal integration. Not affiliated with WHOOP.<br>
+<a href="/WHOOP-Lens/privacy/">Privacy statement</a> · <a href="/WHOOP-Lens/terms/">Terms</a> · <a href="/WHOOP-Lens/support/">Support</a>
+</footer>
 </main>
 </body>
 </html>

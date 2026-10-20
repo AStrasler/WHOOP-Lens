@@ -2,7 +2,7 @@
 
 WHOOP Lens serves this catalog through the `get_capabilities` MCP tool. The deployed catalog is the runtime source of truth. A GitHub branch may be ahead of the currently deployed version.
 
-The private connector is `https://whooplens.tech/mcp`. It has no stored WHOOP connection, so WHOOP measurement tools on that server do not return measurements yet. The existing Supabase connector remains the working WHOOP data path.
+The connector is `https://whooplens.tech/mcp`. After you sign in and run `connect_whoop`, WHOOP measurement tools return your own WHOOP data. The older Supabase connector is retired.
 
 ## Ask WHOOP Lens
 

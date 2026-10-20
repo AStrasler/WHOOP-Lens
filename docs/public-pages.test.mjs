@@ -8,24 +8,55 @@ const pages = ["../docs/index.html", "../docs/oauth/consent/index.html"].map(rea
 const terms = read("../docs/terms/index.html");
 const support = read("../docs/support/index.html");
 const privacy = read("../docs/privacy/index.html");
+const refresh = read("../docs/refresh/index.html");
 const source = read("../supabase/functions/whoop-mcp/handler.mjs");
 const entry = read("../supabase/functions/whoop-mcp/index.ts");
 
-test("public pages name the private Cloudflare MCP and the existing Supabase path", () => {
+test("public pages name the private Cloudflare MCP and mark the Supabase path retired", () => {
   const readme = read("../README.md");
   assert.match(readme, /https:\/\/whooplens\.tech\/mcp/);
   assert.match(readme, /https:\/\/auth\.whooplens\.tech/);
   assert.match(readme, /WHOOP Stress Monitor history is not in the official WHOOP developer API/);
-  assert.match(readme, /https:\/\/evoiwauqplbcecumiwqn\.supabase\.co\/functions\/v1\/whoop-mcp\/mcp/);
+  assert.match(readme, /## Retired Supabase connector/);
+  assert.doesNotMatch(readme, /Connect WHOOP on the existing connector/);
   assert.match(readme, /WHOOP connect is on/);
   assert.match(readme, /Cloudflare preview builds are off/);
   assert.doesNotMatch(readme, /WHOOP connect stays off/);
-  for (const page of pages) {
-    assert.match(page, /https:\/\/whooplens\.tech\/mcp/);
-    assert.match(page, /Existing Supabase MCP address/);
-  }
+  assert.match(pages[0], /https:\/\/whooplens\.tech\/mcp/);
   assert.match(privacy, /https:\/\/whooplens\.tech\/mcp/);
   assert.match(read("../Privacy.md"), /https:\/\/whooplens\.tech\/mcp/);
+});
+
+test("landing page is a Cloudflare-only document with no scripts or Supabase", () => {
+  const landing = pages[0];
+  assert.doesNotMatch(landing, /<script/);
+  assert.doesNotMatch(landing, /supabase/i);
+  assert.match(landing, /script-src|default-src 'none'/);
+  assert.doesNotMatch(landing, /connect-src/);
+  assert.match(landing, /Cloudflare Access email one-time PIN/);
+  assert.match(landing, /https:\/\/auth\.whooplens\.tech/);
+  assert.doesNotMatch(landing, /Stress Monitor/);
+  assert.doesNotMatch(landing, /dashboard/);
+  for (const page of [privacy, terms, support, refresh]) {
+    assert.doesNotMatch(page, /supabase/i);
+    assert.doesNotMatch(page, /WHOOP-Lens\/dashboard/);
+  }
+});
+
+test("retired consent page is a static moved notice linking home", () => {
+  const moved = pages[1];
+  assert.doesNotMatch(moved, /<script/);
+  assert.doesNotMatch(moved, /supabase/i);
+  assert.doesNotMatch(moved, /<form/);
+  assert.match(moved, /This page has moved/);
+  assert.match(moved, /href="\/WHOOP-Lens\/"/);
+});
+
+test("refresh page describes the Cloudflare connector and reconnect path", () => {
+  assert.match(refresh, /<code>https:\/\/whooplens\.tech\/mcp<\/code>/);
+  assert.match(refresh, /Cloudflare Access email one-time PIN/);
+  assert.match(refresh, /connect_whoop/);
+  assert.match(refresh, /Stress Monitor zone history is not available/);
 });
 
 test("sign-in and consent link privacy, terms, and support", () => {
@@ -54,7 +85,8 @@ test("privacy is published as a Pages page", () => {
   assert.match(privacy, /not affiliated with WHOOP/);
   assert.match(privacy, /https:\/\/astrasler\.github\.io\/WHOOP-Lens\/privacy\//);
   assert.match(read("../Privacy.md"), /https:\/\/astrasler\.github\.io\/WHOOP-Lens\/privacy\//);
-  assert.match(privacy, /9 public connection seats and 1 developer seat/);
+  assert.match(privacy, /never more than 10/);
+  assert.match(privacy, /AES-256-GCM/);
   assert.match(privacy, /whoop-lens@outlook.com/);
   assert.match(privacy, /does not include WHOOP access tokens/);
   assert.match(read("../Privacy.md"), /does not include WHOOP access tokens/);
@@ -112,5 +144,40 @@ test("privacy notice covers owner-visible diagnostics and issue reports", () => 
     assert.match(page, /pseudonymous member reference/);
   }
   assert.match(read("../Privacy.md"), /except the owner-visible diagnostics and issue reports/);
-  assert.match(read("../Privacy.md"), /Last updated: October 19, 2026/);
+  assert.match(read("../Privacy.md"), /Last updated: October 20, 2026/);
+});
+
+test("repository privacy copy matches the Cloudflare-only published statement", () => {
+  const md = read("../Privacy.md");
+  assert.doesNotMatch(md, /supabase/i);
+  assert.match(md, /stored in a Cloudflare D1 database/);
+});
+
+test("landing page tells new users to run connect_whoop", () => {
+  assert.match(read("index.html"), /<code>connect_whoop<\/code>/);
+});
+
+test("privacy statements disclose stored Samsung Health records", () => {
+  for (const page of [privacy, read("../Privacy.md")]) {
+    assert.match(page, /Samsung Health records are stored for your account in the WHOOP Lens Cloudflare D1 database/);
+  }
+});
+
+test("refresh guide uses connect_whoop and the Cloudflare server, not the retired setup site", () => {
+  const md = read("REFRESH.md");
+  assert.match(md, /connect_whoop/);
+  assert.match(md, /https:\/\/whooplens\.tech\/mcp/);
+  assert.doesNotMatch(md, /supabase|astrasler\.github\.io/i);
+});
+
+test("capability and workspace guides do not present Supabase as the working path", () => {
+  const caps = read("CAPABILITIES.md");
+  assert.doesNotMatch(caps, /Supabase connector remains/);
+  assert.match(caps, /connect_whoop/);
+  assert.match(read("WEB_WORKSPACE.md"), /\*\*Retired\.\*\*/);
+});
+
+test("disconnect wording is qualified for ended memberships", () => {
+  assert.doesNotMatch(read("index.html"), /disconnect WHOOP from WHOOP Lens or revoke access in your WHOOP account settings at any time/);
+  for (const page of [read("index.html"), privacy, read("../Privacy.md")]) assert.match(page, /membership has ended/);
 });
