@@ -152,9 +152,16 @@ export function classifyToolError(error,name){
   if(message==='WHOOP OAuth not configured'||message==='Token key unavailable'||/not configured/.test(message))
     return c('setup','server_not_configured',false,'backend_failure');
   if(message==='WHOOP API request failed'){
-    if(error?.status===401||error?.status===403)return c('auth','whoop_token_rejected',false,'incomplete_setup');
-    if(error?.status>=500)return c('whoop_api','whoop_upstream_error',true,'temporary');
-    return c('whoop_api','whoop_request_failed',true,'temporary');
+    // Per-endpoint suffix (recovery, sleep, ...) so one endpoint failing while
+    // others work is visible. Codes stay within [a-z0-9_]{1,64}.
+    const r=typeof error?.resource==='string'&&/^[a-z]{1,16}$/.test(error.resource)?'_'+error.resource:'';
+    if(error?.status===401)return c('auth','whoop_unauthorized'+r,false,'incomplete_setup');
+    if(error?.status===403)return c('auth','whoop_forbidden'+r,false,'incomplete_setup');
+    if(error?.status===404)return c('whoop_api','whoop_not_found'+r,false,'other');
+    if(error?.network==='timeout')return c('whoop_api','whoop_timeout'+r,true,'temporary');
+    if(error?.network==='network')return c('whoop_api','whoop_network_error'+r,true,'temporary');
+    if(error?.status>=500)return c('whoop_api','whoop_upstream_error'+r,true,'temporary');
+    return c('whoop_api','whoop_request_failed'+r,true,'temporary');
   }
   if(/^WHOOP response/.test(message))return c('whoop_api','whoop_response_invalid',true,'temporary');
   if(message==='Import unavailable')return c('health_connect','hc_storage_unavailable',true,'backend_failure');
