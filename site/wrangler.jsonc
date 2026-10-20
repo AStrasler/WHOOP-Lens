@@ -9,5 +9,7 @@
     "directory": "./dist",
     "not_found_handling": "404-page",
     "html_handling": "auto-trailing-slash"
-  }
+  },
+  // Required by `wrangler preview` (Workers Builds non-production branches); no preview-specific settings.
+  "previews": {}
 }
