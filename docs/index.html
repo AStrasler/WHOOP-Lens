@@ -18,15 +18,15 @@
 <main class="doc">
 <header>
 <div class="brand">
-<img class="mark" src="/WHOOP-Lens/logo.jpg" width="72" height="72" alt="">
+<span class="mark lens-mark" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none"><circle class="ring" cx="32" cy="32" r="27" stroke="#4fd8cf" stroke-width="4"/><path class="pulse-line" d="M8 33h13l3-5 4 12 5-20 4 15 3-2h12" stroke="#eef6f5" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="56" cy="33" r="2.6" fill="#4fd8cf"/></svg></span>
 <span class="wordmark">WHOOP Lens</span>
 </div>
 <h1 id="heading">Connect your WHOOP</h1>
 <p id="intro" class="note">Your data, your permission. You decide which apps can access your data.</p>
 </header>
-<p>WHOOP Lens connects your WHOOP account to ChatGPT and Codex through the existing Supabase connector. It is an independent personal integration and is not affiliated with WHOOP.</p>
+<p>WHOOP Lens connects your WHOOP account to ChatGPT and Codex. It is an independent personal integration and is not affiliated with WHOOP.</p>
 <h2>Connectors</h2>
-<p>The private MCP server is https://whooplens.tech/mcp, with authorization server https://auth.whooplens.tech and scope <code>mcp:read</code>. WHOOP connect on that Cloudflare server is on. A WHOOP connection is stored only after a separate authorization. This page is the working Supabase path.</p>
+<p>The private MCP server is https://whooplens.tech/mcp and runs on Cloudflare. Its authorization server is https://auth.whooplens.tech, sign-in is a Cloudflare Access email one-time PIN, and the scope is <code>mcp:read</code>. A WHOOP connection is stored only after a separate WHOOP authorization.</p>
 <div id="message" role="status" aria-live="polite"></div>
 <div>
 <form id="login">

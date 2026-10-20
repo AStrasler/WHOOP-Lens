@@ -1,6 +1,8 @@
 :root {
   color-scheme: dark;
-  --bg: #000000;
+  --bg: #0b1418;
+  --bg-2: #0f1c21;
+  --glow: rgba(79, 216, 207, 0.28);
   --text: #ffffff;
   --muted: #c6c6c6;
   --faint: #8d8d8d;
@@ -21,7 +23,10 @@ body {
   display: grid;
   place-items: center;
   padding: 48px 24px 56px;
-  background: var(--bg);
+  background:
+    radial-gradient(760px 520px at 50% -10%, rgba(79, 216, 207, 0.10), transparent 62%),
+    linear-gradient(180deg, var(--bg-2), var(--bg));
+  background-attachment: fixed;
 }
 
 main { width: 100%; max-width: 480px; }
@@ -242,4 +247,27 @@ hr {
 @media (max-width: 440px) {
   body { padding: 32px 20px 40px; }
   .actions button { flex: 1; }
+}
+
+/* Animated logo mark (landing page). Ported from the redesign; CSS only. */
+.lens-mark {
+  width: 72px; height: 72px;
+  display: grid; place-items: center;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #1a2a30, #0c171b);
+  border: 1px solid #22383f;
+  box-shadow: 0 0 0 6px rgba(79, 216, 207, 0.04), 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.lens-mark svg { width: 54px; height: 54px; filter: drop-shadow(0 0 8px var(--glow)); }
+.pulse-line { stroke-dasharray: 120; stroke-dashoffset: 120; animation: trace 2.4s ease-in-out infinite; }
+@keyframes trace {
+  0% { stroke-dashoffset: 120; }
+  45%, 70% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -120; }
+}
+.ring { animation: breathe 6s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: .8; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .pulse-line, .ring { animation: none; }
+  .pulse-line { stroke-dashoffset: 0; }
 }
