@@ -168,8 +168,10 @@ export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEndi
       saved=true;
     }
     return {ok:true,...generated.view,cached:false};
-  }catch{
-    return {ok:false};
+  }catch(error){
+    // Keep the cause (WHOOP 401/403/429/5xx, member budget) so the tool reports
+    // it instead of "not connected or no data". Nothing is cached on failure.
+    return {ok:false,error};
   }finally{
     if(owned&&!saved){
       try{await db.prepare(RELEASE).bind(scope,day,lease).run();}catch{/* the next pull can claim the week */}
