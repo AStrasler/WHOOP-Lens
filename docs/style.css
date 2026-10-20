@@ -26,6 +26,8 @@ body {
 
 main { width: 100%; max-width: 480px; }
 
+body.top { place-items: start center; }
+
 header { margin-bottom: 28px; }
 
 .brand {
