@@ -143,5 +143,15 @@ test("privacy notice covers owner-visible diagnostics and issue reports", () => 
     assert.match(page, /pseudonymous member reference/);
   }
   assert.match(read("../Privacy.md"), /except the owner-visible diagnostics and issue reports/);
-  assert.match(read("../Privacy.md"), /Last updated: October 19, 2026/);
+  assert.match(read("../Privacy.md"), /Last updated: October 20, 2026/);
+});
+
+test("repository privacy copy matches the Cloudflare-only published statement", () => {
+  const md = read("../Privacy.md");
+  assert.doesNotMatch(md, /supabase/i);
+  assert.match(md, /stored in a Cloudflare D1 database/);
+});
+
+test("landing page tells new users to run connect_whoop", () => {
+  assert.match(read("index.html"), /<code>connect_whoop<\/code>/);
 });
