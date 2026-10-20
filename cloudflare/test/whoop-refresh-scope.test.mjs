@@ -30,14 +30,17 @@ async function fixture({expired=true}={}){
   return {sqlite:s,...d1Database(s),close(){s.close();}};
 }
 // Mock WHOOP. history(u,bearer) answers history endpoints.
-function whoop({scope=FULL,history}={}){
-  const log={refresh:[],api:[]};
+function whoop(opts={}){
+  // Property presence, not a default: {scope:undefined} omits scope from the response.
+  const scope=Object.hasOwn(opts,"scope")?opts.scope:FULL,history=opts.history;
+  const log={refresh:[],api:[],scopeSent:[]};
   const fetch=async(raw,opts)=>{
     const u=new URL(raw);
     if(u.pathname==="/oauth/oauth2/token"){
       log.refresh.push(Object.fromEntries(new URLSearchParams(String(opts.body))));
       const out={access_token:"new-access",refresh_token:"new-refresh",expires_in:3600,token_type:"bearer"};
       if(scope!==undefined)out.scope=scope;
+      log.scopeSent.push(Object.hasOwn(out,"scope"));
       return Response.json(out);
     }
     const bearer=opts.headers.authorization.slice(7);log.api.push({path:u.pathname,bearer});
@@ -67,11 +70,15 @@ test("refresh sends scope=offline with the documented fields only, once, and the
     assert.deepEqual(w.log.api.map(x=>x.bearer),["new-access"]);
   }finally{db.close();}
 });
-for(const [label,returned,stored] of [["full scope",FULL,FULL],["no scope in response",undefined,FULL],["narrowed scope","offline read:profile","offline read:profile"]]){
+// The stored value before the refresh differs from FULL so the omitted case is distinguishable.
+const PRIOR="offline read:profile read:recovery prior";
+for(const [label,returned,stored,present] of [["full scope",FULL,FULL,true],["no scope in response",undefined,PRIOR,false],["narrowed scope","offline read:profile","offline read:profile",true]]){
   test(`stored scope after refresh: ${label}`,async()=>{
     const db=await fixture(),w=whoop({scope:returned});
     try{
+      db.sqlite.prepare("UPDATE whoop_connections SET scope=? WHERE user_id=?").run(PRIOR,M);
       await call(db,w,"get_profile",{});
+      assert.deepEqual(w.log.scopeSent,[present],"mock response scope presence");
       assert.equal(conn(db).scope,stored);
     }finally{db.close();}
   });
