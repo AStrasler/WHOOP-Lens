@@ -8,6 +8,7 @@ const pages = ["../docs/index.html", "../docs/oauth/consent/index.html"].map(rea
 const terms = read("../docs/terms/index.html");
 const support = read("../docs/support/index.html");
 const privacy = read("../docs/privacy/index.html");
+const refresh = read("../docs/refresh/index.html");
 const source = read("../supabase/functions/whoop-mcp/handler.mjs");
 const entry = read("../supabase/functions/whoop-mcp/index.ts");
 
@@ -20,9 +21,7 @@ test("public pages name the private Cloudflare MCP and the existing Supabase pat
   assert.match(readme, /WHOOP connect is on/);
   assert.match(readme, /Cloudflare preview builds are off/);
   assert.doesNotMatch(readme, /WHOOP connect stays off/);
-  for (const page of pages) assert.match(page, /https:\/\/whooplens\.tech\/mcp/);
-  // The consent page still carries the legacy Supabase path; the landing page does not.
-  assert.match(pages[1], /Existing Supabase MCP address/);
+  assert.match(pages[0], /https:\/\/whooplens\.tech\/mcp/);
   assert.match(privacy, /https:\/\/whooplens\.tech\/mcp/);
   assert.match(read("../Privacy.md"), /https:\/\/whooplens\.tech\/mcp/);
 });
@@ -36,7 +35,27 @@ test("landing page is a Cloudflare-only document with no scripts or Supabase", (
   assert.match(landing, /Cloudflare Access email one-time PIN/);
   assert.match(landing, /https:\/\/auth\.whooplens\.tech/);
   assert.doesNotMatch(landing, /Stress Monitor/);
-  for (const page of [privacy, terms, support]) assert.doesNotMatch(page, /Supabase/);
+  assert.doesNotMatch(landing, /dashboard/);
+  for (const page of [privacy, terms, support, refresh]) {
+    assert.doesNotMatch(page, /supabase/i);
+    assert.doesNotMatch(page, /WHOOP-Lens\/dashboard/);
+  }
+});
+
+test("retired consent page is a static moved notice linking home", () => {
+  const moved = pages[1];
+  assert.doesNotMatch(moved, /<script/);
+  assert.doesNotMatch(moved, /supabase/i);
+  assert.doesNotMatch(moved, /<form/);
+  assert.match(moved, /This page has moved/);
+  assert.match(moved, /href="\/WHOOP-Lens\/"/);
+});
+
+test("refresh page describes the Cloudflare connector and reconnect path", () => {
+  assert.match(refresh, /<code>https:\/\/whooplens\.tech\/mcp<\/code>/);
+  assert.match(refresh, /Cloudflare Access email one-time PIN/);
+  assert.match(refresh, /connect_whoop/);
+  assert.match(refresh, /Stress Monitor zone history is not available/);
 });
 
 test("sign-in and consent link privacy, terms, and support", () => {

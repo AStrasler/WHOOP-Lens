@@ -28,25 +28,25 @@
 <ol>
 <li>Open a new conversation in the same ChatGPT account.</li>
 <li>Ask the question above.</li>
-<li>If the capability directory is still missing, confirm the plugin server URL is <code>https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/mcp</code>.</li>
+<li>If the capability directory is still missing, confirm the connector's server URL is <code>https://whooplens.tech/mcp</code>.</li>
 <li>Start another new conversation and ask again.</li>
 </ol>
-<p>You do not need to delete the plugin when that server URL is already correct.</p>
+<p>You do not need to delete the connector when that server URL is already correct.</p>
 <h2>If you see this, do this</h2>
 <ul>
 <li>An older chat ignores the new question: leave it and open a new conversation.</li>
 <li>Profile or recovery still matches the WHOOP app: the connection is working.</li>
 <li>The reply estimates stress hours from strain or heart rate: ask for <code>get_capabilities</code> and the Stress Monitor limitation.</li>
-<li>ChatGPT says the app was previously approved, but WHOOP reads fail: open <a href="https://astrasler.github.io/WHOOP-Lens/">WHOOP Lens setup</a>, sign in, and choose Connect WHOOP.</li>
-<li>Setup says public seats are full: a new WHOOP connection cannot be stored. An existing connection can stay connected.</li>
-<li>The account is disabled: reconnecting WHOOP does not re-enable it.</li>
+<li>ChatGPT is connected, but WHOOP reads fail: ask ChatGPT to run <code>connect_whoop</code>, open the WHOOP authorization link it returns, and approve on WHOOP's page.</li>
+<li>All seats are in use: a new WHOOP connection cannot be stored. An existing connection can always reconnect.</li>
+<li>Your WHOOP Lens membership is not active: sign-in is refused, and reconnecting WHOOP does not re-enable it.</li>
 </ul>
 <h2>Two different sign-ins</h2>
-<p>Previously approved on the consent page confirms the ChatGPT connection. Connect WHOOP on the setup site is the separate WHOOP authorization. Reconnect only the part that failed.</p>
-<p>No Android app is required. The optional companion does not upload readings while upload is disabled. A browser file preview stays on this device.</p>
+<p>The ChatGPT connection uses a Cloudflare Access email one-time PIN at https://auth.whooplens.tech and the consent page there. Connecting WHOOP is a separate WHOOP authorization started with <code>connect_whoop</code>. Reconnect only the part that failed.</p>
+<p>No Android app is required. A browser file preview stays on this device.</p>
 <p>Do not send passwords, access tokens, refresh tokens, or exported health files to support or into a GitHub issue.</p>
 <footer>
-<a href="/WHOOP-Lens/">Sign in</a><br>
+<a href="/WHOOP-Lens/">Home</a><br>
 Independent personal integration. Not affiliated with WHOOP.<br>
 <a href="/WHOOP-Lens/privacy/">Privacy statement</a> · <a href="/WHOOP-Lens/terms/">Terms</a> · <a href="/WHOOP-Lens/support/">Support</a>
 </footer>
