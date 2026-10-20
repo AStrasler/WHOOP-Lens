@@ -176,3 +176,8 @@ test("capability and workspace guides do not present Supabase as the working pat
   assert.match(caps, /connect_whoop/);
   assert.match(read("WEB_WORKSPACE.md"), /\*\*Retired\.\*\*/);
 });
+
+test("disconnect wording is qualified for ended memberships", () => {
+  assert.doesNotMatch(read("index.html"), /disconnect WHOOP from WHOOP Lens or revoke access in your WHOOP account settings at any time/);
+  for (const page of [read("index.html"), privacy, read("../Privacy.md")]) assert.match(page, /membership has ended/);
+});
