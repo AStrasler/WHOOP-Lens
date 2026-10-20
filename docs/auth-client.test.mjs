@@ -1,98 +1,15 @@
-import assert from "node:assert/strict";
-import test from "node:test";
-import { createAuthClient, safeRedirect, validateAuthorizationId, SUPABASE_URL } from "../docs/auth-client.mjs";
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createAuthClient, MCP_URL, AUTH_URL } from '../docs/auth-client.mjs';
 
-test("consent and session security controls", async () => {
-
-const results = [];
-const assert = (condition, label) => { if (!condition) throw new Error(label); results.push(label); };
-const reject = async (fn, label) => { let failed = false; try { await fn(); } catch { failed = true; } assert(failed,label); };
-await reject(() => safeRedirect("javascript:alert(1)"), "Blocks script redirects");
-await reject(() => safeRedirect("http://attacker.example/callback"), "Blocks insecure external redirects");
-await reject(() => safeRedirect("https://attacker.example/callback"), "Blocks arbitrary HTTPS hosts");
-await reject(() => safeRedirect("https://chatgpt.com.attacker.example/callback"), "Blocks lookalike ChatGPT hosts");
-await reject(() => safeRedirect("https://user:secret@chatgpt.com/callback"), "Blocks redirect credentials");
-await reject(() => safeRedirect("http://chatgpt.com/connector_platform_oauth_redirect"), "Blocks insecure ChatGPT redirects");
-await reject(() => safeRedirect("https://chatgpt.com:444/connector_platform_oauth_redirect"), "Blocks non-default ChatGPT ports");
-assert(safeRedirect("https://chatgpt.com/connector_platform/oauth_redirect") === "https://chatgpt.com/connector_platform/oauth_redirect", "Allows the ChatGPT connector redirect host");
-assert(safeRedirect("https://chatgpt.com/connector_platform_oauth_redirect") === "https://chatgpt.com/connector_platform_oauth_redirect", "Allows the stable ChatGPT connector redirect");
-assert(safeRedirect("https://chatgpt.com/connector/oauth/callback-id").startsWith("https://chatgpt.com/connector/oauth/"), "Allows callback-specific ChatGPT connector redirects");
-assert(new URL(safeRedirect("https://chatgpt.com/connector/oauth/callback-id?code=secret")).origin === "https://chatgpt.com", "Shows the ChatGPT origin without the full redirect URI");
-assert(safeRedirect("http://127.0.0.1:1455/auth/callback").startsWith("http://127.0.0.1:1455/"), "Allows the Codex client loopback callback");
-assert(safeRedirect("http://[::1]:1455/auth/callback").startsWith("http://[::1]:1455/"), "Allows the IPv6 Codex loopback callback");
-assert(safeRedirect("http://localhost:1455/auth/callback").startsWith("http://localhost:1455/"), "Allows the localhost Codex loopback callback");
-await reject(() => validateAuthorizationId("../token?grant_type=password"), "Blocks malformed authorization IDs");
-const id = "12345678-1234-1234-1234-123456789abc";
-assert(validateAuthorizationId(id) === id, "Accepts authorization UUIDs");
-let time = 1000;
-const calls = [];
-const fakeFetch = async (url, options) => {
- calls.push({url, options});
- if (url.endsWith("/token?grant_type=password")) return {ok:true,status:200,json:async()=>({access_token:"private-test-token",refresh_token:"private-refresh-token",expires_in:60,user:{email:"test@example.com"}})};
- return {ok:true,status:200,json:async()=>({authorization_id:id})};
-};
-const auth = createAuthClient(fakeFetch, () => time);
-await reject(() => auth.details(id), "Requires sign-in before reading consent");
-assert(calls.length === 0, "Does not send unauthenticated consent requests");
-const user = await auth.signIn("test@example.com","test-password");
-assert(!("access_token" in user) && !("refresh_token" in user), "Keeps session tokens out of UI results");
-assert(!calls[0].options.headers.Authorization, "Does not send a prior session when signing in");
-await auth.details(id);
-assert(calls[1].url === SUPABASE_URL + "/auth/v1/oauth/authorizations/" + id, "Uses the fixed Supabase consent endpoint");
-assert(calls[1].options.headers.Authorization === "Bearer private-test-token", "Sends the session only to the trusted API");
-assert(calls[1].options.redirect === "manual" && calls[1].options.credentials === "omit", "Does not follow fetch redirects and omits ambient cookies");
-await reject(() => auth.decide(id, "autoapprove"), "Rejects invalid decisions");
-await auth.decide(id, "deny");
-assert(JSON.parse(calls.at(-1).options.body).action === "deny", "Submits denial explicitly");
-time = 62000;
-await reject(() => auth.status(), "Expires browser sessions");
-const before = calls.length;
-await reject(() => auth.connect(), "Cannot link WHOOP after session expiry");
-assert(calls.length === before, "Does not send expired credentials");
-await auth.signIn("test@example.com","test-password");
-await auth.signOut();
-await reject(() => auth.details(id), "Sign-out clears the session");
-console.log("Passed " + results.length + " security checks.");
-
+test('Cloudflare endpoints', () => {
+  assert.equal(MCP_URL, 'https://whooplens.tech/mcp');
+  assert.equal(AUTH_URL, 'https://auth.whooplens.tech');
 });
 
-test("seat responses stay fixed strings and do not surface upstream bodies", async () => {
-  const fakeFetch = async (url) => {
-    if (url.endsWith("/token?grant_type=password")) {
-      return { ok: true, status: 200, json: async () => ({ access_token: "private-test-token", refresh_token: "private-refresh-token", expires_in: 60, user: { email: "test@example.com" } }) };
-    }
-    return {
-      ok: false,
-      status: 403,
-      json: async () => ({ code: "seat_full", error: "Public WHOOP seats are full.", access_token: "should-not-surface", refresh_token: "should-not-surface-either" }),
-    };
-  };
-  const auth = createAuthClient(fakeFetch, () => 1000);
-  await auth.signIn("test@example.com", "test-password");
-  const denied = await auth.connect().then(() => null, (error) => error);
-  assert.match(denied.message, /Public WHOOP seats are full/);
-  assert.equal(denied.message.includes("should-not-surface"), false);
-  assert.equal(denied.message.includes("refresh_token"), false);
-  const developerFetch = async (url) => {
-    if (url.endsWith("/token?grant_type=password")) {
-      return { ok: true, status: 200, json: async () => ({ access_token: "private-test-token", refresh_token: "private-refresh-token", expires_in: 60, user: { email: "test@example.com" } }) };
-    }
-    return { ok: false, status: 403, json: async () => ({ code: "developer_seat_taken", error: "raw upstream", authorization: "Bearer leaked" }) };
-  };
-  const developerAuth = createAuthClient(developerFetch, () => 1000);
-  await developerAuth.signIn("test@example.com", "test-password");
-  const developerDenied = await developerAuth.connect().then(() => null, (error) => error);
-  assert.match(developerDenied.message, /developer seat is already assigned/);
-  assert.equal(developerDenied.message.includes("Bearer leaked"), false);
-});
-
-
-test('independent Cloudflare callback is not a Supabase redirect target',()=>{
-  const url='https://auth.whooplens.tech/oauth/upstream/callback?code=synthetic&state=synthetic';
-  assert.throws(()=>safeRedirect(url));
-  for(const bad of ['https://auth.whooplens.tech/other',
-    'https://auth.whooplens.tech/oauth/upstream/callback/extra',
-    'https://auth.whooplens.tech.evil.invalid/oauth/upstream/callback',
-    'http://auth.whooplens.tech/oauth/upstream/callback',
-    'https://auth.whooplens.tech/oauth/upstream/callback#token'])assert.throws(()=>safeRedirect(bad));
+test('legacy client is disabled', () => {
+  const client = createAuthClient();
+  for (const method of ['signIn','signOut','details','decide','status','connect']) {
+    assert.throws(() => client[method](), /Legacy sign-in is retired/);
+  }
 });
