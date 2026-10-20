@@ -109,7 +109,12 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
   const refresh=await openToken(row.encrypted_refresh_token,id,"refresh",key);
   const form=new URLSearchParams({
     grant_type:"refresh_token",refresh_token:refresh,
-    client_id:env.WHOOP_CLIENT_ID,client_secret:env.WHOOP_CLIENT_SECRET
+    client_id:env.WHOOP_CLIENT_ID,client_secret:env.WHOOP_CLIENT_SECRET,
+    // WHOOP recommends requesting offline when refreshing as well as on the
+    // initial grant (developer.whoop.com/docs/developing/support, refresh
+    // tutorial payload). Read scopes are not re-sent: WHOOP's refresh payload
+    // only documents offline, and the response scope is stored as returned.
+    scope:"offline"
   });
   const response=await fetcher(TOKEN_ENDPOINT,{
     method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},
