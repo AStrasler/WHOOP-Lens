@@ -171,6 +171,11 @@ test('timestamp fallback uses the first valid of end, start, created_at',async()
     assert.deepEqual(out.records,[r],'record unchanged');
   }
   assert.equal(attributeWhoop({records:[{end:'bad',start:v}],complete:true},'get_sleep',true,now).whoop_measurements.stale,false);
+  // Records exist but none has a valid timestamp: freshness is unknown, not stale.
+  for(const recs of [[{end:'',start:'',created_at:''}],[{}],[{end:'x'},{start:null}]]){
+    const w=attributeWhoop({records:recs,next_token:null,complete:true},'get_cycles',true,now).whoop_measurements;
+    assert.equal(w.stale,null);assert.equal(w.stale_reason,'no_valid_timestamp');assert.equal(w.records_status,'records_returned');
+  }
 });
 
 test('an empty page is "no records" only on a complete first page',async()=>{

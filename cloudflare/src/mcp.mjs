@@ -79,6 +79,7 @@ export function attributeWhoop(data,name,firstPage,now=Date.now()){
   if(name==='get_sleep')m.naps_returned=data.records.filter(r=>r?.nap===true).length;
   if(firstPage&&name!=='get_workouts'){
     if(records_status==='empty_page_more_may_exist'){m.stale=null;m.stale_reason='page_incomplete';}
+    else if(!empty&&latest===null){m.stale=null;m.stale_reason='no_valid_timestamp';}
     else m.stale=latest===null||now-latest>STALE_MS;
   }
   out.whoop_measurements=m;
