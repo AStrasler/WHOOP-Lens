@@ -40,3 +40,9 @@ test('www site headers set CSP, nosniff, referrer policy, and frame-ancestors no
   assert.match(h, /X-Content-Type-Options: nosniff/);
   assert.match(h, /Referrer-Policy: no-referrer/);
 });
+
+test('www landing page keeps the https seat request link', async () => {
+  await build();
+  const landing = await readFile(join(OUT, 'index.html'), 'utf8');
+  assert.match(landing, /href="https:\/\/auth\.whooplens\.tech\/request-seat"/);
+});

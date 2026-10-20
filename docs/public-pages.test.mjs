@@ -181,3 +181,10 @@ test("disconnect wording is qualified for ended memberships", () => {
   assert.doesNotMatch(read("index.html"), /disconnect WHOOP from WHOOP Lens or revoke access in your WHOOP account settings at any time/);
   for (const page of [read("index.html"), privacy, read("../Privacy.md")]) assert.match(page, /membership has ended/);
 });
+
+test("landing page links the seat request form on auth.whooplens.tech", () => {
+  const landing = read("index.html");
+  assert.match(landing, /<a href="https:\/\/auth\.whooplens\.tech\/request-seat">/);
+  assert.match(landing, /Do not include health information, passwords or tokens/);
+  assert.doesNotMatch(landing, /<script|<form/);
+});
