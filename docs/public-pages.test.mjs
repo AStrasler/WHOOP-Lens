@@ -12,12 +12,13 @@ const refresh = read("../docs/refresh/index.html");
 const source = read("../supabase/functions/whoop-mcp/handler.mjs");
 const entry = read("../supabase/functions/whoop-mcp/index.ts");
 
-test("public pages name the private Cloudflare MCP and the existing Supabase path", () => {
+test("public pages name the private Cloudflare MCP and mark the Supabase path retired", () => {
   const readme = read("../README.md");
   assert.match(readme, /https:\/\/whooplens\.tech\/mcp/);
   assert.match(readme, /https:\/\/auth\.whooplens\.tech/);
   assert.match(readme, /WHOOP Stress Monitor history is not in the official WHOOP developer API/);
-  assert.match(readme, /https:\/\/evoiwauqplbcecumiwqn\.supabase\.co\/functions\/v1\/whoop-mcp\/mcp/);
+  assert.match(readme, /## Retired Supabase connector/);
+  assert.doesNotMatch(readme, /Connect WHOOP on the existing connector/);
   assert.match(readme, /WHOOP connect is on/);
   assert.match(readme, /Cloudflare preview builds are off/);
   assert.doesNotMatch(readme, /WHOOP connect stays off/);
@@ -160,4 +161,11 @@ test("privacy statements disclose stored Samsung Health records", () => {
   for (const page of [privacy, read("../Privacy.md")]) {
     assert.match(page, /Samsung Health records are stored for your account in the WHOOP Lens Cloudflare D1 database/);
   }
+});
+
+test("refresh guide uses connect_whoop and the Cloudflare server, not the retired setup site", () => {
+  const md = read("REFRESH.md");
+  assert.match(md, /connect_whoop/);
+  assert.match(md, /https:\/\/whooplens\.tech\/mcp/);
+  assert.doesNotMatch(md, /supabase|astrasler\.github\.io/i);
 });

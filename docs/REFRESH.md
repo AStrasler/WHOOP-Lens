@@ -4,46 +4,37 @@ Use this when WHOOP Lens is already connected and you want to know whether a new
 
 ## Do I need to do anything?
 
-If recovery, sleep, and profile questions still return your own dated WHOOP data, leave the WHOOP connection in place. Start a **new ChatGPT conversation** and ask:
+If recovery, sleep, and profile questions still return your own dated WHOOP data, leave that WHOOP connection in place. Start a **new ChatGPT conversation** and ask:
 
 `What can WHOOP Lens do now? Show the capability directory, and say whether Stress Monitor history is available.`
 
-A working answer names real tools such as recovery, sleep, cycles, and workouts, and says that **WHOOP Stress Monitor zone history is not available** from the official API. It must not turn strain, heart rate, or HRV into high-stress hours.
+A current answer names recovery, sleep, cycles, and workouts, and says that **WHOOP Stress Monitor zone history is not available** from the official API. It does not convert strain, heart rate, or HRV into high-stress hours. Charts appear only when that ChatGPT app can draw them.
 
-Charts appear only when that ChatGPT app can draw them. A text summary is the expected fallback.
+## If the chat looks unchanged
 
-## How do I see a server update?
-
-1. Open a new conversation in the same ChatGPT account that already has WHOOP Lens.
-2. Ask the prompt above.
-3. If the reply still lacks the capability directory, open the WHOOP Lens plugin settings and confirm the server URL is `https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/whoop-mcp/mcp`.
+1. Open a new conversation in the same ChatGPT account.
+2. Ask the question above.
+3. If the capability directory is still missing, confirm the connector's server URL is `https://whooplens.tech/mcp`.
 4. Start another new conversation and ask again.
 
-You do not need to delete the plugin when the server URL is already correct. A new conversation is the first refresh step.
+You do not need to delete the connector when that server URL is already correct.
 
-## What if nothing changed?
+## If you see this, do this
 
 | What you see | What to do |
 | --- | --- |
-| Older chat ignores the new prompt | Leave that chat. Open a new one and ask again. |
-| Profile or recovery still matches your WHOOP app | The connection is working. Stop here. |
-| The reply estimates stress hours from strain or heart rate | Ask it to call `get_capabilities` and to follow the Stress Monitor limitation. |
-| Consent page says the app was previously approved, but WHOOP reads fail | That confirms the ChatGPT connection only. Open [WHOOP Lens setup](https://astrasler.github.io/WHOOP-Lens/), sign in, and use **Connect WHOOP**. |
-| Setup says the public seats are full | A brand-new WHOOP connection cannot be stored. An existing connection can stay connected. |
-| Page says the account is disabled | The maintainer has to re-enable that account. Reconnecting WHOOP will not bypass it. |
+| An older chat ignores the new question | Leave it and open a new conversation. |
+| Profile or recovery still matches the WHOOP app | The connection is working. |
+| The reply estimates stress hours from strain or heart rate | Ask for `get_capabilities` and the Stress Monitor limitation. |
+| ChatGPT is connected, but WHOOP reads fail | Ask ChatGPT to run `connect_whoop`, open the WHOOP authorization link it returns, and approve on WHOOP's page. |
+| All seats are in use | A new WHOOP connection cannot be stored. An existing connection can always reconnect. |
+| Your WHOOP Lens membership is not active | Sign-in is refused, and reconnecting WHOOP does not re-enable it. |
 
 ## Two different sign-ins
 
-ChatGPT’s plugin login and WHOOP’s authorization are separate.
+The ChatGPT connection uses a Cloudflare Access email one-time PIN at https://auth.whooplens.tech and the consent page there. Connecting WHOOP is a separate WHOOP authorization started with `connect_whoop`. Reconnect only the part that failed.
 
-- **ChatGPT to WHOOP Lens:** the consent page at setup. **Previously approved** means this part succeeded.
-- **WHOOP to WHOOP Lens:** **Connect WHOOP** on [the setup site](https://astrasler.github.io/WHOOP-Lens/). Finish on WHOOP’s own page.
-
-Reconnect only the part that failed. A working WHOOP link does not need to be revoked to refresh ChatGPT.
-
-## Android and files
-
-No Android app is required. The optional companion does not upload readings while upload is disabled. The browser workspace can preview a supported file on this device only; that preview is not sent to WHOOP Lens.
+No Android app is required. A browser file preview stays on this device.
 
 ## What not to send
 
