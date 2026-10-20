@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#000000">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
 <title>Privacy statement · WHOOP Lens</title>
-<meta name="description" content="How WHOOP Lens handles WHOOP data and answers already returned to ChatGPT.">
+<meta name="description" content="How WHOOP Lens handles WHOOP data, Samsung Health records, and answers already returned to ChatGPT.">
 <link rel="icon" href="/WHOOP-Lens/logo.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="/WHOOP-Lens/logo.jpg">
 <link rel="stylesheet" href="/WHOOP-Lens/style.css">
@@ -26,6 +26,7 @@
 <p>WHOOP Lens runs on Cloudflare. The MCP server is https://whooplens.tech/mcp and its authorization server is https://auth.whooplens.tech. Sign-in is a Cloudflare Access email one-time PIN. Access also requires an active WHOOP Lens membership granted by the owner; accounts are never created or linked automatically by email.</p>
 <h2>Data accessed and purpose</h2>
 <p>With your authorization, the plugin reads WHOOP recovery, sleep, physiological cycles and strain, workouts, profile information, and body measurements. The WHOOP connection requests read scopes only (<code>read:profile</code>, <code>read:body_measurement</code>, <code>read:recovery</code>, <code>read:sleep</code>, <code>read:workout</code>, and <code>read:cycles</code>), plus <code>offline</code> so access can be refreshed.</p>
+<p>If Samsung Health records are stored for your account in the WHOOP Lens Cloudflare D1 database, the plugin can also read those stored records, such as sleep, heart rate, blood oxygen, steps, activity, exercise, body composition, skin temperature, energy score, blood pressure, and profile. Samsung Health records are kept separate from WHOOP data, are read only for the signed-in account, and are not sold or used for advertising.</p>
 <p>This information is used to answer your questions and produce the summaries you request in ChatGPT or Codex.</p>
 <h2>Processing and sharing</h2>
 <p>The Cloudflare Workers handle sign-in, consent, the WHOOP authorization callback, WHOOP token refresh, and WHOOP API requests. WHOOP access and refresh tokens are not placed in the ChatGPT or Codex authorization grant.</p>

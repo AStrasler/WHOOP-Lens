@@ -155,3 +155,9 @@ test("repository privacy copy matches the Cloudflare-only published statement", 
 test("landing page tells new users to run connect_whoop", () => {
   assert.match(read("index.html"), /<code>connect_whoop<\/code>/);
 });
+
+test("privacy statements disclose stored Samsung Health records", () => {
+  for (const page of [privacy, read("../Privacy.md")]) {
+    assert.match(page, /Samsung Health records are stored for your account in the WHOOP Lens Cloudflare D1 database/);
+  }
+});

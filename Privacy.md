@@ -10,6 +10,8 @@ WHOOP Lens runs on Cloudflare. The MCP server is https://whooplens.tech/mcp and 
 
 With your authorization, the plugin reads WHOOP recovery, sleep, physiological cycles and strain, workouts, profile information, and body measurements. The WHOOP connection requests read scopes only (`read:profile`, `read:body_measurement`, `read:recovery`, `read:sleep`, `read:workout`, and `read:cycles`), plus `offline` so access can be refreshed.
 
+If Samsung Health records are stored for your account in the WHOOP Lens Cloudflare D1 database, the plugin can also read those stored records, such as sleep, heart rate, blood oxygen, steps, activity, exercise, body composition, skin temperature, energy score, blood pressure, and profile. Samsung Health records are kept separate from WHOOP data, are read only for the signed-in account, and are not sold or used for advertising.
+
 This information is used to answer your questions and produce the summaries you request in ChatGPT or Codex.
 
 ## Processing and sharing
