@@ -289,6 +289,92 @@ test("failed or incomplete WHOOP pages return what was read and resume at the fa
   }finally{db.close();}
 });
 
+// Coverage follow-up to PR #72: failures during pagination never claim
+// completeness or missing WHOOP data, in the text or structuredContent.
+const both=body=>[JSON.parse(body.result.content[0].text),body.result.structuredContent];
+test("partial auto_page failures and later-page errors are never reported as complete or missing",async()=>{
+  const db=await fixture();
+  try{
+    // (1) auto_page: page 3 (offset 50) fails with 500 or 429 after two pages were read.
+    for(const [status,reason] of [[500,"upstream_error"],[429,"rate_limited"]]){
+      let failing=true;
+      const whoop=fakeWhoop({fail:({offset})=>failing&&offset===50?new Response("{}",{status}):null});
+      const call=setup(whoop);
+      const body=await call(db,B,"get_recovery",{auto_page:true});
+      assert.equal(body.result.isError,undefined,status+" partial is not a tool error");
+      const views=both(body);assert.ok(views[1],"structuredContent present");
+      for(const v of views){
+        assert.deepEqual(ids(v.records),expected(B,"recovery",0,50),"records already read are preserved");
+        assert.equal(v.complete,false);assert.equal(v.incomplete_reason,reason);
+        assert.equal(typeof v.next_token,"string");assert.match(v.next_token,/^wlc1\.(k1|k2)\./);
+        assert.equal(v.source,"whoop");
+        const m=v.whoop_measurements;
+        assert.equal(m.missing,false);assert.equal(m.records_status,"records_returned");assert.equal(m.records_returned,50);
+        assert.notEqual(m.records_status,"none_in_range");
+      }
+      assert.deepEqual(views[0],views[1],"text and structuredContent agree");
+      // The sealed cursor resumes exactly at the failed page.
+      failing=false;
+      const resumed=content(await call(db,B,"get_recovery",{auto_page:true,next_token:views[1].next_token}));
+      assert.deepEqual(ids(resumed.records).slice(0,1),expected(B,"recovery",50,51));
+    }
+    // (1b) auto_page: an empty first page with a next token, then a failure.
+    // Nothing was read, but more may exist: never none_in_range or missing.
+    for(const [status,reason] of [[500,"upstream_error"],[429,"rate_limited"]]){
+      let n=0,recovered=false;const seen=[];const raw=btoa(`${B}:recovery:25`);
+      const whoop={fetch:async url=>{
+        seen.push(new URL(url).searchParams.get("nextToken"));
+        if(recovered)return new Response(JSON.stringify({records:[{id:"resumed"}],next_token:null}),{status:200,headers:{"content-type":"application/json"}});
+        return ++n===1?new Response(JSON.stringify({records:[],next_token:raw}),{status:200,headers:{"content-type":"application/json"}}):
+          new Response("{}",{status});}};
+      const call=setup(whoop);
+      const body=await call(db,B,"get_recovery",{auto_page:true});
+      assert.equal(body.result.isError,undefined,status+" empty partial is not a tool error");
+      const views=both(body);assert.ok(views[1],"structuredContent present");
+      for(const v of views){
+        assert.deepEqual(v.records,[]);
+        assert.equal(v.complete,false);assert.equal(v.incomplete_reason,reason);
+        assert.equal(typeof v.next_token,"string");assert.ok(v.next_token.length>0);
+        const m=v.whoop_measurements;
+        assert.equal(m.missing,false);assert.equal(m.records_status,"empty_page_more_may_exist");
+        assert.equal(m.records_returned,0);assert.equal(m.stale,null);assert.equal(m.stale_reason,"page_incomplete");
+        // Sealed, never the raw WHOOP token (Codex P2 on cae96a1).
+        assert.notEqual(v.next_token,raw);assert.match(v.next_token,/^wlc1\.(k1|k2)\./);
+      }
+      assert.deepEqual(views[0],views[1],"text and structuredContent agree");
+      // The sealed cursor resumes at the failed page: WHOOP receives the raw token.
+      recovered=true;seen.length=0;
+      const resumed=content(await call(db,B,"get_recovery",{auto_page:true,next_token:views[1].next_token}));
+      assert.deepEqual(seen,[raw]);assert.deepEqual(ids(resumed.records),["resumed"]);assert.equal(resumed.complete,true);
+    }
+    // (2) A WHOOP failure on a later page reached with next_token (manual and
+    // auto_page) is an error, never missing data or none_in_range.
+    for(const status of [500,503,429]){
+      let failing=false;
+      const whoop=fakeWhoop({fail:({offset})=>failing&&offset>0?new Response("{}",{status}):null});
+      const call=setup(whoop);
+      const first=content(await call(db,B,"get_sleep",{limit:25}));
+      assert.equal(first.complete,false);assert.ok(first.next_token);
+      failing=true;
+      for(const args of [{limit:25,next_token:first.next_token},{auto_page:true,next_token:first.next_token}]){
+        const err=await call(db,B,"get_sleep",args);
+        assert.equal(err.result.isError,true,status+" "+JSON.stringify(Object.keys(args)));
+        assert.equal(err.result.structuredContent,undefined);
+        // Check the unescaped text itself (Codex P2: JSON.stringify of the outer
+        // response escapes inner quotes, so a quoted pattern could never match).
+        const texts=err.result.content.map(c=>c.text);assert.ok(texts.length>0);
+        for(const text of texts)
+          assert.doesNotMatch(text,/whoop_measurements|"missing"|\bmissing\b\s*[:=]\s*true|none_in_range|"complete"\s*:\s*true|continuation_page_empty/);
+      }
+      // The same cursor still works once WHOOP recovers.
+      failing=false;
+      const ok=content(await call(db,B,"get_sleep",{limit:25,next_token:first.next_token}));
+      assert.deepEqual(ids(ok.records),expected(B,"sleep",25,50));
+      assert.equal(ok.whoop_measurements.missing,false);assert.equal(ok.whoop_measurements.records_status,"records_returned");
+    }
+  }finally{db.close();}
+});
+
 test("two members paging interleaved stay isolated; B cannot use A's cursor and A's still works",async()=>{
   const db=await fixture();
   try{
