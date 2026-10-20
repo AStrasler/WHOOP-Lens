@@ -20,12 +20,23 @@ test("public pages name the private Cloudflare MCP and the existing Supabase pat
   assert.match(readme, /WHOOP connect is on/);
   assert.match(readme, /Cloudflare preview builds are off/);
   assert.doesNotMatch(readme, /WHOOP connect stays off/);
-  for (const page of pages) {
-    assert.match(page, /https:\/\/whooplens\.tech\/mcp/);
-    assert.match(page, /Existing Supabase MCP address/);
-  }
+  for (const page of pages) assert.match(page, /https:\/\/whooplens\.tech\/mcp/);
+  // The consent page still carries the legacy Supabase path; the landing page does not.
+  assert.match(pages[1], /Existing Supabase MCP address/);
   assert.match(privacy, /https:\/\/whooplens\.tech\/mcp/);
   assert.match(read("../Privacy.md"), /https:\/\/whooplens\.tech\/mcp/);
+});
+
+test("landing page is a Cloudflare-only document with no scripts or Supabase", () => {
+  const landing = pages[0];
+  assert.doesNotMatch(landing, /<script/);
+  assert.doesNotMatch(landing, /supabase/i);
+  assert.match(landing, /script-src|default-src 'none'/);
+  assert.doesNotMatch(landing, /connect-src/);
+  assert.match(landing, /Cloudflare Access email one-time PIN/);
+  assert.match(landing, /https:\/\/auth\.whooplens\.tech/);
+  assert.doesNotMatch(landing, /Stress Monitor/);
+  for (const page of [privacy, terms, support]) assert.doesNotMatch(page, /Supabase/);
 });
 
 test("sign-in and consent link privacy, terms, and support", () => {
@@ -54,7 +65,8 @@ test("privacy is published as a Pages page", () => {
   assert.match(privacy, /not affiliated with WHOOP/);
   assert.match(privacy, /https:\/\/astrasler\.github\.io\/WHOOP-Lens\/privacy\//);
   assert.match(read("../Privacy.md"), /https:\/\/astrasler\.github\.io\/WHOOP-Lens\/privacy\//);
-  assert.match(privacy, /9 public connection seats and 1 developer seat/);
+  assert.match(privacy, /never more than 10/);
+  assert.match(privacy, /AES-256-GCM/);
   assert.match(privacy, /whoop-lens@outlook.com/);
   assert.match(privacy, /does not include WHOOP access tokens/);
   assert.match(read("../Privacy.md"), /does not include WHOOP access tokens/);

@@ -271,3 +271,4 @@ hr {
   .pulse-line, .ring { animation: none; }
   .pulse-line { stroke-dashoffset: 0; }
 }
+.doc li { color: var(--muted); line-height: 1.6; margin-bottom: 6px; }
