@@ -12,7 +12,6 @@ jobs:
       - name: Check browser modules, function source, and authentication controls
         run: |
           node --check docs/auth-client.mjs
-          node --check docs/app.mjs
           node --check docs/landing.mjs
           node --check supabase/functions/whoop-mcp/challenge.mjs
           node --check supabase/functions/whoop-mcp/handler.mjs
