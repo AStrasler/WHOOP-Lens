@@ -12,6 +12,15 @@ import java.security.MessageDigest
 import java.util.Base64
 
 class PrivateSessionTest {
+  @Test fun minimumSupportedLifetimeDoesNotTriggerContinuousRefresh() {
+    val f = Fixture()
+    f.tokenBody.put("expires_in", 60)
+    val attempt = f.session.beginSignIn()
+    val state = parameters(URI(f.session.authorizationUrl(attempt)).rawQuery).getValue("state")
+    assertTrue(f.session.completeSignIn(PrivateSession.REDIRECT + "?code=synthetic&state=$state", attempt))
+    assertTrue(f.session.currentToken() != null)
+    assertEquals(54000L, f.session.nextRefreshDelayMs())
+  }
   private fun parameters(value: String): Map<String, String> = value.split("&").associate {
     val parts = it.split("=", limit = 2)
     URLDecoder.decode(parts[0], "UTF-8") to URLDecoder.decode(parts[1], "UTF-8")

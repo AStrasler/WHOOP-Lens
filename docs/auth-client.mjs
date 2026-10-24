@@ -2,9 +2,10 @@
 export const SUPABASE_URL = "";
 export const PUBLIC_KEY = "";
 export const MCP_URL = "https://whooplens.tech/mcp";
+export const AUTH_URL = "https://auth.whooplens.tech";
 
 export function validateAuthorizationId(value) {
-  if (!/^[^/?#&\s]{1,512}$/.test(value || "")) {
+  if (!/^[^/?#&\\\s]{1,512}$/.test(value || "")) {
     throw new Error("Invalid or expired authorization link. Start again from ChatGPT or Codex.");
   }
   return value;

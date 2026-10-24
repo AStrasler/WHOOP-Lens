@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAuthClient, safeRedirect, validateAuthorizationId, SUPABASE_URL, PUBLIC_KEY, MCP_URL } from "../docs/auth-client.mjs";
+import { createAuthClient, safeRedirect, validateAuthorizationId, SUPABASE_URL, PUBLIC_KEY, MCP_URL, AUTH_URL } from "../docs/auth-client.mjs";
 
 test("consent and session security controls", async () => {
 
@@ -43,6 +43,7 @@ test("legacy authentication fails closed without transmitting credentials or ups
   assert.equal(SUPABASE_URL, "");
   assert.equal(PUBLIC_KEY, "");
   assert.equal(MCP_URL, "https://whooplens.tech/mcp");
+  assert.equal(AUTH_URL, "https://auth.whooplens.tech");
 });
 
 test('independent Cloudflare callback is not a Supabase redirect target',()=>{
@@ -53,4 +54,9 @@ test('independent Cloudflare callback is not a Supabase redirect target',()=>{
     'https://auth.whooplens.tech.evil.invalid/oauth/upstream/callback',
     'http://auth.whooplens.tech/oauth/upstream/callback',
     'https://auth.whooplens.tech/oauth/upstream/callback#token'])assert.throws(()=>safeRedirect(bad));
+});
+
+test("retained authorization-ID validation accepts s and rejects whitespace and backslashes", () => {
+  assert.equal(validateAuthorizationId("session-id"), "session-id");
+  for (const id of ["bad id", "bad\tid", "bad\\id"]) assert.throws(() => validateAuthorizationId(id));
 });

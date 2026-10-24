@@ -4,6 +4,10 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.content.Intent
+import android.content.ActivityNotFoundException
+import android.content.res.ColorStateList
+import android.view.View
+import androidx.core.view.ViewCompat
 import android.app.AlertDialog
 import android.widget.Button
 import android.widget.LinearLayout
@@ -35,17 +39,24 @@ class MainActivity : ComponentActivity() {
   private val sessionHandler = Handler(Looper.getMainLooper())
   private var foreground = false
   private var restoringSession = false
-  private var callbackInFlight = false
+  private val callbacks = CallbackGate()
+  private var grantedPermissions = emptySet<String>()
+  private var stepsBusy = false
+  private var otherBusy = false
   private val sessionRefresh = object : Runnable {
-    override fun run() { restoreSession(); sessionHandler.postDelayed(this, 30000) }
+    override fun run() { restoreSession() }
   }
   private var verified = false
   private var uiGeneration = 0L
   private var preparedSteps: ReviewedSteps? = null
+  private var observedSessionGeneration: Long? = null
 
   // Direct view references to avoid ResourceType lint errors
   private lateinit var statusText: TextView
+  private lateinit var accountStatusText: TextView
+  private lateinit var healthStatusText: TextView
   private lateinit var loginButton: Button
+  private lateinit var retryConnectionButton: Button
   private lateinit var permissionsButton: Button
   private lateinit var previewButton: Button
   private lateinit var otherPreviewButton: Button
@@ -64,22 +75,10 @@ class MainActivity : ComponentActivity() {
     PermissionController.createRequestPermissionResultContract()
   ) { granted ->
     if (!verified || auth.currentToken() == null) return@registerForActivityResult
-    if (::statusText.isInitialized) {
-      statusText.text = "Health Connect: ${granted.size} of ${permissions.size} permissions granted. No data uploaded."
-    }
+    grantedPermissions = granted
     preparedSteps = null
-    if (::reviewButton.isInitialized) reviewButton.isEnabled = false
-    if (::previewButton.isInitialized) {
-      previewButton.isEnabled = verified &&
-        granted.contains(HealthPermission.getReadPermission(StepsRecord::class))
-    }
-    if (::otherPreviewButton.isInitialized) {
-      otherPreviewButton.isEnabled = verified && granted.any {
-        it == HealthPermission.getReadPermission(SleepSessionRecord::class) ||
-        it == HealthPermission.getReadPermission(HeartRateRecord::class) ||
-        it == HealthPermission.getReadPermission(ExerciseSessionRecord::class)
-      }
-    }
+    statusText.text = "Health Connect: ${granted.size} of ${permissions.size} permissions granted. No data uploaded."
+    renderControls()
   }
 
   override fun onNewIntent(intent: Intent) {
@@ -94,26 +93,28 @@ class MainActivity : ComponentActivity() {
     intent.data = null
     if (callback.scheme != "https" || callback.host != "whooplens.tech" || callback.path != "/android/oauth/callback") return
     val authAttempt = auth.pendingAttempt() ?: return
-    callbackInFlight = true
+    val callbackTicket = callbacks.begin() ?: return
     val attempt = uiGeneration
     if (::statusText.isInitialized) {
-      statusText.text = "Verifying Cloudflare authorization..."
+      accountStatusText.text = "Verifying Cloudflare authorization..."
     }
     Thread {
       val ok = try { auth.completeSignIn(callback.toString(), authAttempt) } catch (_: Exception) { false }
       runOnUiThread {
+        if (!callbacks.finish(callbackTicket)) return@runOnUiThread
         if (attempt != uiGeneration || isDestroyed || isFinishing) return@runOnUiThread
-        callbackInFlight = false
         verified = ok
         if (::previewButton.isInitialized) previewButton.isEnabled = false
         if (::otherPreviewButton.isInitialized) otherPreviewButton.isEnabled = false
         if (::reviewButton.isInitialized) reviewButton.isEnabled = false
         if (::deleteButton.isInitialized) deleteButton.isEnabled = ok
         if (::statusText.isInitialized) {
-          statusText.text = if (ok)
+          accountStatusText.text = if (ok)
             "Cloudflare authorization complete. No health data uploaded."
           else "Cloudflare sign-in failed or expired. Please retry."
         }
+        loginButton.isEnabled = true
+        if (ok) restoreSession()
         // Permissions are requested only after the authenticated callback.
         if (::permissionsButton.isInitialized) {
           permissionsButton.isEnabled = ok &&
@@ -139,6 +140,7 @@ class MainActivity : ComponentActivity() {
       setTextColor(foreground)
       setTypeface(null, Typeface.BOLD)
       setPadding(0, 0, 0, 4.dp())
+      ViewCompat.setAccessibilityHeading(this, true)
     }
     fun section(title: String): TextView = TextView(this).apply {
       text = title
@@ -146,12 +148,14 @@ class MainActivity : ComponentActivity() {
       setTypeface(null, Typeface.BOLD)
       setTextColor(muted)
       setPadding(0, 20.dp(), 0, 6.dp())
+      ViewCompat.setAccessibilityHeading(this, true)
     }
     fun action(button: Button) {
       button.isAllCaps = false
       button.textSize = 15f
       button.minHeight = 48.dp()
-      button.setTextColor(foreground)
+      button.setTextColor(ColorStateList(arrayOf(intArrayOf(android.R.attr.state_enabled), intArrayOf()),
+        intArrayOf(foreground, muted)))
       button.background = GradientDrawable().apply {
         setColor(Color.rgb(29, 49, 57))
         cornerRadius = 13.dp().toFloat()
@@ -162,7 +166,7 @@ class MainActivity : ComponentActivity() {
     }
 
     statusText = TextView(this).apply {
-      text = "Private beta. Sign in before requesting access to your health data."
+      text = getString(R.string.preview_ready)
       textSize = 14f
       setTextColor(foreground)
       setPadding(12.dp(), 10.dp(), 12.dp(), 10.dp())
@@ -171,7 +175,23 @@ class MainActivity : ComponentActivity() {
         cornerRadius = 12.dp().toFloat()
       }
     }
+    statusText.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+    accountStatusText = TextView(this).apply {
+      text = getString(R.string.account_checking)
+      textSize = 14f
+      setTextColor(muted)
+      setPadding(0, 0, 0, 8.dp())
+      accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+    }
     loginButton = Button(this).apply { text = "Sign in with Cloudflare" }
+    retryConnectionButton = Button(this).apply {
+      text = getString(R.string.retry_saved_connection)
+      visibility = View.GONE
+      setOnClickListener {
+        accountStatusText.text = getString(R.string.account_checking)
+        restoreSession()
+      }
+    }
     permissionsButton = Button(this).apply {
       text = "Choose Health Connect permissions"
       isEnabled = false
@@ -210,15 +230,22 @@ class MainActivity : ComponentActivity() {
     })
     layout.addView(section("Account"))
     action(loginButton)
+    action(retryConnectionButton)
+    layout.addView(accountStatusText)
     layout.addView(statusText)
     layout.addView(section("Health Connect"))
-    layout.addView(TextView(this).apply {
+    healthStatusText = TextView(this).apply {
       text = hcStatus
       textSize = 14f
       setTextColor(muted)
       setPadding(0, 0, 0, 9.dp())
-    })
+    }
+    layout.addView(healthStatusText)
     action(permissionsButton)
+    action(Button(this).apply {
+      text = getString(R.string.health_connect_settings)
+      setOnClickListener { openExternal(Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)) }
+    })
     layout.addView(section("Preview on this device"))
     action(previewButton)
     action(otherPreviewButton)
@@ -238,6 +265,7 @@ class MainActivity : ComponentActivity() {
       setBackgroundColor(background)
       isFillViewport = true
       addView(layout)
+      protectSystemBars(this@MainActivity, this)
     })
     handleOAuthCallback(intent)
 
@@ -246,8 +274,20 @@ class MainActivity : ComponentActivity() {
     }
 
     loginButton.setOnClickListener {
+      callbacks.cancel()
+      sessionHandler.removeCallbacks(sessionRefresh)
+      grantedPermissions = emptySet()
+      stepsBusy = false
+      otherBusy = false
       val attempt = ++uiGeneration
-      val authAttempt = auth.beginSignIn()
+      val authAttempt = try { auth.beginSignIn() } catch (_: Exception) {
+        verified = false
+        preparedSteps = null
+        renderControls()
+        accountStatusText.text = getString(R.string.session_storage_unavailable)
+        statusText.text = getString(R.string.preview_cleared)
+        return@setOnClickListener
+      }
       verified = false
       permissionsButton.isEnabled = false
       previewButton.isEnabled = false
@@ -255,17 +295,20 @@ class MainActivity : ComponentActivity() {
       reviewButton.isEnabled = false
       deleteButton.isEnabled = false
       preparedSteps = null
+      statusText.text = getString(R.string.preview_cleared)
+      renderControls()
+      retryConnectionButton.visibility = View.GONE
       loginButton.isEnabled = false
-      statusText.text = "Preparing secure Cloudflare sign-in..."
+      accountStatusText.text = "Preparing secure Cloudflare sign-in..."
       Thread {
         val url = try { auth.authorizationUrl(authAttempt) } catch (_: Exception) { null }
         runOnUiThread {
           if (attempt != uiGeneration || isDestroyed || isFinishing) return@runOnUiThread
           loginButton.isEnabled = true
-          if (url == null) statusText.text = "Cloudflare OAuth registration unavailable."
+          if (url == null) accountStatusText.text = "Cloudflare OAuth registration unavailable."
           else {
-            statusText.text = "Complete sign-in in your browser."
-            startActivity(Intent(Intent.ACTION_VIEW, url.toUri()).addCategory(Intent.CATEGORY_BROWSABLE))
+            accountStatusText.text = "Complete sign-in in your browser."
+            openExternal(Intent(Intent.ACTION_VIEW, url.toUri()).addCategory(Intent.CATEGORY_BROWSABLE))
           }
         }
       }.start()
@@ -284,6 +327,7 @@ class MainActivity : ComponentActivity() {
         statusText.text = "Please sign in again before viewing your steps."
       } else {
         val attempt = uiGeneration
+        stepsBusy = true
         previewButton.isEnabled = false
         statusText.text = "Reading yesterday's steps locally..."
         Thread {
@@ -307,9 +351,9 @@ class MainActivity : ComponentActivity() {
           runOnUiThread {
             if (attempt != uiGeneration || isDestroyed || isFinishing ||
               !verified || auth.currentToken() == null) return@runOnUiThread
-            previewButton.isEnabled = true
+            stepsBusy = false
             preparedSteps = draft?.takeIf { it.valid() }
-            reviewButton.isEnabled = preparedSteps != null
+            renderControls()
             statusText.text = if (preparedSteps == null)
               "Yesterday's steps unavailable or permission revoked. No data uploaded."
             else "${preparedSteps!!.describe()} Tap Review to inspect the proposed upload. Nothing has been sent."
@@ -323,6 +367,7 @@ class MainActivity : ComponentActivity() {
         statusText.text = "Sign in again before reading local health records."
       } else {
         val attempt = uiGeneration
+        otherBusy = true
         otherPreviewButton.isEnabled = false
         statusText.text = "Reading permitted Health Connect records locally..."
         Thread {
@@ -335,30 +380,34 @@ class MainActivity : ComponentActivity() {
               val range = TimeRangeFilter.between(start, end)
               val rows = mutableListOf<String>()
               if (granted.contains(HealthPermission.getReadPermission(SleepSessionRecord::class))) {
-                val count = hc.readRecords(ReadRecordsRequest(
+                val page = hc.readRecords(ReadRecordsRequest(
                   recordType = SleepSessionRecord::class, timeRangeFilter = range, pageSize = 50
-                )).records.size
-                rows.add("Sleep sessions (up to 50): $count")
+                ))
+                rows.add("Sleep sessions: ${page.records.size} shown" +
+                  if (page.pageToken != null) getString(R.string.more_records_available) else "")
               } else rows.add("Sleep: permission not granted")
               if (granted.contains(HealthPermission.getReadPermission(HeartRateRecord::class))) {
-                val count = hc.readRecords(ReadRecordsRequest(
+                val page = hc.readRecords(ReadRecordsRequest(
                   recordType = HeartRateRecord::class, timeRangeFilter = range, pageSize = 50
-                )).records.size
-                rows.add("Heart rate records (up to 50): $count")
+                ))
+                rows.add("Heart rate records: ${page.records.size} shown" +
+                  if (page.pageToken != null) getString(R.string.more_records_available) else "")
               } else rows.add("Heart rate: permission not granted")
               if (granted.contains(HealthPermission.getReadPermission(ExerciseSessionRecord::class))) {
-                val count = hc.readRecords(ReadRecordsRequest(
+                val page = hc.readRecords(ReadRecordsRequest(
                   recordType = ExerciseSessionRecord::class, timeRangeFilter = range, pageSize = 50
-                )).records.size
-                rows.add("Exercise sessions (up to 50): $count")
+                ))
+                rows.add("Exercise sessions: ${page.records.size} shown" +
+                  if (page.pageToken != null) getString(R.string.more_records_available) else "")
               } else rows.add("Exercise: permission not granted")
-              rows.joinToString(". ")
+              getString(R.string.health_connect_source) + " " + rows.joinToString(". ")
             }
           } catch (_: Exception) { "Local preview unavailable; check Health Connect permissions." }
           runOnUiThread {
             if (attempt != uiGeneration || isDestroyed || isFinishing ||
               !verified || auth.currentToken() == null) return@runOnUiThread
-            otherPreviewButton.isEnabled = true
+            otherBusy = false
+            renderControls()
             statusText.text = "$summary. No data uploaded."
           }
         }.start()
@@ -415,7 +464,7 @@ class MainActivity : ComponentActivity() {
           .setTitle("Account & Health Data Options")
           .setMessage(
             "Please distinguish between local session, device permissions, and server data:\n\n" +
-            "• Local Session: Use 'Sign out' below to clear in-memory tokens and cached previews.\n\n" +
+            "• Local Session: Use 'Sign out' below to erase encrypted credentials and cached previews, and request server grant revocation.\n\n" +
             "• Device Permissions: Open Android Settings > Security & Privacy > Health Connect to view or revoke on-device permissions.\n\n" +
             "• Server-Held Data: Request deletion of any Health Connect records synced to your WHOOP Lens account. " +
             if (!ManualSync.ENABLE_UPLOADS)
@@ -438,8 +487,8 @@ class MainActivity : ComponentActivity() {
               .setNegativeButton("Cancel", null)
               .setPositiveButton(if (!ManualSync.ENABLE_UPLOADS) "Open Web Deletion Page" else "Confirm Deletion") { _, _ ->
                 if (!ManualSync.ENABLE_UPLOADS) {
-                  startActivity(
-                    Intent(Intent.ACTION_VIEW, "https://whooplens.tech/privacy#data-deletion".toUri())
+                  openExternal(
+                    Intent(Intent.ACTION_VIEW, "https://www.whooplens.tech/privacy/".toUri())
                       .addCategory(Intent.CATEGORY_BROWSABLE)
                   )
                 } else {
@@ -473,8 +522,8 @@ class MainActivity : ComponentActivity() {
               .show()
           }
           .setNeutralButton("Web Deletion Link") { _, _ ->
-            startActivity(
-              Intent(Intent.ACTION_VIEW, "https://whooplens.tech/privacy#data-deletion".toUri())
+            openExternal(
+              Intent(Intent.ACTION_VIEW, "https://www.whooplens.tech/privacy/".toUri())
                 .addCategory(Intent.CATEGORY_BROWSABLE)
             )
           }
@@ -485,13 +534,25 @@ class MainActivity : ComponentActivity() {
 
     logoutButton.setOnClickListener {
       ++uiGeneration
-      val revoke = auth.clearForSignOut()
+      callbacks.cancel()
+      sessionHandler.removeCallbacks(sessionRefresh)
+      grantedPermissions = emptySet()
+      stepsBusy = false
+      otherBusy = false
+      val revoke = try { auth.clearForSignOut() } catch (_: Exception) {
+        verified = false
+        preparedSteps = null
+        renderControls()
+        accountStatusText.text = getString(R.string.session_storage_unavailable)
+        statusText.text = getString(R.string.preview_cleared)
+        return@setOnClickListener
+      }
       val signOutGeneration = uiGeneration
       Thread {
         val revoked = revoke()
         runOnUiThread {
           if (signOutGeneration == uiGeneration && !isDestroyed && !isFinishing)
-            statusText.text = if (revoked) "Signed out. Server grant revoked."
+            accountStatusText.text = if (revoked) "Signed out. Server grant revoked."
               else "Signed out locally. Server revocation could not be confirmed; existing grants expire on the server."
         }
       }.start()
@@ -503,7 +564,9 @@ class MainActivity : ComponentActivity() {
       reviewButton.isEnabled = false
       deleteButton.isEnabled = false
       preparedSteps = null
-      statusText.text = "Signed out. Local session cleared; no data uploaded."
+      renderControls()
+      accountStatusText.text = "Signed out. Local session cleared; no data uploaded."
+      statusText.text = getString(R.string.preview_cleared)
     }
   }
 
@@ -519,33 +582,81 @@ class MainActivity : ComponentActivity() {
     super.onPause()
   }
 
+  private fun renderControls() {
+    val available = HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE
+    val controls = companionControls(verified && auth.currentToken() != null, available,
+      grantedPermissions.contains(HealthPermission.getReadPermission(StepsRecord::class)),
+      permissions.any { it != HealthPermission.getReadPermission(StepsRecord::class) && it in grantedPermissions },
+      preparedSteps?.valid() == true)
+    permissionsButton.isEnabled = controls.permissions
+    previewButton.isEnabled = controls.steps && !stepsBusy
+    otherPreviewButton.isEnabled = controls.other && !otherBusy
+    reviewButton.isEnabled = controls.review
+    deleteButton.isEnabled = verified
+    loginButton.text = getString(if (verified || auth.hasStoredSession()) R.string.reconnect_account else R.string.sign_in_cloudflare)
+    retryConnectionButton.visibility = if (!verified && auth.hasStoredSession()) View.VISIBLE else View.GONE
+    healthStatusText.text = getString(if (available) R.string.health_connect_available else R.string.health_connect_help)
+  }
+
+  private fun scheduleSessionRefresh() {
+    sessionHandler.removeCallbacks(sessionRefresh)
+    if (!foreground || callbacks.active || auth.pendingAttempt() != null) return
+    auth.nextRefreshDelayMs()?.let { sessionHandler.postDelayed(sessionRefresh, it) }
+  }
+
   private fun restoreSession() {
-    if (!foreground || restoringSession || callbackInFlight || auth.pendingAttempt() != null) return
+    if (!foreground || restoringSession || callbacks.active || auth.pendingAttempt() != null) return
     restoringSession = true
     val attempt = uiGeneration
     Thread {
-      try { auth.accessToken() } catch (_: Exception) { /* Fail closed without logging credentials. */ }
+      val token = try { auth.accessToken() } catch (_: Exception) { null }
+      val granted = if (token != null && HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE) {
+        try { runBlocking { HealthConnectClient.getOrCreate(this@MainActivity).permissionController.getGrantedPermissions() } }
+        catch (_: Exception) { emptySet() }
+      } else emptySet()
       runOnUiThread {
         restoringSession = false
-        if (!foreground || attempt != uiGeneration || isDestroyed || isFinishing || callbackInFlight) return@runOnUiThread
-        verified = auth.currentToken() != null
-        permissionsButton.isEnabled = verified && HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE
-        deleteButton.isEnabled = verified
-        if (!verified) {
+        if (!foreground || attempt != uiGeneration || isDestroyed || isFinishing || callbacks.active) return@runOnUiThread
+        val generation = auth.sessionGeneration()
+        if (observedSessionGeneration != null && observedSessionGeneration != generation) {
+          ++uiGeneration
           preparedSteps = null
-          previewButton.isEnabled = false
-          otherPreviewButton.isEnabled = false
-          reviewButton.isEnabled = false
+          stepsBusy = false
+          otherBusy = false
+          statusText.text = getString(R.string.preview_cleared)
         }
-        statusText.text = if (verified) "Signed in securely. No health data uploaded."
-          else "Sign in to continue, or retry when your connection is available."
+        observedSessionGeneration = generation
+        val wasVerified = verified
+        verified = auth.currentToken() != null
+        grantedPermissions = if (verified) granted else emptySet()
+        if (!verified) {
+          if (wasVerified || preparedSteps != null) statusText.text = getString(R.string.preview_cleared)
+          preparedSteps = null
+          stepsBusy = false
+          otherBusy = false
+        }
+        renderControls()
+        val message = getString(when {
+          verified -> R.string.account_signed_in
+          auth.hasStoredSession() -> R.string.account_retry_connection
+          else -> R.string.account_signed_out
+        })
+        if (accountStatusText.text.toString() != message) accountStatusText.text = message
+        scheduleSessionRefresh()
       }
     }.start()
+  }
+
+  private fun openExternal(intent: Intent) {
+    try { startActivity(intent) }
+    catch (_: ActivityNotFoundException) { accountStatusText.text = getString(R.string.external_app_unavailable) }
+    catch (_: SecurityException) { accountStatusText.text = getString(R.string.external_app_unavailable) }
   }
 
   override fun onDestroy() {
     ++uiGeneration
     preparedSteps = null
+    callbacks.cancel()
     sessionHandler.removeCallbacks(sessionRefresh)
     super.onDestroy()
   }

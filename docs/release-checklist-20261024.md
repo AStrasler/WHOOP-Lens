@@ -8,13 +8,15 @@ The isolated candidate checkout is:
 
 `C:\Users\Aaron\OneDrive\Documents\ChatGPT\Whoop Lens\backups\release-candidate`
 
+The subsequent review of every open PR and the complete companion is recorded in [PR and Android review](pr-and-android-review-20261024.md).
+
 ## Ready changes
 
 - Legacy browser auth fails closed; its redirect checks and safe error behavior remain covered.
 - Apex resource and www assets publish the Android Digital Asset Links JSON and exact callback fallback. The static builder explicitly publishes them; the callback does not redirect or reflect codes.
 - Android sessions use AES-256-GCM with a non-exportable Android Keystore key and AtomicFile ciphertext in `noBackupFilesDir`. Backup/device-transfer exclusions are explicit. Same-package, same-signer updates preserve this storage; uninstall/clear-data, invalidated keys, revoked grants and server idle expiry require sign-in.
 - Android requests `mcp:read offline_access` and registers both authorization-code and refresh grants. Persistent access requires the user to approve the stay-connected permission. Existing PKCE, exact callback validation, state and replay protections remain. Pending PKCE is encrypted for ten minutes and consumed durably before exchange, including across process restart.
-- Refresh runs on foreground resume, every 30 seconds while active if needed, and before an authenticated background request obtains its access token. One refresh runs at a time. Token pairs commit atomically before use; generation/account checks reject late work after sign-out/account changes. The pinned provider accepts the previous refresh token if a response is lost before the local commit. Transient failures back off without discarding encrypted credentials; invalid grants clear them.
+- Refresh runs on foreground resume, at the next token refresh deadline while active, and before an authenticated background request obtains its access token. No periodic thread is started while signed out. One refresh runs at a time. Token pairs commit atomically before use; generation/account checks reject late work after sign-out/account changes. The pinned provider accepts the previous refresh token if a response is lost before the local commit. Transient failures back off without discarding encrypted credentials; invalid grants clear them.
 - Sign-out erases local ciphertext and its key immediately, then attempts the advertised OAuth grant-revocation endpoint. If offline, local sign-out still succeeds and remote revocation is reported as unconfirmed; it cannot be guaranteed without a network connection.
 - Android health uploads and deletion remain **disabled**. No automatic health reads, WHOOP measurement writes, or additional authentication service was introduced.
 - Corrected obsolete Android/D1 fixtures, retained the main-branch rate-limit binding safeguards, and added code-only release tooling with settings/version drift checks.
@@ -25,10 +27,10 @@ The isolated candidate checkout is:
 
 | Local check | Result |
 |---|---|
-| `node --test docs/*.test.mjs supabase/functions/tests/*.test.mjs site/build.test.mjs cloudflare/test/*.test.mjs cloudflare/test/provider/*.test.mjs` | **564 passed, 0 failed/skipped**. Includes five real local D1 tests, provider refresh/revocation, tenant isolation, seat controls, source attribution, pagination and four code-only release safety tests. |
-| `gradlew.bat -p C:\Users\Aaron\AppData\Local\Temp\whoop-lens-release-android testDebugUnitTest lintDebug assembleDebug --offline --no-daemon --console=plain` | **30 unit tests passed**: 9 deletion/export, 8 OAuth protocol, 13 persistence/rotation/encryption tests. Debug APK assembled. Lint **0 errors, 36 existing warnings** (35 UI text, 1 target SDK). |
+| `node --test docs/*.test.mjs supabase/functions/tests/*.test.mjs site/build.test.mjs cloudflare/test/*.test.mjs cloudflare/test/provider/*.test.mjs` | **565 passed, 0 failed/skipped**. Includes five real local D1 tests, provider refresh/revocation, tenant isolation, seat controls, source attribution, pagination and four code-only release safety tests. |
+| `gradlew.bat -p C:\Users\Aaron\AppData\Local\Temp\whoop-lens-android-review testDebugUnitTest lintDebug assembleDebug --offline --no-daemon --console=plain` | **38 unit tests passed**: 9 deletion/export, 9 OAuth protocol, 16 persistence/rotation/encryption and 4 companion control/lifecycle tests. Debug APK assembled. Lint **0 errors, 35 warnings** (34 UI text, 1 target SDK). |
 | `npm run check` in `site/` | Build and Wrangler 4.152.0 deployment dry run passed. No upload. |
-| `node site/http-smoke.mjs http://127.0.0.1:8792` with local Wrangler | Both exact endpoints passed at configured compatibility date **2026-10-11**, with JSON/fingerprint, no callback redirect/reflection, and no-store/no-referrer. Server stopped afterward. |
+| `node site/http-smoke.mjs http://127.0.0.1:8793` with local Wrangler | Both exact endpoints passed at configured compatibility date **2026-10-11**, with JSON/fingerprint, no callback redirect/reflection, and no-store/no-referrer. Server stopped afterward. |
 | Wrangler resource and issuer `deploy --dry-run` | Both bundle successfully; no upload. Their staging configs remain disabled and must not be used as normal production deploy configs. |
 | `apksigner verify --print-certs` | Debug certificate matches the JSON fingerprint below. |
 | `git diff --check` | Passed. |
@@ -85,6 +87,6 @@ It reads API credentials from `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
 6. **Post-deployment smoke:** `node site/http-smoke.mjs https://www.whooplens.tech` and `node site/http-smoke.mjs https://whooplens.tech`; verify public HTTPS 200 JSON at `.well-known/assetlinks.json`, exact package and certificate, no Access challenge/redirect; callback 200/no-reflection/no-store/no-referrer; issuer and resource discovery 200; unauthenticated MCP 401. A controlled authenticated WHOOP read is optional only if separately available/approved; do not upload/delete health data.
 7. **Device verification:** install the same-signer build; run `adb shell pm verify-app-links --re-verify io.github.astrasler.whooplens` and `adb shell pm get-app-links io.github.astrasler.whooplens`; complete sign-in with stay-connected permission; force-stop/reopen, reboot/unlock/reopen, and update in place. Verify automatic expiry refresh, sign-out/revocation and account switching. Keep `ManualSync.ENABLE_UPLOADS=false`. These are pending real-device tests, not reported successes.
 
-**Fingerprint:** package `io.github.astrasler.whooplens`; debug signing certificate `C3:E4:F5:6D:7E:BC:66:32:95:85:19:7C:49:26:35:FF:B4:57:E7:C0:D0:D2:73:E1:6F:16:A4:3E:72:CC:F5:78`. The newly built debug APK file SHA-256 is `88AFACC80776A8465005752EFBAE1CC58604074AB1C4F254AFB1A6CD319AE66C`; this file hash is **not** a signing certificate.
+**Fingerprint:** package `io.github.astrasler.whooplens`; debug signing certificate `C3:E4:F5:6D:7E:BC:66:32:95:85:19:7C:49:26:35:FF:B4:57:E7:C0:D0:D2:73:E1:6F:16:A4:3E:72:CC:F5:78`. The newly built debug APK file SHA-256 is `B4A585FFB92F16B896D707C8A96EE81849454EB9A14655348C687E13C85716E1`; this file hash is **not** a signing certificate.
 
 **Approval actions are explicit:** branch push that triggers previews; preview upload; live build-setting changes; PR merge (including its automatic site deployment); resource/site production deployment; rollback; device installation; and any live user-data operation. No live user-data operation is needed for this release.

@@ -2,4 +2,20 @@
 <resources>
     <string name="app_name">WHOOP Lens Companion</string>
     <string name="title_rationale">Health Connect &amp; Privacy</string>
+    <string name="account_checking">Checking saved account…</string>
+    <string name="account_signed_in">Signed in securely. Account access is checked by Cloudflare for every server request.</string>
+    <string name="account_signed_out">Signed out. Sign in to use local health previews.</string>
+    <string name="account_retry_connection">Connection unavailable. Your encrypted session is saved; retry when online.</string>
+    <string name="sign_in_cloudflare">Sign in with Cloudflare</string>
+    <string name="reconnect_account">Reconnect account</string>
+    <string name="retry_saved_connection">Retry saved connection</string>
+    <string name="health_connect_settings">Open Health Connect settings</string>
+    <string name="health_connect_available">Health Connect is available. Permissions can be changed in settings.</string>
+    <string name="health_connect_help">Health Connect is unavailable or needs an update. Check Android system updates and Health Connect settings. For Samsung Health data, also enable Samsung Health sharing with Health Connect.</string>
+    <string name="session_storage_unavailable">Secure credential storage is unavailable. Close and reopen the app, then retry.</string>
+    <string name="external_app_unavailable">No compatible browser or settings screen is available. Check your installed apps and system updates.</string>
+    <string name="preview_cleared">Local previews cleared. No health data uploaded.</string>
+    <string name="preview_ready">Choose permissions, then preview Health Connect data on this device. Uploads are disabled.</string>
+    <string name="more_records_available">; more records available</string>
+    <string name="health_connect_source">Source: Health Connect. Counts show one page of records, not full daily totals.</string>
 </resources>

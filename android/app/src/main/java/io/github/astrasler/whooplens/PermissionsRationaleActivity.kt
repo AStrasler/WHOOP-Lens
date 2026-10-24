@@ -1,6 +1,7 @@
 package io.github.astrasler.whooplens
 
 import android.content.Intent
+import android.content.ActivityNotFoundException
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -9,6 +10,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
+import androidx.core.view.ViewCompat
 import androidx.activity.ComponentActivity
 import androidx.core.net.toUri
 
@@ -40,6 +43,7 @@ class PermissionsRationaleActivity : ComponentActivity() {
       setTextColor(foreground)
       setTypeface(null, Typeface.BOLD)
       setPadding(0, 0, 0, 12.dp())
+      ViewCompat.setAccessibilityHeading(this, true)
     }
 
     val subtitle = TextView(this).apply {
@@ -59,14 +63,16 @@ class PermissionsRationaleActivity : ComponentActivity() {
 
     val section1 = paragraph(
       "WHOOP Lens Companion connects to Android Health Connect to read your fitness data on-demand. " +
-        "When permitted, it reads daily step totals and aggregates so you can review them alongside your WHOOP metrics."
+        "With your selected permissions, it previews daily step aggregates and counts of sleep, heart-rate and exercise records. " +
+        "The source is Health Connect; Samsung Health sharing depends on your Samsung Health and Health Connect settings."
     )
 
     val section2 = paragraph(
       "• On-Demand Only: The companion does not perform background tracking or continuous monitoring. " +
         "Data is read only when you explicitly tap to preview or sync.\n" +
-        "• No Third-Party Sharing: Health data is never sold, shared with advertisers, or transferred to third parties.\n" +
-        "• User-Controlled Sync: Uploads to your private account require a deliberate, itemized confirmation step.\n" +
+        "• Local Previews: This build keeps previews on your phone. Health uploads and server deletion are disabled.\n" +
+        "• Secure Sign-in: OAuth credentials are encrypted with an Android Keystore key and excluded from backup. " +
+        "Sign out erases local credentials and requests server grant revocation when online.\n" +
         "• Revocable Access: You can revoke access at any time through Android Settings > Security & Privacy > Health Connect."
     )
 
@@ -86,9 +92,11 @@ class PermissionsRationaleActivity : ComponentActivity() {
         bottomMargin = 10.dp()
       }
       setOnClickListener {
-        val policyIntent = Intent(Intent.ACTION_VIEW, "https://whooplens.tech/privacy".toUri())
+        val policyIntent = Intent(Intent.ACTION_VIEW, "https://www.whooplens.tech/privacy/".toUri())
           .addCategory(Intent.CATEGORY_BROWSABLE)
-        startActivity(policyIntent)
+        try { startActivity(policyIntent) }
+        catch (_: ActivityNotFoundException) { Toast.makeText(this@PermissionsRationaleActivity, R.string.external_app_unavailable, Toast.LENGTH_LONG).show() }
+        catch (_: SecurityException) { Toast.makeText(this@PermissionsRationaleActivity, R.string.external_app_unavailable, Toast.LENGTH_LONG).show() }
       }
     }
 
@@ -117,6 +125,7 @@ class PermissionsRationaleActivity : ComponentActivity() {
       setBackgroundColor(background)
       isFillViewport = true
       addView(layout)
+      protectSystemBars(this@PermissionsRationaleActivity, this)
     })
   }
 }

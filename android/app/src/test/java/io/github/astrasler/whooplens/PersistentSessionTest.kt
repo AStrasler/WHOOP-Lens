@@ -95,6 +95,15 @@ class PersistentSessionTest {
     assertEquals(first.currentToken(), restarted.accessToken())
     assertEquals(0, f.refreshes)
   }
+  @Test fun upgradingExistingCredentialFormatPreservesTheSession() {
+    val f = Fixture()
+    signIn(f.process())
+    val older = JSONObject(f.store.read()!!)
+    older.remove("refreshAt")
+    f.store.write(older.toString())
+    assertEquals("access-client-1-0", f.process().currentToken())
+    assertEquals(3540000L, f.process().nextRefreshDelayMs())
+  }
   @Test fun expiredAccessRotatesAndPersistsWholePair() {
     val f = Fixture()
     signIn(f.process())
@@ -107,6 +116,36 @@ class PersistentSessionTest {
     f.time += 3600000
     assertEquals("access-client-1-2", f.process().accessToken())
     assertEquals("refresh-client-1-1", f.lastRefresh["refresh_token"])
+  }
+  @Test fun accountGenerationChangesOnAccountSwitchButNotRefresh() {
+    val f = Fixture()
+    val session = f.process()
+    signIn(session)
+    val first = session.sessionGeneration()
+    f.time += 3600000
+    assertNotNull(session.accessToken())
+    assertEquals(first, session.sessionGeneration())
+    signIn(session)
+    assertTrue(session.sessionGeneration() > first)
+  }
+  @Test fun refreshSchedulingUsesExpiryAndStopsForSignedOutOrPendingSessions() {
+    val f = Fixture()
+    val session = f.process()
+    assertNull(session.nextRefreshDelayMs())
+    session.authorizationUrl(session.beginSignIn())
+    assertNull(session.nextRefreshDelayMs())
+    signIn(session)
+    assertEquals(3540000L, session.nextRefreshDelayMs())
+    repeat(10) { assertNotNull(session.accessToken()) }
+    assertEquals(0, f.refreshes)
+    f.time += 3600000
+    f.failure = false
+    assertNull(session.accessToken())
+    assertTrue(session.hasStoredSession())
+    assertEquals(30000L, session.nextRefreshDelayMs())
+    session.signOut()
+    assertFalse(session.hasStoredSession())
+    assertNull(session.nextRefreshDelayMs())
   }
   @Test fun pendingPkceSurvivesRestartButConsumedStateCannotReplay() {
     val f = Fixture()

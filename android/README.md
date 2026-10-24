@@ -7,7 +7,7 @@
 ## Implemented on the draft branch
 
 - Android 14+ (minSdk 34, compileSdk 36) with Health Connect stable 1.1.0.
-- Cloudflare OAuth authorization-code + PKCE using the external browser, dynamic client registration and **Keystore-encrypted persistent access/refresh credentials**. Sessions survive process restarts, reboots after first unlock, and same-signer app updates. Refresh uses the existing Cloudflare OAuth flow with rotation; Cloudflare Access and D1 enforce membership. Sign-out invalidates stale sign-in and preview callbacks. Native redirect and token exchange require real-device verification before release.
+- Cloudflare OAuth authorization-code + PKCE using the external browser, dynamic client registration and **Keystore-encrypted persistent access/refresh credentials**. Sessions survive process restarts, reboots after first unlock, and same-signer app updates. Refresh uses the existing Cloudflare OAuth flow with rotation and an expiry-based foreground schedule; Cloudflare Access and D1 enforce membership. Sign-out invalidates stale sign-in and preview callbacks. Native redirect and token exchange require real-device verification before release.
 - Explicit permission chooser. No background health reads.
 - Manual local previews: yesterday's **aggregate** steps, plus up to 50 sleep, heart-rate and exercise records each in the last 24 hours. Counts are capped, not guaranteed to represent full totals.
 - One-day aggregate steps prepared in a memory-only, five-minute-expiring snapshot. Separate Review control displays the date, count, mixed/unknown source origin, and destination. Actual Upload requires additional confirmation.
@@ -31,3 +31,9 @@ JDK 17, Gradle 8.11.1, Android SDK 36, AGP 8.9.2. GitHub Actions runs Android un
 Real device installation and sign-in testing; verifying permission and revocation behavior; signed private package; approved backend deployment and end-to-end upload/deletion tests; Keystore/reboot/rotation/revocation verification on a real device; complete paged non-step previews and source-attributed exports; rollout/rollback, quotas and privacy review.
 
 Keep registration and distribution strictly owner-controlled. No public APK, automatic synchronization, or public registration.
+
+## Companion review (October 24, 2026)
+
+Restored sessions restore already-granted preview controls. Account state is separate from preview results; reconnect, sign-out and shared-session account changes clear old previews. Transient network failures offer Retry saved connection without discarding encrypted credentials. Both screens apply system-bar/cutout insets and accessibility headings. Health Connect settings and canonical www privacy links handle missing activities safely. Record-count previews mark additional pages and remain bounded.
+
+All three open PRs and the remaining device-only checks are tracked in [the PR and Android review](../docs/pr-and-android-review-20261024.md).

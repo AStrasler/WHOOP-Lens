@@ -25,7 +25,7 @@ internal class PrivateSession(
   private data class Saved(
     val account: String, val client: String, val endpoint: String, val revoke: String?,
     val access: String? = null, val refresh: String? = null, val expires: Long = 0,
-    val nonce: String? = null, val verifier: String? = null, val pendingUntil: Long = 0
+    val nonce: String? = null, val verifier: String? = null, val pendingUntil: Long = 0, val refreshAt: Long = 0
   ) { override fun toString(): String = "OAuth credentials [redacted]" }
   private val lock = Any()
   private val refreshLock = Any()
@@ -36,7 +36,7 @@ internal class PrivateSession(
   private fun encode(v: Saved): String = JSONObject().put("version", 1).put("issuer", ISSUER).put("resource", RESOURCE)
     .put("account", v.account).put("client", v.client).put("endpoint", v.endpoint).put("revoke", v.revoke)
     .put("access", v.access).put("refresh", v.refresh).put("expires", v.expires)
-    .put("nonce", v.nonce).put("verifier", v.verifier).put("pendingUntil", v.pendingUntil).toString()
+    .put("nonce", v.nonce).put("verifier", v.verifier).put("pendingUntil", v.pendingUntil).put("refreshAt", v.refreshAt).toString()
   private fun loadLocked() {
     if (loaded) return
     loaded = true
@@ -46,7 +46,8 @@ internal class PrivateSession(
       fun optional(key: String): String? = if (json.isNull(key) || !json.has(key)) null else json.getString(key)
       val r = Saved(json.getString("account"), json.getString("client"), trustedEndpoint(json.getString("endpoint")),
         optional("revoke")?.let { trustedEndpoint(it) }, optional("access"), optional("refresh"), json.getLong("expires"),
-        optional("nonce"), optional("verifier"), json.getLong("pendingUntil"))
+        optional("nonce"), optional("verifier"), json.getLong("pendingUntil"),
+        if (json.has("refreshAt")) json.getLong("refreshAt") else json.getLong("expires") - 60000)
       require(r.account.matches(Regex("[A-Za-z0-9_-]{43}")) && r.client.length in 1..512)
       require(r.access == null || r.access.length in 1..16384)
       require(r.refresh == null || r.refresh.length in 1..16384)
@@ -131,12 +132,22 @@ internal class PrivateSession(
     val refresh = (response.opt("refresh_token") as? String)?.takeIf { it.isNotBlank() && it.length <= 16384 } ?: return null
     val seconds = (response.opt("expires_in") as? Int)?.toLong() ?: return null
     if (seconds !in 60..86400 || !response.optString("token_type").equals("Bearer", true)) return null
-    return previous.copy(access = access, refresh = refresh, expires = now() + seconds * 1000,
-      nonce = null, verifier = null, pendingUntil = 0)
+    val issued = now()
+    val lifetime = seconds * 1000
+    return previous.copy(access = access, refresh = refresh, expires = issued + lifetime,
+      nonce = null, verifier = null, pendingUntil = 0, refreshAt = issued + lifetime - minOf(60000, lifetime / 10))
   }
   fun currentToken(): String? = synchronized(lock) {
     loadLocked()
-    saved?.takeIf { now() < it.expires - 60000 }?.access
+    saved?.takeIf { now() < it.refreshAt }?.access
+  }
+  fun hasStoredSession(): Boolean = synchronized(lock) { loadLocked(); saved?.refresh != null }
+  fun sessionGeneration(): Long = synchronized(lock) { loadLocked(); revision }
+  fun nextRefreshDelayMs(): Long? = synchronized(lock) {
+    loadLocked()
+    val record = saved ?: return null
+    if (record.refresh == null) return null
+    maxOf(record.refreshAt - now(), retryAfterMs - now(), 1000L)
   }
   /** Off the UI thread: single-flight refresh and an account/generation-checked atomic commit. */
   fun accessToken(): String? = synchronized(refreshLock) {
@@ -145,7 +156,7 @@ internal class PrivateSession(
     synchronized(lock) {
       loadLocked()
       previous = saved ?: return null
-      previous.access?.takeIf { now() < previous.expires - 60000 }?.let { return it }
+      previous.access?.takeIf { now() < previous.refreshAt }?.let { return it }
       if (previous.refresh == null || now() < retryAfterMs) return null
       version = revision
     }
