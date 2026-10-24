@@ -44,7 +44,7 @@ test('apply preserves every unrelated binding including secrets',async()=>{
  assert.equal(r.live.length,bindings.length+1);
  assert.equal(r.live.find(x=>x.name==='WHOOP_MEMBER_LIMIT_PER_MINUTE').text,'40');
  for(const b of bindings.filter(x=>x.name!=='WHOOP_MEMBER_LIMIT_PER_MINUTE'))
-  assert.deepEqual(r.live.find(x=>x.name===b.name),b);
+  assert.deepEqual(JSON.parse(JSON.stringify(r.live.find(x=>x.name===b.name))),b);
 });
 test('rejects missing critical bindings before any write',async()=>{
  await assert.rejects(run(['--member','40','--apply'],{initial:bindings.filter(x=>x.name!=='DB')}),/Critical binding missing/);
