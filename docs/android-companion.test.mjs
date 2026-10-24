@@ -16,12 +16,12 @@ test("Android requires private login, consent and manual local-only steps aggreg
   assert.doesNotMatch(manifest+source+auth,/SERVICE_ROLE_KEY|sb_secret_|supabase_service_role/);
   assert.match(source,/permissionsLauncher\.launch\(permissions\)/);
   assert.match(source,/auth\.beginSignIn\(\)/);
-  assert.match(source,/auth\.signIn\(address, secret, authAttempt\)/);
+  assert.match(source,/auth\.authorizationUrl\(authAttempt\)/);
   assert.match(auth,/fun beginSignIn\(\): Long/);
   assert.match(auth,/attempt != revision/);
   assert.match(source,/attempt != uiGeneration/);
   assert.match(source,/\+\+uiGeneration/);
-  assert.match(auth,/whoop-mcp\/status/);
+  assert.match(auth,/code_challenge_method/);
   assert.match(auth,/fun signOut/);
   assert.match(source,/hc\.aggregate\(AggregateRequest/);
   assert.match(source,/getGrantedPermissions\(/);
@@ -40,14 +40,14 @@ test("Android requires private login, consent and manual local-only steps aggreg
 test("Private upload export remains disabled pending approved migrations", () => {
   const source=read("../android/app/src/main/java/io/github/astrasler/whooplens/ManualSync.kt");
   assert.match(source,/const val ENABLE_UPLOADS = false/);
-  assert.match(source,/check\(ENABLE_UPLOADS\)/);
+  assert.match(source,/UnsupportedOperationException\("Cloudflare mobile sync is not released"\)/);
   assert.match(source,/schema_version", 2/);
   assert.match(source,/source", "health_connect"/);
   assert.match(source,/metric", "steps_daily"/);
   assert.match(source,/record_key", "daily:/);
-  assert.match(source,/functions\/v1\/samsung-health/);
+  assert.doesNotMatch(source,/supabase\.co|functions\/v1\/samsung-health|sb_publishable_/);
   assert.match(source,/preparedAtMs/);
   assert.match(source,/fun deleteApprovedSteps\(/);
-  assert.match(source,/check\(!day\.isAfter\(LocalDate\.now\(\)\)\)/);
+  assert.match(source,/fun uploadApprovedSteps\(/);
   assert.doesNotMatch(source,/SERVICE_ROLE_KEY|sb_secret_|supabase_service_role/);
 });

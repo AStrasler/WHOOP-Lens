@@ -12,7 +12,7 @@ function fixture(){
   for(const file of ['0001_initial.sql','0004_medical_context_review.sql'])
     sql.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
   for(const id of [A,B]){
-    sql.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    sql.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     sql.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(id);
     for(let i=0;i<3;i++){
       const key=id+i,raw=JSON.stringify({syntheticOwner:id,number:i});

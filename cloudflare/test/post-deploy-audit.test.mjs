@@ -279,7 +279,7 @@ function hcFixture(){
   for(const n of ["0001_initial.sql","0004_medical_context_review.sql","0006_health_import_consent.sql","0007_health_connect_ingest.sql"])
     s.exec(readFileSync(new URL("../migrations/"+n,import.meta.url),"utf8"));
   for(const id of [A,B]){
-    s.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    s.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     s.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(id);
   }
   return {sqlite:s,...d1Database(s),close(){s.close();}};

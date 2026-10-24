@@ -43,7 +43,7 @@ async function fixture(){
   const sqlite=new DatabaseSync(':memory:');
   for(const f of ['0001_initial.sql','0019_notion.sql'])sqlite.exec(readFileSync(new URL('../migrations/'+f,import.meta.url),'utf8'));
   for(const id of [A,B]){
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(id);
   }
   const db=d1Database(sqlite),env={DB:db,NOTION_ENABLED:'true',NOTION_CLIENT_ID:A,NOTION_CLIENT_SECRET:'synthetic-notion-secret',NOTION_TOKEN_AES256_KEY:randomBytes(32).toString('base64url')};

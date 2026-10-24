@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), "utf8");
 const doc = JSON.parse(read("./capabilities.json"));
-const bundled = JSON.parse(read("../supabase/functions/whoop-mcp/capabilities.json"));
+const bundled = JSON.parse(read("../cloudflare/src/capabilities.json"));
 
 test("public capabilities exactly match the deployed MCP bundle", () => {
   assert.deepEqual(doc, bundled);

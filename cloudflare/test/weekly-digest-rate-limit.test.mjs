@@ -18,7 +18,7 @@ const base={MIGRATION_API_ENABLED:"true",WHOOP_READS_ENABLED:"true",MCP_ENABLED:
 async function fixture(){
   const s=new DatabaseSync(":memory:");const dir=new URL("../migrations/",import.meta.url);
   for(const f of readdirSync(dir).filter(f=>f.endsWith(".sql")).sort())s.exec(readFileSync(new URL(f,dir),"utf8"));
-  s.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(M,M);
+  s.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(M,M);
   s.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(M);
   s.prepare("INSERT INTO whoop_connections(user_id,expires_at,scope,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,?,?,?,?,?,?)")
     .run(M,new Date(Date.now()+3600e3).toISOString(),"x",await sealWhoopToken("at",{userId:M,purpose:"access",key}),await sealWhoopToken("rt",{userId:M,purpose:"refresh",key}),"v1","developer");
