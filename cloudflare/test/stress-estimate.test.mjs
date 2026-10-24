@@ -403,7 +403,7 @@ test("F2 weekly digest: boundary dates, no fabricated target dates, cached outpu
   for(const f of ["0008_whoop_credential_revocations.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
     sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
   sqlite.exec(readFileSync(new URL("../migrations/0001_initial.sql",import.meta.url),"utf8"));
-  sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(A,A);
+  sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(A,A);
   sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(A);
   sqlite.prepare("INSERT INTO whoop_connections(user_id,expires_at,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,'2027-01-01','synthetic-access','synthetic-refresh','v1','public')").run(A);
   const db={sqlite,...d1Database(sqlite)};
@@ -600,7 +600,7 @@ test("R2-3 all four flag combinations agree across capabilities, host instructio
   const sqlite=new DatabaseSync(":memory:");
   for(const f of ["0001_initial.sql","0008_whoop_credential_revocations.sql","0004_medical_context_review.sql","0009_ai_usage.sql","0010_ai_account_snapshot.sql","0011_ai_weekly_digest.sql","0012_ai_usage_event.sql"])
     sqlite.exec(readFileSync(new URL("../migrations/"+f,import.meta.url),"utf8"));
-  sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(A,A);
+  sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(A,A);
   sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(A);
   const db={sqlite,...d1Database(sqlite)};
   const u=syntheticUser({prefix:"f"});

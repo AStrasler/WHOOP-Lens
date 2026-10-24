@@ -11,7 +11,7 @@ const OWNER=member(31),M1=member(32),M2=member(33),M3=member(34),M4=member(35);
 const env0={...baseEnv,WHOOP_REDIRECT_URI:"https://whooplens.tech/api/whoop/callback"};
 const quietly=async fn=>{const log=console.log;console.log=()=>{};try{return await fn();}finally{console.log=log;}};
 function admit(d,id){
-  d.sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+  d.sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
   d.sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(id);
 }
 async function authorize(d,id,env){

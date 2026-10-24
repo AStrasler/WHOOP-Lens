@@ -27,7 +27,7 @@ function fixture(){
   const sqlite=new DatabaseSync(":memory:");
   sqlite.exec(sql);sqlite.exec(cap);sqlite.exec(revocations);
   for(const id of [A,B]){
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(id);
   }
   return {
@@ -112,7 +112,7 @@ test("seat limits are atomic SQLite constraints; 9 public and 1 developer maximu
   try {
     for(let i=0;i<10;i++){
       const id="00000000-0000-4000-8000-00000000000"+i;
-      d.sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+      d.sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
       const role=i===9?"developer":"public";
       d.sqlite.prepare("INSERT INTO whoop_connections(user_id,expires_at,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,?,?,?,?,?)")
         .run(id,"2027-01-01","sealed","sealed","v1",role);

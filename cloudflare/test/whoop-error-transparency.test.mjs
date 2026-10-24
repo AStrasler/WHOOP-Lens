@@ -21,7 +21,7 @@ async function fixture(){
   const s=new DatabaseSync(":memory:");const dir=new URL("../migrations/",import.meta.url);
   for(const f of readdirSync(dir).filter(f=>f.endsWith(".sql")).sort())s.exec(readFileSync(new URL(f,dir),"utf8"));
   for(const [id,role] of [[M,"developer"],[OTHER,"public"]]){
-    s.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    s.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     s.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(id);
     s.prepare("INSERT INTO whoop_connections(user_id,expires_at,scope,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,?,?,?,?,?,?)")
       .run(id,new Date(Date.now()+3600e3).toISOString(),"x",await sealWhoopToken("synthetic-access-"+id,{userId:id,purpose:"access",key}),

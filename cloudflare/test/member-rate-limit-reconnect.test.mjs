@@ -72,7 +72,7 @@ test("migrations 0015/0016: apply in order after 0001-0014, roll back, re-apply;
     const apply=f=>{sqlite.exec(migration(f));sqlite.prepare("INSERT OR IGNORE INTO d1_migrations(name) VALUES(?)").run(f);};
     for(const f of files.slice(0,-2))apply(f);
     // Pre-existing member, connection and health row before the new migrations.
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(A,A);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(A,A);
     sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(A);
     sqlite.prepare("INSERT INTO whoop_connections(user_id,expires_at,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,?,?,?,?,?)").run(A,"2099-01-01T00:00:00Z","a","r","v1","public");
     sqlite.prepare("INSERT INTO whoop_recovery(user_id,whoop_id,date,raw_json) VALUES(?,?,?,?)").run(A,"w1","2026-10-01","{}");
@@ -347,7 +347,7 @@ test("reconnect: a callback that stores nothing (seat limit, revoked state) does
   const users=[[A,"developer"],...Array.from({length:9},(_,i)=>[member(40+i),"public"])];
   let d=await db(users);
   try{
-    d.sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(B,B);
+    d.sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(B,B);
     d.sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(B);
     await assert.rejects(reconnect(d,B,"access-"+B),/save failed|seats/i);
     assert.equal(generation(d,B),0);

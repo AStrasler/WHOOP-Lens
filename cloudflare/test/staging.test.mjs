@@ -27,7 +27,7 @@ function createDb() {
 function seed(db,{memberA=true,connectedA=true}={}){
   const sql=db.sqlite;
   for(const [id,provider,subject] of [
-    [A,"supabase",A],[B,"supabase",B],[C,"other",C]
+    [A,"cloudflare_access",A],[B,"cloudflare_access",B],[C,"other",C]
   ]) sql.prepare("INSERT INTO identity_links (user_id, identity_provider, provider_subject) VALUES (?,?,?)").run(id,provider,subject);
   if(memberA) sql.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(A);
   sql.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,0)").run(B);

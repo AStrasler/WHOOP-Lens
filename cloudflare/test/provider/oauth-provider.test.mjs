@@ -56,7 +56,7 @@ function request(path,method='GET',body,cookie=''){
 async function fixture(){
   const kv=new MemoryKV(),db=new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../../migrations/0001_initial.sql',import.meta.url),'utf8'));
-  db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(USER,USER);
+  db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(USER,USER);
   db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(USER);
   const env={OAUTH_KV:kv,OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true',
     SUPABASE_UPSTREAM_CLIENT_ID:'synthetic-client',SUPABASE_PUBLIC_KEY:'synthetic-key',

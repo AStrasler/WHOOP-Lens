@@ -51,7 +51,7 @@ function fixture(){
   for(const file of ['0001_initial.sql','0016_whoop_connection_generations.sql','0017_member_diagnostics.sql','0018_issue_report_reference_check.sql'])
     sqlite.exec(readFileSync(new URL('../migrations/'+file,import.meta.url),'utf8'));
   for(const id of [A,B]){
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(id);
     sqlite.prepare("INSERT INTO whoop_connections(user_id,expires_at,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,'2026-10-24T00:00:00Z',?,?,'v1','public')").run(id,'encrypted-access-'+id,'encrypted-refresh-'+id);
     sqlite.prepare('INSERT INTO whoop_connection_generations(user_id,generation) VALUES(?,1)').run(id);
