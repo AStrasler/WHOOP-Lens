@@ -3,7 +3,7 @@ import test from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync } from "node:fs";
 import { createStagingRouter } from "../src/router.mjs";
-import { AccessDenied, verifySupabaseSession } from "../src/identity.mjs";
+import { AccessDenied } from "../src/access-denied.mjs";
 import { activeMembership, connectionStatus, readHistory } from "../src/storage.mjs";
 import { d1Prepare, d1Database } from "./d1-sqlite.mjs";
 
@@ -27,7 +27,7 @@ function createDb() {
 function seed(db,{memberA=true,connectedA=true}={}){
   const sql=db.sqlite;
   for(const [id,provider,subject] of [
-    [A,"supabase",A],[B,"supabase",B],[C,"other",C]
+    [A,"cloudflare_access",A],[B,"cloudflare_access",B],[C,"other",C]
   ]) sql.prepare("INSERT INTO identity_links (user_id, identity_provider, provider_subject) VALUES (?,?,?)").run(id,provider,subject);
   if(memberA) sql.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(A);
   sql.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,0)").run(B);
@@ -79,30 +79,8 @@ test("Worker explicitly disabled; no identity or DB work can occur",async()=>{
   }finally{d.close();}
 });
 
-test("Auth bridge verifies through the official Supabase Auth endpoint, not untrusted JWT decoding",async()=>{
-  const input=request("/v1/status");
-  let calls=0;
-  const user=await verifySupabaseSession(input,{SUPABASE_PUBLIC_KEY:"safe-publishable-test"},async (url,options)=>{
-    calls++;
-    assert.equal(url,"https://evoiwauqplbcecumiwqn.supabase.co/auth/v1/user");
-    assert.match(options.headers.Authorization,/^Bearer /);
-    assert.equal(options.headers.apikey,"safe-publishable-test");
-    assert.equal(options.redirect,"manual");
-    return new Response(JSON.stringify({id:A,email:"do-not-return@example.com"}),{status:200});
-  });
-  assert.equal(user,A);assert.equal(calls,1);
-  await assert.rejects(
-    verifySupabaseSession(request("/v1/status","invalid token"),{SUPABASE_PUBLIC_KEY:"test"},()=>{throw Error("no");}),
-    AccessDenied
-  );
-  await assert.rejects(
-    verifySupabaseSession(input,{SUPABASE_PUBLIC_KEY:"test"},async()=>new Response("{}",{status:401})),
-    AccessDenied
-  );
-  await assert.rejects(
-    verifySupabaseSession(input,{SUPABASE_PUBLIC_KEY:"test"},async()=>new Response("{}",{status:502})),
-    /Identity provider unavailable/
-  );
+test("Retired staging entry point has no Supabase auth dependency",()=>{
+  assert.doesNotMatch(worker,/supabase|verifySupabaseSession|SUPABASE_PUBLIC_KEY/i);
 });
 
 test("Missing and disabled members denied; no implicit approval for connected accounts",async()=>{

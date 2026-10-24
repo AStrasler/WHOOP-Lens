@@ -27,7 +27,7 @@ async function fixture({users=[[A,"developer"],[B,"public"]]}={}){
   const sqlite=new DatabaseSync(":memory:");
   for(const m of migrations)sqlite.exec(m);
   for(const [id,role] of users){
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(id);
     const access=await sealWhoopToken("access-"+id,{userId:id,purpose:"access",key});
     const refresh=await sealWhoopToken("refresh-"+id,{userId:id,purpose:"refresh",key});

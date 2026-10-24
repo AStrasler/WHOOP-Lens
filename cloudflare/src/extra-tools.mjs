@@ -1,6 +1,6 @@
 // Local record reads never accept an owner from the client. Membership is checked
 // by the router before dispatch; each SQL statement also binds the verified ID.
-import manifest from '../../supabase/functions/whoop-mcp/capabilities.json' with {type:'json'};
+import manifest from './capabilities.json' with {type:'json'};
 import {activeMembership} from './storage.mjs';
 import {ISSUE_CONSENT,REVOKE_CONFIRM} from './health-connect-webhook.mjs';
 import {featureStates,accountStatus,SOURCE_HIERARCHY} from './member-guidance.mjs';

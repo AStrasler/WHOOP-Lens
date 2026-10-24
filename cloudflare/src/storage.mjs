@@ -10,7 +10,7 @@ function checkD1(db) {
 }
 export const ACTIVE_MEMBER_SQL =
   "SELECT m.user_id FROM whoop_members m INNER JOIN identity_links i ON i.user_id=m.user_id " +
-  "WHERE m.user_id=?1 AND m.active=1 AND ((i.identity_provider='supabase' AND i.provider_subject=?1) OR (i.identity_provider='cloudflare_access' AND length(i.provider_subject)>0)) LIMIT 1";
+  "WHERE m.user_id=?1 AND m.active=1 AND (i.identity_provider='cloudflare_access' AND length(i.provider_subject)>0) LIMIT 1";
 export async function activeMembership(db, userId) {
   checkD1(db);
   const id = verifiedUserId(userId);

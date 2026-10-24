@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0b1418">
+<meta name="color-scheme" content="dark">
+<title>Connect your WHOOP · WHOOP Lens</title>
+<meta name="description" content="Sign in to WHOOP Lens with Cloudflare Access and connect your WHOOP account to ChatGPT and Codex.">
+<link rel="icon" href="/logo.jpg" type="image/jpeg">
+<link rel="apple-touch-icon" href="/logo.jpg">
+<link rel="stylesheet" href="/connect.css">
+</head>
+<body>
+<main>
+  <div class="mark" aria-hidden="true">
+    <svg viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="27" stroke="#4fd8cf" stroke-width="4"/><path class="pulse-line" d="M8 33h13l3-5 4 12 5-20 4 15 3-2h12" stroke="#eef6f5" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="56" cy="33" r="2.6" fill="#4fd8cf"/></svg>
+  </div>
+
+  <h1>Connect <span>WHOOP Lens</span></h1>
+  <p class="lede">Connect WHOOP Lens through <strong>ChatGPT</strong> or <strong>Codex</strong>. Authentication starts inside your client, not from this page.</p>
+
+  <div class="link" aria-hidden="true">
+    <div class="node">GPT</div>
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="node lens"><svg viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="26" stroke="#4fd8cf" stroke-width="5"/><path d="M10 33h12l3-5 4 12 5-20 4 15 3-2h11" stroke="#eef6f5" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+  </div>
+
+  <div class="details">
+    <div class="row"><span class="k">Sign-in</span><span class="v">Cloudflare Access<span class="verified"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>Verified</span></span></div>
+    <div class="row"><span class="k">Auth server</span><span class="v">auth.whooplens.tech</span></div>
+    <div class="row"><span class="k">MCP server</span><span class="v">whooplens.tech/mcp</span></div>
+    <div class="row"><span class="k">Scope</span><span class="v">mcp:read</span></div>
+  </div>
+
+  <span class="legend">How sign-in works</span>
+  <ol class="steps">
+    <li><b>1</b><span>Add the WHOOP Lens MCP connector in your client.</span></li>
+    <li><b>2</b><span>Start sign-in from the client and enter your invited email.</span></li>
+    <li><b>3</b><span>Enter the one-time PIN and review the requested permissions.</span></li>
+  </ol>
+
+  <div class="note">Server: https://whooplens.tech/mcp. After connecting, use connect_whoop to authorize your own WHOOP account. Do not open the authorization server root directly.</div>
+
+  <div class="actions">
+    <a class="btn" href="/">View connection instructions</a>
+    <a class="btn ghost" href="/support/">Need help?</a>
+  </div>
+
+  <footer>Only invited, active WHOOP Lens members can finish connecting.<br>
+  Not affiliated with WHOOP. <a href="/privacy/">Privacy</a> · <a href="/terms/">Terms</a> · <a href="/support/">Support</a></footer>
+</main>
+</body>
+</html>

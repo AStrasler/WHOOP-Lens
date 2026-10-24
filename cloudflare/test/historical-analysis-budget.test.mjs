@@ -50,7 +50,7 @@ function fakeWhoop(data){
 test("historical analysis: a year of all four histories plus a summary with stress estimate fits 25/min and 1,000/day",async()=>{
   const d=database();
   try{
-    d.sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(OWNER,OWNER);
+    d.sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(OWNER,OWNER);
     d.sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(OWNER);
     await connect(d.sqlite,OWNER,"public","access-"+OWNER);
     const w=fakeWhoop(year());

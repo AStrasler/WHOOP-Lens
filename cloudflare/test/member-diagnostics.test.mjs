@@ -30,7 +30,7 @@ async function fixture({upTo=null}={}){
   const sqlite=new DatabaseSync(':memory:');
   for(const f of MIGRATIONS){if(upTo&&f>upTo)break;sqlite.exec(sqlOf(f));}
   for(const id of [OWNER,AMYLIKE,KIMLIKE,OUTSIDER]){
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,?)').run(id,id===OUTSIDER?0:1);
   }
   await connect(sqlite,OWNER,'developer','access-'+OWNER);
@@ -487,7 +487,7 @@ test('0017 applies after 0001-0016, rolls back and re-applies; existing rows unt
   try{
     sqlite.exec("CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)");
     for(const f of MIGRATIONS.filter(f=>f<'0017')){sqlite.exec(sqlOf(f));sqlite.prepare('INSERT INTO d1_migrations(name) VALUES(?)').run(f);}
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(AMYLIKE,AMYLIKE);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(AMYLIKE,AMYLIKE);
     sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(AMYLIKE);
     sqlite.prepare("INSERT INTO health_import_consent(user_id,purpose,granted_at) VALUES(?,'health_connect_file','2026-10-01')").run(AMYLIKE);
     const objects=()=>JSON.stringify(sqlite.prepare("SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND tbl_name NOT IN ('diagnostic_events','issue_reports','issue_report_approvals') ORDER BY name").all());
@@ -826,7 +826,7 @@ test('0018 rebuilds issue_reports in place: rows, indexes and other tables are u
   try{
     sqlite.exec("CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE)");
     for(const f of MIGRATIONS.filter(f=>f<'0018'))sqlite.exec(sqlOf(f));
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(AMYLIKE,AMYLIKE);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(AMYLIKE,AMYLIKE);
     sqlite.prepare("INSERT INTO issue_reports(reference,user_id,category,severity,description,dedupe_key,request_id,evidence_json,day_key,last_submitted_at,created_at,updated_at) VALUES('WL-ABCD2345',?,'other','low','synthetic text',?,'req_0000000000000000','[]','2026-10-19','t','t','t')").run(AMYLIKE,'a'.repeat(64));
     const others=()=>JSON.stringify(sqlite.prepare("SELECT type,name,sql FROM sqlite_master WHERE tbl_name<>'issue_reports' ORDER BY name").all());
     const idx=()=>sqlite.prepare("SELECT name,sql FROM sqlite_master WHERE type='index' AND tbl_name='issue_reports' ORDER BY name").all();

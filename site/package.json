@@ -1,0 +1,15 @@
+{
+  "name": "whoop-lens-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test build.test.mjs",
+    "test:http": "node http-smoke.mjs",
+    "preview": "npm run build && wrangler preview --config wrangler.jsonc",
+    "check": "npm run build && wrangler deploy --dry-run --config wrangler.jsonc"
+  },
+  "devDependencies": {
+    "wrangler": "4.152.0"
+  }
+}

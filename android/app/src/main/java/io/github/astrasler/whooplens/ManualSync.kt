@@ -4,11 +4,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
-import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.LocalDate
 
-/** In-memory preview of one day of aggregate steps; no credentials or persistent storage. */
+/** A five-minute, in-memory, explicitly reviewed Health Connect aggregate. */
 internal data class ReviewedSteps(
   val day: LocalDate,
   val start: Instant,
@@ -42,74 +41,114 @@ internal data class ReviewedSteps(
   }
 }
 
-/**
- * Deployment gate is intentionally OFF. Enable in a reviewed, separately approved
- * release after the health_connect_records migration + v2 Edge Function are live.
- * No caller may override this gate or pass an arbitrary destination URL.
- */
-internal object ManualSync {
-  const val ENABLE_UPLOADS = false
-  private const val destination =
-    "https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/samsung-health"
-  private const val publishable = "sb_publishable_iSQO1ZdTmCnRHC_YxKb30A_x7rVRYr_"
+/** Result of a remote server deletion request. */
+internal sealed class DeletionResult {
+  /** Confirmed deletion response received from verified backend. */
+  data class Confirmed(val recordsDeleted: Int) : DeletionResult()
 
-  /** A separate explicit confirmation is required by the calling UI. */
-  fun deleteApprovedSteps(day: LocalDate, token: String): Int {
-    check(ENABLE_UPLOADS) { "Private deletion is not released yet." }
-    check(!day.isAfter(LocalDate.now())) { "Future dates are invalid." }
-    check(token.isNotBlank()) { "Sign in again." }
-    val body = JSONObject()
-      .put("schema_version", 2)
-      .put("source", "health_connect")
-      .put("approved", true)
-      .put("metric", "steps_daily")
-      .put("record_key", "daily:" + day + ":local").toString()
-    val conn = URL(destination).openConnection() as HttpURLConnection
+  /**
+   * Upload and sync gates are inactive in this companion build (ENABLE_UPLOADS = false).
+   * No remote call was made, and no remote data was modified.
+   */
+  object Disabled : DeletionResult()
+
+  /** The backend returned an error or the request failed. */
+  data class Failed(val reason: String, val statusCode: Int? = null) : DeletionResult()
+}
+
+/** The server verifies the existing OAuth token and derives user identity itself. */
+internal object ManualSync {
+  // Keep OFF until the replacement Cloudflare endpoint is deployed and verified.
+  const val ENABLE_UPLOADS = false
+  const val ENDPOINT_IMPORT = "https://whooplens.tech/v1/health-connect/import"
+  const val ENDPOINT_HEALTH_CONNECT = "https://whooplens.tech/v1/health-connect"
+
+  fun uploadApprovedSteps(draft: ReviewedSteps, token: String): Boolean {
+    check(ENABLE_UPLOADS && draft.valid()) { "Manual sync is not released" }
+    val body = JSONObject().put("consent", "store-health-connect-file")
+      .put("file", JSONObject(draft.exportJson()))
+    val connection = URL(ENDPOINT_IMPORT).openConnection() as HttpURLConnection
     try {
-      conn.requestMethod = "DELETE"
-      conn.connectTimeout = 15_000
-      conn.readTimeout = 20_000
-      conn.instanceFollowRedirects = false
-      conn.doOutput = true
-      conn.setRequestProperty("Authorization", "Bearer $token")
-      conn.setRequestProperty("apikey", publishable)
-      conn.setRequestProperty("Content-Type", "application/json")
-      conn.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
-      if (conn.responseCode != 200) return -1
-      val response = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-      if (response.length > 4000) return -1
-      val result = JSONObject(response)
-      return if (result.optInt("schema_version") == 2) result.optInt("deleted", -1) else -1
+      connection.requestMethod = "POST"
+      connection.connectTimeout = 15000
+      connection.readTimeout = 20000
+      connection.instanceFollowRedirects = false
+      connection.doOutput = true
+      connection.setRequestProperty("Authorization", "Bearer $token")
+      connection.setRequestProperty("Content-Type", "application/json")
+      connection.setRequestProperty("Accept", "application/json")
+      connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+      if (connection.responseCode != 200) return false
+      val result = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+      return result.optInt("stored", 0) == 1 && result.optString("source") == "health_connect"
+    } finally { connection.disconnect() }
+  }
+
+  /**
+   * Request deletion of all server-held Health Connect records for the authenticated user.
+   *
+   * Honors ENABLE_UPLOADS: If false, never calls the network or fakes success.
+   * When enabled, invokes DELETE https://whooplens.tech/v1/health-connect with consent.
+   */
+  fun deleteAccountData(token: String, connectionProvider: ((String) -> HttpURLConnection)? = null): DeletionResult {
+    if (!ENABLE_UPLOADS) {
+      return DeletionResult.Disabled
+    }
+    return executeDeletionRequest(token, connectionProvider)
+  }
+
+  /**
+   * Internal helper for executing or testing the verified DELETE protocol.
+   */
+  internal fun executeDeletionRequest(
+    token: String,
+    connectionProvider: ((String) -> HttpURLConnection)? = null
+  ): DeletionResult {
+    if (!ENABLE_UPLOADS) return DeletionResult.Disabled
+    val connection = connectionProvider?.invoke(ENDPOINT_HEALTH_CONNECT)
+      ?: (URL(ENDPOINT_HEALTH_CONNECT).openConnection() as HttpURLConnection)
+    try {
+      connection.requestMethod = "DELETE"
+      connection.connectTimeout = 15000
+      connection.readTimeout = 20000
+      connection.instanceFollowRedirects = false
+      connection.doOutput = true
+      connection.setRequestProperty("Authorization", "Bearer $token")
+      connection.setRequestProperty("Content-Type", "application/json")
+      connection.setRequestProperty("Accept", "application/json")
+
+      val body = JSONObject().put("consent", "delete-my-health-connect-records")
+      connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+
+      val code = connection.responseCode
+      if (code !in 200..299) {
+        return DeletionResult.Failed("Server error (HTTP $code)", code)
+      }
+      val responseText = connection.inputStream.bufferedReader().use { it.readText() }
+      return parseDeletionResponse(code, responseText)
+    } catch (e: Exception) {
+      return DeletionResult.Failed("Deletion was not confirmed")
     } finally {
-      conn.disconnect()
+      connection.disconnect()
     }
   }
 
-  fun uploadApprovedSteps(draft: ReviewedSteps, token: String): Boolean {
-    check(ENABLE_UPLOADS) { "Private sync is not released yet." }
-    check(draft.valid()) { "Preview expired. Review again." }
-    check(token.isNotBlank()) { "Sign in again." }
-    // Must be invoked off the UI thread, after the user presses Upload.
-    val body = draft.exportJson()
-    val conn = URL(destination).openConnection() as HttpURLConnection
-    try {
-      conn.requestMethod = "POST"
-      conn.connectTimeout = 15_000
-      conn.readTimeout = 20_000
-      conn.instanceFollowRedirects = false
-      conn.doOutput = true
-      conn.setRequestProperty("Authorization", "Bearer $token")
-      conn.setRequestProperty("apikey", publishable)
-      conn.setRequestProperty("Content-Type", "application/json")
-      conn.setRequestProperty("Accept", "application/json")
-      conn.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
-      if (conn.responseCode != 200) return false
-      val response = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-      if (response.length > 4000) return false
-      val result = JSONObject(response)
-      return result.optInt("schema_version") == 2 && result.optInt("accepted") == 1
-    } finally {
-      conn.disconnect()
+  /**
+   * Parse a JSON response body into a DeletionResult.
+   */
+  internal fun parseDeletionResponse(httpCode: Int, responseBody: String): DeletionResult {
+    if (httpCode !in 200..299) {
+      return DeletionResult.Failed("Server returned HTTP $httpCode", httpCode)
+    }
+    return try {
+      val json = JSONObject(responseBody)
+      if (!json.has("deleted") || json.isNull("deleted") || json.opt("deleted") !is Int || json.getInt("deleted") < 0) {
+        DeletionResult.Failed("Missing or invalid deleted count", httpCode)
+      } else {
+        DeletionResult.Confirmed(json.getInt("deleted"))
+      }
+    } catch (e: Exception) {
+      DeletionResult.Failed("Malformed server response", httpCode)
     }
   }
 }

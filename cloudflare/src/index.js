@@ -1,8 +1,7 @@
-// WHOOP Lens migration Worker. Supabase stays primary, and this service remains
-// disabled until owner-reviewed release gates are satisfied.
-import {verifySupabaseSession} from "./identity.mjs";
+// Retired staging entry point. Production MCP uses the independent OAuth resource Worker.
+// This disabled Worker must never authenticate against the retired identity provider.
 import { createStagingRouter } from "./router.mjs";
 
 export default {
-  fetch: createStagingRouter({verifyIdentity:verifySupabaseSession})
+  fetch: createStagingRouter()
 };

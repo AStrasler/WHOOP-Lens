@@ -20,7 +20,7 @@ function dbFixture() {
   const sqlite=new DatabaseSync(":memory:");
   sqlite.exec(schema);
   for(const id of [A,B]){
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     sqlite.prepare("INSERT INTO whoop_members(user_id,active) VALUES(?,1)").run(id);
   }
   return {

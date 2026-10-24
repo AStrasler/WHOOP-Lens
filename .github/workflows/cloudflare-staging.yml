@@ -28,5 +28,4 @@ jobs:
         run: |
           node --check cloudflare/src/index.js
           node --check cloudflare/src/router.mjs
-          node --check cloudflare/src/identity.mjs
           node --check cloudflare/src/storage.mjs

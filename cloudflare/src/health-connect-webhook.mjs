@@ -225,8 +225,7 @@ const WRITE_AUTH=`EXISTS (
   JOIN identity_links i ON i.user_id=t.user_id
   WHERE t.user_id=?1 AND t.token_hash=?3 AND t.revoked_at IS NULL
     AND c.purpose='health_connect_file' AND c.granted_at IS NOT NULL AND c.withdrawn_at IS NULL
-    AND m.active=1 AND ((i.identity_provider='supabase' AND i.provider_subject=?1)
-      OR (i.identity_provider='cloudflare_access' AND length(i.provider_subject)>0))
+    AND m.active=1 AND (i.identity_provider='cloudflare_access' AND length(i.provider_subject)>0)
 )`;
 const UPSERT=
   'INSERT INTO health_connect_records(id,user_id,metric,record_key,origin_package,observed_at,ended_at,local_date,unit,payload_json) '+

@@ -7,3 +7,10 @@ Thumbs.db
 
 # Miniflare/wrangler local state
 .wrangler/
+
+# Private health exports and repository recovery archives stay local.
+backups/
+repair-results/
+
+# Uploaded recovery archives stay local.
+.codex-remote-attachments/

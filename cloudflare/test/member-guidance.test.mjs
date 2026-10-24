@@ -29,7 +29,7 @@ async function fixture(){
   for(const f of readdirSync(new URL('../migrations/',import.meta.url)).filter(f=>f.endsWith('.sql')).sort())
     sqlite.exec(readFileSync(new URL('../migrations/'+f,import.meta.url),'utf8'));
   for(const id of [OWNER,AMYLIKE,KIMLIKE,NEWBIE]){
-    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(id,id);
+    sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     sqlite.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(id);
   }
   await connect(sqlite,OWNER,'developer','access-'+OWNER);

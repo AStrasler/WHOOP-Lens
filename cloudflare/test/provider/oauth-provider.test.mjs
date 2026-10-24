@@ -19,6 +19,19 @@ const {server,default:AuthWorker}=await import('../../oauth/auth-server/src/inde
 const ORIGIN='https://auth.whooplens.tech',RESOURCE='https://whooplens.tech/mcp';
 const USER='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 
+test('Android App Links and fallback are public, match site assets, and never reflect codes', async () => {
+  const {default: resource} = await import('../../oauth/resource/src/index.mjs');
+  const links = await resource.fetch(new Request('https://whooplens.tech/.well-known/assetlinks.json'), {}, {});
+  assert.equal(links.status, 200);
+  assert.match(links.headers.get('content-type'), /application\/json/);
+  assert.deepEqual(await links.json(), JSON.parse(readFileSync(new URL('../../../site/.well-known/assetlinks.json', import.meta.url), 'utf8')));
+  const callback = await resource.fetch(new Request('https://whooplens.tech/android/oauth/callback?code=synthetic-private-code&state=synthetic-private-state'), {}, {});
+  assert.equal(callback.status, 200);
+  assert.equal(callback.headers.get('cache-control'), 'no-store');
+  assert.equal(callback.headers.get('referrer-policy'), 'no-referrer');
+  assert.doesNotMatch(await callback.text(), /synthetic-private|<script|https?:/);
+});
+
 test('live Worker discovery advertises DCR and registration works without metadata fetches',async t=>{
   t.mock.method(globalThis,'fetch',()=>{throw Error('Metadata origin must not be needed');});
   const env={OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true'};
@@ -56,7 +69,7 @@ function request(path,method='GET',body,cookie=''){
 async function fixture(){
   const kv=new MemoryKV(),db=new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../../migrations/0001_initial.sql',import.meta.url),'utf8'));
-  db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'supabase',?)").run(USER,USER);
+  db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(USER,USER);
   db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,1)').run(USER);
   const env={OAUTH_KV:kv,OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true',
     SUPABASE_UPSTREAM_CLIENT_ID:'synthetic-client',SUPABASE_PUBLIC_KEY:'synthetic-key',
@@ -319,4 +332,35 @@ test('member cannot add offline_access that the client never requested',async()=
     assert.equal(f.http.length,0);
     assert.equal([...f.kv.records.keys()].some(k=>k.startsWith('grant:')),false);
   }finally{f.db.close();}
+});
+test('native public-client rotation recovery and grant revocation need no issuer changes', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.start(true);
+    const done = await f.flow.callback(request(a.callback, 'GET', null, a.cookie), f.env);
+    const send = body => f.server.fetch(request('/oauth/token', 'POST', {
+      client_id: f.client.clientId, resource: RESOURCE, ...body
+    }), f.env, {waitUntil: () => {}});
+    const issued = await send({grant_type: 'authorization_code',
+      code: new URL(done.headers.get('location')).searchParams.get('code'),
+      code_verifier: a.verifier, redirect_uri: 'https://client.invalid/callback'});
+    assert.equal(issued.status, 200);
+    const initial = await issued.json();
+    const rotated = await send({grant_type: 'refresh_token', refresh_token: initial.refresh_token});
+    assert.equal(rotated.status, 200);
+    const rotatedBody = await rotated.json();
+    assert.notEqual(rotatedBody.refresh_token, initial.refresh_token);
+    // Simulate process death after the server rotated but before the local atomic commit.
+    const recovered = await send({grant_type: 'refresh_token', refresh_token: initial.refresh_token});
+    assert.equal(recovered.status, 200);
+    const current = await recovered.json();
+    const metadata = await f.server.fetch(request('/.well-known/oauth-authorization-server'), f.env, {waitUntil: () => {}});
+    const revokePath = new URL((await metadata.json()).revocation_endpoint).pathname;
+    const revoked = await f.server.fetch(request(revokePath, 'POST', {
+      client_id: f.client.clientId, token: current.refresh_token, token_type_hint: 'refresh_token'
+    }), f.env, {waitUntil: () => {}});
+    assert.equal(revoked.status, 200);
+    assert.equal((await send({grant_type: 'refresh_token', refresh_token: current.refresh_token})).status, 400);
+    assert.equal(await f.server.validateToken(RESOURCE, current.access_token, f.env), null);
+  } finally { f.db.close(); }
 });
