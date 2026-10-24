@@ -15,7 +15,7 @@ internal class PrivateSession {
   companion object {
     const val ISSUER = "https://auth.whooplens.tech"
     const val RESOURCE = "https://whooplens.tech/mcp"
-    const val REDIRECT = "io.github.astrasler.whooplens:/oauth/callback"
+    const val REDIRECT = "https://whooplens.tech/android/oauth/callback"
   }
   private val lock = Any()
   private var revision = 0L
@@ -72,8 +72,8 @@ internal class PrivateSession {
   }
 
   fun completeSignIn(callback: Uri, attempt: Long): Boolean {
-    if (callback.scheme != "io.github.astrasler.whooplens" ||
-      callback.path != "/oauth/callback" || callback.host != null ||
+    if (callback.scheme != "https" || callback.host != "whooplens.tech" ||
+      callback.path != "/android/oauth/callback" ||
       callback.getQueryParameters("state").size != 1 ||
       callback.getQueryParameters("code").size != 1 || callback.getQueryParameter("error") != null) return false
     val values = synchronized(lock) {

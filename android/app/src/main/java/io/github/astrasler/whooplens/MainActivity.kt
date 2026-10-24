@@ -61,7 +61,7 @@ class MainActivity : ComponentActivity() {
 
   private fun handleOAuthCallback(intent: Intent?) {
     val callback = intent?.data ?: return
-    if (callback.scheme != "io.github.astrasler.whooplens") return
+    if (callback.scheme != "https" || callback.host != "whooplens.tech" || callback.path != "/android/oauth/callback") return
     val attempt = uiGeneration
     findViewById<TextView>(4001)?.text = "Verifying Cloudflare authorization..."
     Thread {
