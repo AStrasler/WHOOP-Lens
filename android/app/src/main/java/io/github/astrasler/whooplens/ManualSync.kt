@@ -2,9 +2,6 @@ package io.github.astrasler.whooplens
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
-import java.nio.charset.StandardCharsets
 import java.time.Instant
 import java.time.LocalDate
 
@@ -49,67 +46,15 @@ internal data class ReviewedSteps(
  */
 internal object ManualSync {
   const val ENABLE_UPLOADS = false
-  private const val destination =
-    "https://evoiwauqplbcecumiwqn.supabase.co/functions/v1/samsung-health"
-  private const val publishable = "sb_publishable_iSQO1ZdTmCnRHC_YxKb30A_x7rVRYr_"
+  // Uploads require a reviewed Cloudflare endpoint and mobile OAuth session.
+  // No legacy endpoint fallback is permitted.
 
-  /** A separate explicit confirmation is required by the calling UI. */
+  /** No network fallback to Supabase. Cloudflare mobile OAuth is not yet released. */
   fun deleteApprovedSteps(day: LocalDate, token: String): Int {
-    check(ENABLE_UPLOADS) { "Private deletion is not released yet." }
-    check(!day.isAfter(LocalDate.now())) { "Future dates are invalid." }
-    check(token.isNotBlank()) { "Sign in again." }
-    val body = JSONObject()
-      .put("schema_version", 2)
-      .put("source", "health_connect")
-      .put("approved", true)
-      .put("metric", "steps_daily")
-      .put("record_key", "daily:" + day + ":local").toString()
-    val conn = URL(destination).openConnection() as HttpURLConnection
-    try {
-      conn.requestMethod = "DELETE"
-      conn.connectTimeout = 15_000
-      conn.readTimeout = 20_000
-      conn.instanceFollowRedirects = false
-      conn.doOutput = true
-      conn.setRequestProperty("Authorization", "Bearer $token")
-      conn.setRequestProperty("apikey", publishable)
-      conn.setRequestProperty("Content-Type", "application/json")
-      conn.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
-      if (conn.responseCode != 200) return -1
-      val response = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-      if (response.length > 4000) return -1
-      val result = JSONObject(response)
-      return if (result.optInt("schema_version") == 2) result.optInt("deleted", -1) else -1
-    } finally {
-      conn.disconnect()
-    }
+    throw UnsupportedOperationException("Cloudflare mobile sync is not released")
   }
 
   fun uploadApprovedSteps(draft: ReviewedSteps, token: String): Boolean {
-    check(ENABLE_UPLOADS) { "Private sync is not released yet." }
-    check(draft.valid()) { "Preview expired. Review again." }
-    check(token.isNotBlank()) { "Sign in again." }
-    // Must be invoked off the UI thread, after the user presses Upload.
-    val body = draft.exportJson()
-    val conn = URL(destination).openConnection() as HttpURLConnection
-    try {
-      conn.requestMethod = "POST"
-      conn.connectTimeout = 15_000
-      conn.readTimeout = 20_000
-      conn.instanceFollowRedirects = false
-      conn.doOutput = true
-      conn.setRequestProperty("Authorization", "Bearer $token")
-      conn.setRequestProperty("apikey", publishable)
-      conn.setRequestProperty("Content-Type", "application/json")
-      conn.setRequestProperty("Accept", "application/json")
-      conn.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
-      if (conn.responseCode != 200) return false
-      val response = conn.inputStream.bufferedReader(StandardCharsets.UTF_8).use { it.readText() }
-      if (response.length > 4000) return false
-      val result = JSONObject(response)
-      return result.optInt("schema_version") == 2 && result.optInt("accepted") == 1
-    } finally {
-      conn.disconnect()
-    }
+    throw UnsupportedOperationException("Cloudflare mobile sync is not released")
   }
 }
