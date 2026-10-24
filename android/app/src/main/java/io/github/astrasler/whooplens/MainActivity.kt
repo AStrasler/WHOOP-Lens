@@ -9,6 +9,9 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import androidx.activity.ComponentActivity
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
@@ -26,6 +29,7 @@ import kotlinx.coroutines.runBlocking
 
 /** Data is read only on explicit Preview; this version never uploads health records. */
 class MainActivity : ComponentActivity() {
+  private fun Int.dp(): Int = (this * resources.displayMetrics.density + 0.5f).toInt()
   private val auth = PrivateSession()
   private var verified = false
   private var uiGeneration = 0L
@@ -83,11 +87,41 @@ class MainActivity : ComponentActivity() {
   }
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    val background = Color.rgb(12, 22, 27)
+    val foreground = Color.rgb(239, 247, 249)
+    val muted = Color.rgb(170, 193, 201)
     val layout = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
-      setPadding(40, 64, 40, 40)
+      setBackgroundColor(background)
+      setPadding(20.dp(), 24.dp(), 20.dp(), 28.dp())
     }
-    val heading = TextView(this).apply { text = "WHOOP Lens Companion"; textSize = 23f }
+    val heading = TextView(this).apply {
+      text = "WHOOP Lens"
+      textSize = 27f
+      setTextColor(foreground)
+      setTypeface(null, Typeface.BOLD)
+      setPadding(0, 0, 0, 4.dp())
+    }
+    fun section(title: String): TextView = TextView(this).apply {
+      text = title
+      textSize = 15f
+      setTypeface(null, Typeface.BOLD)
+      setTextColor(muted)
+      setPadding(0, 20.dp(), 0, 6.dp())
+    }
+    fun action(button: Button) {
+      button.isAllCaps = false
+      button.textSize = 15f
+      button.minHeight = 48.dp()
+      button.setTextColor(foreground)
+      button.background = GradientDrawable().apply {
+        setColor(Color.rgb(29, 49, 57))
+        cornerRadius = 13.dp().toFloat()
+        setStroke(1.dp(), Color.rgb(57, 86, 97))
+      }
+      button.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = 9.dp() }
+      layout.addView(button)
+    }
     val status = TextView(this).apply {
       text = "Private beta. Sign in before requesting access to your health data."
       id = 4001
@@ -124,19 +158,50 @@ class MainActivity : ComponentActivity() {
       else -> "Health Connect is unavailable on this phone."
     }
     layout.addView(heading)
-    layout.addView(TextView(this).apply { text = hcStatus })
-    layout.addView(loginButton)
-    layout.addView(permissionsButton)
-    layout.addView(previewButton)
-    layout.addView(otherPreviewButton)
-    layout.addView(reviewButton)
-    layout.addView(deleteButton)
-    layout.addView(logoutButton)
-    layout.addView(status)
     layout.addView(TextView(this).apply {
-      text = "Steps are read on Preview, then reviewed separately. Upload remains disabled until the private backend is approved. No automatic synchronization."
+      text = "Private companion · Local health previews"
+      textSize = 14f
+      setTextColor(muted)
     })
-    setContentView(ScrollView(this).apply { addView(layout) })
+    layout.addView(section("Account"))
+    action(loginButton)
+    status.apply {
+      textSize = 14f
+      setTextColor(foreground)
+      setPadding(12.dp(), 10.dp(), 12.dp(), 10.dp())
+      this.background = GradientDrawable().apply {
+        setColor(Color.rgb(21, 39, 47))
+        cornerRadius = 12.dp().toFloat()
+      }
+    }
+    layout.addView(status)
+    layout.addView(section("Health Connect"))
+    layout.addView(TextView(this).apply {
+      text = hcStatus
+      textSize = 14f
+      setTextColor(muted)
+      setPadding(0, 0, 0, 9.dp())
+    })
+    action(permissionsButton)
+    layout.addView(section("Preview on this device"))
+    action(previewButton)
+    action(otherPreviewButton)
+    layout.addView(section("Not available in this build"))
+    action(reviewButton)
+    action(deleteButton)
+    layout.addView(section("Session"))
+    action(logoutButton)
+    layout.addView(TextView(this).apply {
+      text = "No automatic sync. Preview data stays on this device. Upload is disabled."
+      textSize = 13f
+      setTextColor(muted)
+      setPadding(0, 12.dp(), 0, 0)
+    })
+    setContentView(ScrollView(this).apply {
+      setBackgroundColor(background)
+      isFillViewport = true
+      addView(layout)
+    })
     handleOAuthCallback(intent)
 
     loginButton.setOnClickListener {
