@@ -148,7 +148,10 @@ test('report_error is exposed through the same MCP feature flag and accepts no c
     const link_id=links.links[0].link_id;
     assert.equal((await rpc('report_error',{link_id,diagnostics,user_id:B})).error.code,-32602);
     assert.equal((await rpc('report_error',{link_id,diagnostics},{ISSUE_REPORTS_ENABLED:'false'})).error.code,-32602);
-    const result=await rpc('report_error',{link_id,diagnostics});
+    // This RPC path uses the real clock, unlike f.run's fixed test clock.
+    // Keep its evidence inside the 24-hour acceptance window on any run date.
+    const currentDiagnostics={...diagnostics,occurred_at:new Date(Date.now()-60000).toISOString()};
+    const result=await rpc('report_error',{link_id,diagnostics:currentDiagnostics});
     assert.equal(result.result.isError,undefined);
     assert.equal(JSON.parse(result.result.content[0].text).approval_required,true);
   }finally{f.close();}
