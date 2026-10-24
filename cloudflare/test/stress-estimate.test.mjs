@@ -440,7 +440,7 @@ test("F2 weekly digest: boundary dates, no fabricated target dates, cached outpu
 const plain={count:3,sources:[{source:"WHOOP",count:3}],metrics:{"score.recovery_score":{min:35,max:44,mean:40,median:40}}};
 const valid={...plain,stress_estimate:{name:"WHOOP Lens experimental physiological stress estimate",experimental:true,
   estimate_date:"2026-10-15",requested_latest_date:"2026-10-15",is_latest_requested_date:true,value:72,band:"elevated",confidence:"moderate",baseline_days:30}};
-const mainPrompt=readFileSync(new URL("./fixtures/system-prompt-main.txt",import.meta.url),"utf8").replace(/\n$/,"");
+const mainPrompt=readFileSync(new URL("./fixtures/system-prompt-main.txt",import.meta.url),"utf8").replace(/\r?\n$/,"");
 const STRESS_WORDS=["stress","estimate","high","low","elevated","moderate","confidence","index","experimental","physiological","band","lens"];
 
 test("F1 feature disabled: prompt identical to main and stress words rejected",()=>{
