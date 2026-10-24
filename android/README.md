@@ -1,10 +1,14 @@
 # WHOOP Lens Android companion (optional, unreleased)
 
-The local `codex/android-approved-design` branch now implements the approved native dashboard and opt-in WorkManager background refresh. See [design implementation and verification](../docs/android-design-implementation-20261024.md) for current behaviour, data limits, widget privacy, APK and tests. The older preview-only notes below describe the production baseline before this development branch. Uploads and deletion remain disabled; nothing on this branch has been pushed or deployed.
+The local `codex/android-approved-design` branch implements the native dashboard, WHOOP and Health Connect reads, encrypted caching, opt-in WorkManager refresh and six adaptive home widgets. The owner has verified sign-in, real measurements, widgets and screenshots on a Samsung Galaxy S26 Ultra. See [current verification and PR scope](../docs/android-companion-pr-verification-20261024.md) for exact results and remaining limits. The related auth Worker fix is already deployed; the Android branch remains unpublished. Uploads and deletion remain disabled.
+
+## Historical preview baseline
+
+The notes below describe the earlier preview-only baseline, not the current dashboard. For current behavior, use the verification record above and the [design implementation report](../docs/android-design-implementation-20261024.md).
 
 > **Not required.** WHOOP Lens is now browser-first. This Android code is retained for an optional future Health Connect bridge. Users should not need to install an APK to access WHOOP Lens or review supported manual exports. See [browser workspace](../docs/WEB_WORKSPACE.md). Keep Android uploads and deletes disabled.
 
-**Status:** Debug APK compiled; not yet installed or tested on a phone. No production uploads, deletes, or migrations enabled.
+**Historical status:** Debug APK compiled; not yet installed or tested on a phone. No production uploads, deletes, or migrations enabled.
 
 ## Implemented on the draft branch
 
