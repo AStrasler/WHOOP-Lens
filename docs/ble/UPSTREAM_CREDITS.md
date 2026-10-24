@@ -1,10 +1,11 @@
 # WHOOP BLE research references and upstream credits
 
-Recorded 2026-10-24. All four projects below are **research references only**.
-No source code, fixtures, schemas, assets or algorithms from these projects have
-been incorporated into WHOOP Lens. No BLE integration is implemented by this
-document. Creating a GitHub fork preserves provenance; it does not supply a
-missing license or expand an existing permission grant.
+Recorded 2026-10-24; updated for the local Direct BLE implementation. All four
+projects remain research references. The standard-HR parser from whoop4-ble is
+now additionally adapted under MIT; NOOP, Wearable and Goose remain research-only.
+See [current source-to-destination mapping](upstream-provenance.md) and
+[incorporated component notices](../../THIRD_PARTY_NOTICES.md). Creating a GitHub
+fork does not supply a missing license or expand an existing permission grant.
 
 Thank you to the original maintainers and contributors for their protocol and
 interoperability research. They do not thereby endorse, maintain, sponsor or
@@ -36,7 +37,7 @@ rewrite them with WHOOP Lens authorship.
 | NOOP | No root license/notice granting redistribution or adaptation was found in the tracked tree. The inspected transport/protocol files do not supply an applicable permissive grant. Existing `ATTRIBUTION.md` and `DISCLAIMER.md` must be retained. | Research-only. Copying/adapting its source, schemas or fixtures is not cleared. Obtain an appropriate grant and resolve inherited provenance before incorporation. |
 | Wearable | No root license/notice granting redistribution or adaptation was found. README descriptions such as original work or open source do not replace a license grant. Retain `DISCLAIMER.md` and existing credits. | Research-only. Code, schemas, fixtures and disclosed ports are not cleared for incorporation. |
 | Goose | No root redistribution grant was found. [`Rust/core/Cargo.toml`](https://github.com/b-nnett/goose/blob/ba9ae0280c9b5b9a1545baab8e944cb3b7563c62/Rust/core/Cargo.toml) explicitly declares `license = "UNLICENSED"`. This is not the public-domain Unlicense. | Research-only. Do not copy or translate the Swift/Rust implementations or fixtures without an appropriate grant. |
-| whoop4-ble | [`LICENSE`](https://github.com/andyguzmaneth/whoop4-ble/blob/a76ad4576bda9ec76cc6347ff9ad18fbcad1cd88/LICENSE): MIT License, **Copyright (c) 2026 Andy Guzman**. Package metadata points to this license. No conflicting license was found in the inspected source. Referenced antecedents still require component-level provenance review. | Research-only now. The original standard-HR parser is a possible future MIT adaptation candidate; no adaptation has occurred. Do not treat the entire inherited custom-protocol chain as cleared merely because this repository has an MIT file. |
+| whoop4-ble | [`LICENSE`](https://github.com/andyguzmaneth/whoop4-ble/blob/a76ad4576bda9ec76cc6347ff9ad18fbcad1cd88/LICENSE): MIT License, **Copyright (c) 2026 Andy Guzman**. Package metadata points to this license. No conflicting license was found in the inspected source. Referenced antecedents still require component-level provenance review. | Standard-HR parser now adapted under MIT, with full notice packaged and exact mapping recorded. Custom-protocol code remains research-only; the inherited chain is not represented as cleared. |
 
 Forking permission and permission to incorporate/distribute source are separate
 questions. Missing-license findings do not block independently written,
@@ -132,8 +133,10 @@ the original acknowledgments; obtain additional provenance if the relevant
 custom-protocol component is selected. Dependencies include Bleak and
 websockets; they are not needed for an independently written Android parser.
 
-**Actually reused code:** none. **WHOOP Lens source-to-destination mapping:**
-none. **WHOOP Lens modifications to upstream/fork:** none.
+**Actually reused code:** `reader.py::parse_hr_measurement`, adapted under MIT
+into `ble/BleModels.kt::HeartRateMeasurement.decode`. Kotlin validation/typed-field
+changes are recorded in `upstream-provenance.md`; the complete original notice
+is packaged in the APK. **WHOOP Lens modifications to upstream/fork:** none.
 
 ## Native fork integrity at creation
 
