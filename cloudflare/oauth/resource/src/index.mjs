@@ -5,7 +5,7 @@ import { WEBHOOK_PATH } from "../../../src/health-connect-webhook.mjs";
 import {NOTION_CALLBACK,NOTION_START} from '../../../src/notion-oauth.mjs';
 
 // Private MCP resource server for https://whooplens.tech/mcp.
-// Supabase whoop-mcp stays live in parallel. Do not copy WHOOP refresh tokens.
+// Cloudflare is the live MCP resource server. Do not copy legacy WHOOP refresh tokens.
 const mcpResource=new OAuthResourceServer({
   resourceMetadata:{
     resource:"https://whooplens.tech/mcp",
