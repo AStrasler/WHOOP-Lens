@@ -1,0 +1,461 @@
+package io.github.astrasler.whooplens
+
+import android.content.Context
+import android.content.res.ColorStateList
+import android.graphics.*
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
+import android.view.MotionEvent
+import android.view.View
+import android.widget.*
+import androidx.core.view.ViewCompat
+import kotlin.math.*
+
+internal object LensColors {
+    val background = Color.rgb(11, 20, 24)
+    val top = Color.rgb(15, 28, 33)
+    val card = Color.rgb(19, 34, 40)
+    val inset = Color.rgb(14, 26, 30)
+    val edge = Color.rgb(30, 51, 58)
+    val text = Color.rgb(238, 246, 245)
+    val muted = Color.rgb(138, 163, 166)
+    val teal = Color.rgb(79, 216, 207)
+    val sand = Color.rgb(227, 207, 164)
+    val amber = Color.rgb(255, 184, 107)
+    val error = Color.rgb(255, 154, 139)
+}
+
+internal class LensUi(val context: Context) {
+    fun dp(n: Int) = (n * context.resources.displayMetrics.density + 0.5f).toInt()
+
+    private val inter by lazy { context.resources.getFont(R.font.inter) }
+    private val mono by lazy { context.resources.getFont(R.font.jetbrains_mono) }
+
+    fun text(
+        value: String,
+        size: Float = 14f,
+        color: Int = LensColors.text,
+        bold: Boolean = false,
+        numbers: Boolean = false,
+    ) =
+        TextView(context).apply {
+            text = value
+            textSize = size
+            setTextColor(color)
+            typeface =
+                Typeface.create(
+                    if (numbers) mono else inter,
+                    if (bold) Typeface.BOLD else Typeface.NORMAL,
+                )
+            setLineSpacing(dp(3).toFloat(), 1f)
+            includeFontPadding = false
+            setPadding(0, dp(3), 0, dp(3))
+        }
+
+    fun column(pad: Int = 0) =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(pad), dp(pad), dp(pad), dp(pad))
+        }
+
+    fun row() =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+
+    fun shape(color: Int = LensColors.card, radius: Int = 24, dashed: Boolean = false) =
+        GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(color, LensColors.inset))
+            .apply {
+                cornerRadius = dp(radius).toFloat()
+                setStroke(
+                    dp(1),
+                    LensColors.edge,
+                    if (dashed) dp(4).toFloat() else 0f,
+                    if (dashed) dp(3).toFloat() else 0f,
+                )
+            }
+
+    fun add(parent: LinearLayout, view: View, gap: Int = 8) {
+        parent.addView(view, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(gap) })
+    }
+
+    fun heading(parent: LinearLayout, title: String) {
+        add(
+            parent,
+            text(title.uppercase(), 11.5f, LensColors.muted, true).apply {
+                letterSpacing = .08f
+                ViewCompat.setAccessibilityHeading(this, true)
+            },
+            8,
+        )
+    }
+
+    fun card(parent: LinearLayout, block: (LinearLayout) -> Unit): LinearLayout {
+        val c = column(18)
+        c.background = shape()
+        add(parent, c, 12)
+        block(c)
+        return c
+    }
+
+    fun chip(parent: LinearLayout, source: DataSource) {
+        val color = if (source == DataSource.WHOOP) LensColors.teal else LensColors.sand
+        val t = text(source.label, 11f, color, true)
+        t.background =
+            shape(LensColors.top, 12, source == DataSource.HEALTH_CONNECT).apply {
+                setStroke(
+                    dp(1),
+                    color,
+                    if (source == DataSource.HEALTH_CONNECT) dp(4).toFloat() else 0f,
+                    if (source == DataSource.HEALTH_CONNECT) dp(3).toFloat() else 0f,
+                )
+            }
+        t.setPadding(dp(9), dp(5), dp(9), dp(5))
+        parent.addView(t, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(8) })
+    }
+
+    fun button(
+        parent: LinearLayout,
+        title: String,
+        primary: Boolean = false,
+        enabled: Boolean = true,
+        action: () -> Unit,
+    ): TextView {
+        val b =
+            text(title, 14f, if (primary) Color.rgb(5, 32, 35) else LensColors.teal, true).apply {
+                gravity = android.view.Gravity.CENTER
+                minHeight = dp(48)
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                isEnabled = enabled
+                isFocusable = true
+                isClickable = true
+                val bg =
+                    if (primary)
+                        GradientDrawable(
+                                GradientDrawable.Orientation.TOP_BOTTOM,
+                                intArrayOf(Color.rgb(106, 230, 221), LensColors.teal),
+                            )
+                            .apply { cornerRadius = dp(12).toFloat() }
+                    else shape(LensColors.inset, 12, !enabled)
+                background = RippleDrawable(ColorStateList.valueOf(0x334FD8CF), bg, null)
+                if (!enabled) setTextColor(LensColors.muted)
+                setOnClickListener { action() }
+            }
+        ViewCompat.setAccessibilityDelegate(
+            b,
+            object : androidx.core.view.AccessibilityDelegateCompat() {
+                override fun onInitializeAccessibilityNodeInfo(
+                    host: View,
+                    info: androidx.core.view.accessibility.AccessibilityNodeInfoCompat,
+                ) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    info.className = "android.widget.Button"
+                }
+            },
+        )
+        add(parent, b, 8)
+        return b
+    }
+
+    fun metric(
+        parent: LinearLayout,
+        m: Metric?,
+        title: String,
+        source: DataSource,
+        onClick: (() -> Unit)? = null,
+    ) =
+        card(parent) { c ->
+            val stale =
+                m?.measuredAt?.let { System.currentTimeMillis() - it > 12 * 3600000L } == true
+            chip(c, source)
+            add(c, text(title, 12f, LensColors.muted, true), 2)
+            add(
+                c,
+                text(
+                    m?.display() ?: "Not shared",
+                    24f,
+                    if (stale) LensColors.muted else LensColors.text,
+                    bold = true,
+                    numbers = true,
+                ),
+                5,
+            )
+            add(
+                c,
+                text(
+                    m?.measuredAt?.let {
+                        "${if(stale)"Saved measurement"else"Measured"} ${dateTime(it)}"
+                    } ?: "No available measurement",
+                    12f,
+                    if (stale) LensColors.amber else LensColors.muted,
+                ),
+                0,
+            )
+            m?.origin?.let { add(c, text("Writing app: $it", 12f, LensColors.muted), 0) }
+            if (onClick != null) {
+                c.isClickable = true
+                c.isFocusable = true
+                c.contentDescription =
+                    "$title, ${m?.display()?:"Not shared"}, ${source.label}, ${m?.measuredAt?.let(::dateTime)?:"measurement time unavailable"}. Open measurements"
+                c.foreground = RippleDrawable(ColorStateList.valueOf(0x224FD8CF), null, shape())
+                c.setOnClickListener { onClick() }
+            }
+        }
+
+    fun pair(parent: LinearLayout, left: (LinearLayout) -> Unit, right: (LinearLayout) -> Unit) {
+        if (
+            context.resources.configuration.fontScale > 1.3f ||
+                context.resources.configuration.screenWidthDp < 360
+        ) {
+            left(parent)
+            right(parent)
+            return
+        }
+        val row = row()
+        val a = column()
+        val b = column()
+        row.addView(a, LinearLayout.LayoutParams(0, -2, 1f).apply { rightMargin = dp(6) })
+        row.addView(b, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(6) })
+        add(parent, row, 0)
+        left(a)
+        right(b)
+    }
+}
+
+internal fun dateTime(time: Long): String =
+    java.time.Instant.ofEpochMilli(time)
+        .atZone(java.time.ZoneId.systemDefault())
+        .format(java.time.format.DateTimeFormatter.ofPattern("MMM d · HH:mm"))
+
+internal class RecoveryRing(context: Context, private val value: Double?) : View(context) {
+    private val paint = Paint(3)
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val d = resources.displayMetrics.density
+        val size = min(width, height).toFloat()
+        val r =
+            RectF((width - size) / 2 + 10 * d, 10 * d, (width + size) / 2 - 10 * d, size - 10 * d)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 7 * d
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.color = LensColors.edge
+        canvas.drawArc(r, 0f, 360f, false, paint)
+        value
+            ?.takeIf { it in 0.0..100.0 }
+            ?.let {
+                paint.color = LensColors.teal
+                canvas.drawArc(r, -90f, (it * 3.6).toFloat(), false, paint)
+            }
+        paint.style = Paint.Style.FILL
+        paint.color = LensColors.text
+        paint.textSize = 30 * resources.displayMetrics.scaledDensity
+        paint.typeface = resources.getFont(R.font.jetbrains_mono)
+        paint.textAlign = Paint.Align.CENTER
+        canvas.drawText(
+            value?.let { "${it.toInt()}%" } ?: "—",
+            width / 2f,
+            height / 2f + 8 * d,
+            paint,
+        )
+    }
+
+    init {
+        contentDescription =
+            value?.let { "WHOOP recovery $it percent" } ?: "WHOOP recovery not shared"
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+    }
+}
+
+internal class TrendChart(
+    context: Context,
+    private val points: List<Point>,
+    private val source: DataSource,
+    private val bars: Boolean = false,
+    private val baseline: Triple<Double, Double, Double>? = null,
+) : View(context) {
+    private val paint = Paint(3)
+    private var selected: Int? = null
+    private var touchSelection = false
+
+    init {
+        isClickable = true
+        isFocusable = true
+        contentDescription = description()
+        setOnClickListener {
+            if (points.isNotEmpty()) {
+                if (!touchSelection) selected = ((selected ?: -1) + 1) % points.size
+                touchSelection = false
+                contentDescription = description()
+                announceForAccessibility(contentDescription)
+                invalidate()
+            }
+        }
+    }
+
+    private fun description(): String {
+        val p = selected?.let { points[it] }
+        return if (p != null)
+            "${source.label}, ${dateTime(p.time)}, ${p.value?.let { java.text.DecimalFormat("0.#").format(it)}?:"Not shared"}"
+        else
+            "${source.label} chart. ${points.count {it.value!=null}} available points. Gaps mean missing data. Tap to read each point; full measurements below."
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_UP && points.isNotEmpty()) {
+            val t =
+                points.first().time +
+                    (event.x / width).coerceIn(0f, 1f) * (points.last().time - points.first().time)
+            selected = points.indices.minByOrNull { abs(points[it].time - t) }
+            touchSelection = true
+            performClick()
+            return true
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val values = points.mapNotNull { it.value }
+        if (values.isEmpty()) {
+            paint.color = LensColors.muted
+            paint.textSize = 14 * resources.displayMetrics.scaledDensity
+            canvas.drawText("No shared measurements", 12f, height / 2f, paint)
+            return
+        }
+        val low = if (bars) 0.0 else min(values.min(), baseline?.first ?: values.min()) * .95
+        val high = max(max(values.max(), baseline?.third ?: values.max()) * 1.05, low + 1)
+        val inset = 16f
+        val w = width - 2 * inset
+        val h = height - 2 * inset - 16 * resources.displayMetrics.density
+        fun x(i: Int) =
+            inset +
+                w * (points[i].time - points.first().time).toFloat() /
+                    max(1L, points.last().time - points.first().time)
+        fun y(v: Double) = inset + h * (1 - (v - low) / (high - low)).toFloat()
+        baseline?.let { b ->
+            paint.style = Paint.Style.FILL
+            paint.color = 0x124FD8CF
+            canvas.drawRect(inset, y(b.third), width - inset, y(b.first), paint)
+            paint.color = LensColors.muted
+            paint.strokeWidth = 1f
+            paint.pathEffect = DashPathEffect(floatArrayOf(5f, 5f), 0f)
+            canvas.drawLine(inset, y(b.second), width - inset, y(b.second), paint)
+            paint.pathEffect = null
+        }
+        paint.color = LensColors.edge
+        paint.strokeWidth = 1f
+        for (i in 0..2) canvas.drawLine(
+            inset,
+            inset + h * i / 2,
+            width - inset,
+            inset + h * i / 2,
+            paint,
+        )
+        paint.color = if (source == DataSource.WHOOP) LensColors.teal else LensColors.sand
+        paint.strokeWidth = 2.3f * resources.displayMetrics.density
+        paint.style = Paint.Style.STROKE
+        paint.pathEffect =
+            if (source == DataSource.HEALTH_CONNECT && !bars)
+                DashPathEffect(floatArrayOf(10f, 7f), 0f)
+            else null
+        val path = Path()
+        var open = false
+        points.forEachIndexed { i, p ->
+            val v = p.value
+            if (v == null) open = false
+            else if (bars) {
+                paint.strokeWidth = max(4f, w / max(1, points.size) * .62f)
+                canvas.drawLine(x(i), inset + h, x(i), y(v), paint)
+            } else {
+                if (!open) path.moveTo(x(i), y(v)) else path.lineTo(x(i), y(v))
+                open = true
+            }
+        }
+        if (!bars) canvas.drawPath(path, paint)
+        paint.pathEffect = null
+        paint.style = Paint.Style.FILL
+        paint.color = LensColors.muted
+        paint.textSize = 10.5f * resources.displayMetrics.scaledDensity
+        val axisFormat =
+            java.time.format.DateTimeFormatter.ofPattern(
+                if (points.last().time - points.first().time < 2 * 86400000L) "HH:mm" else "MMM d"
+            )
+        for ((index, align) in
+            listOf(
+                0 to Paint.Align.LEFT,
+                points.size / 2 to Paint.Align.CENTER,
+                points.lastIndex to Paint.Align.RIGHT,
+            )) {
+            paint.textAlign = align
+            canvas.drawText(
+                java.time.Instant.ofEpochMilli(points[index].time)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .format(axisFormat),
+                x(index),
+                height - 4 * resources.displayMetrics.density,
+                paint,
+            )
+        }
+        paint.pathEffect = null
+        paint.style = Paint.Style.FILL
+        selected?.let { i ->
+            points[i].value?.let { v ->
+                canvas.drawCircle(x(i), y(v), 6 * resources.displayMetrics.density, paint)
+            }
+        }
+    }
+}
+
+internal class SleepTimeline(context: Context, private val sleep: SleepDetail) : View(context) {
+    private val paint = Paint(3)
+
+    init {
+        contentDescription =
+            "Health Connect sleep-stage timeline. Only shared intervals are drawn. Full stage times follow below."
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val labels = listOf("Awake", "REM", "Light", "Deep")
+        val d = resources.displayMetrics.density
+        val left = 48 * d
+        val row = height / 4f
+        paint.textSize = 11 * resources.displayMetrics.scaledDensity
+        labels.forEachIndexed { i, label ->
+            paint.color = LensColors.muted
+            canvas.drawText(label, 0f, row * i + row * .6f, paint)
+        }
+        sleep.stages.forEach { s ->
+            val lane = labels.indexOf(s.label)
+            if (lane >= 0) {
+                val x =
+                    left +
+                        (width - left) * (s.start - sleep.start).toFloat() /
+                            (sleep.end - sleep.start).coerceAtLeast(1)
+                val end =
+                    left +
+                        (width - left) * (s.end - sleep.start).toFloat() /
+                            (sleep.end - sleep.start).coerceAtLeast(1)
+                paint.color = LensColors.sand
+                paint.alpha = if (lane == 0) 130 else 255
+                canvas.drawRoundRect(
+                    x,
+                    row * lane + 3 * d,
+                    end,
+                    row * (lane + 1) - 3 * d,
+                    3 * d,
+                    3 * d,
+                    paint,
+                )
+            }
+        }
+    }
+}

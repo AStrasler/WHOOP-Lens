@@ -10,14 +10,15 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 
 /** App-private, credential-encrypted storage excluded from backup and device transfer. */
-internal fun androidSessionStorage(context: Context): SessionStorage {
-  val atomic = AtomicFile(File(context.noBackupFilesDir, "oauth-session.bin"))
+internal fun androidSessionStorage(context: Context, dashboard: Boolean = false): SessionStorage {
+  val atomic = AtomicFile(File(context.noBackupFilesDir, if(dashboard) "dashboard.bin" else "oauth-session.bin"))
   val blob = object : CredentialBlob {
     override fun read(): ByteArray? {
       if (!atomic.baseFile.exists() && !File(atomic.baseFile.path + ".bak").exists()) return null
       return atomic.openRead().use {
-        val bytes = it.readNBytes(131073)
-        require(bytes.size <= 131072) { "Invalid credential storage" }
+        val limit=if(dashboard)1000032 else 131072
+        val bytes = it.readNBytes(limit+1)
+        require(bytes.size <= limit) { "Invalid credential storage" }
         bytes
       }
     }
@@ -34,7 +35,7 @@ internal fun androidSessionStorage(context: Context): SessionStorage {
     override fun clear() { atomic.delete() }
   }
   val keys = object : CredentialKeys {
-    private val alias = "whooplens.oauth.v1"
+    private val alias = if(dashboard) "whooplens.dashboard.v1" else "whooplens.oauth.v1"
     private fun store(): KeyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
     override fun get(create: Boolean): SecretKey {
       val existing = store().getKey(alias, null) as? SecretKey
@@ -51,7 +52,7 @@ internal fun androidSessionStorage(context: Context): SessionStorage {
     }
     override fun clear() { store().deleteEntry(alias) }
   }
-  return EncryptedSessionStorage(blob, keys)
+  return EncryptedSessionStorage(blob, keys, maxPlaintextBytes=if(dashboard)1000000 else 100000)
 }
 
 /** One session owner prevents concurrent Activity instances from racing token rotation. */

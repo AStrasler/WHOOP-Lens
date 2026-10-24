@@ -35,3 +35,37 @@ test('metadata outages are retryable without a credential rejection or leaked de
     assert.equal(logOAuthError({code:'invalid_client',internal:{category:'client-authentication',reason:'client_secret_mismatch'}}),undefined);
   });
 });
+
+
+test('authorization diagnostics identify fixed stages/reasons without retaining error or request text',async t=>{
+  const {authorizationFailureEvent,logAuthorizationFailure}=await import('../oauth/auth-server/src/oauth-diagnostics.mjs');
+  const cases=[
+    ['authorize_request',{description:'Invalid client_id'},'client_unavailable'],
+    ['authorize_request',{description:'Invalid redirect URI'},'redirect_rejected'],
+    ['consent_approval',{description:'This authorization expired or was already used; start again'},'transaction_expired_or_replayed'],
+    ['consent_session',Error('private-cookie-and-token'),'dependency_unavailable'],
+    ['upstream_identity_failed',Error('private-cookie-and-token'),'identity_rejected'],
+  ];
+  const lines=[];t.mock.method(console,'warn',v=>lines.push(v));
+  for(const [stage,error,reason] of cases){
+    const event=authorizationFailureEvent(stage,{...error,request:'private-cookie-and-token',url:'private-cookie-and-token'});
+    assert.deepEqual(event,{event:'oauth_authorization_failure',stage,reason});
+    logAuthorizationFailure({DIAGNOSTICS_CAPTURE_ENABLED:'true'},stage,error);
+  }
+  logAuthorizationFailure({},'authorize_request',Error('private-cookie-and-token'));
+  assert.equal(lines.length,cases.length);
+  assert.ok(!lines.join('').includes('private-cookie-and-token'));
+  assert.deepEqual(authorizationFailureEvent('private-cookie-and-token',{},'private-cookie-and-token'),
+    {event:'oauth_authorization_failure',stage:'other',reason:'dependency_unavailable'});
+});
+
+
+test('missing callback state is diagnosed without touching the provider or logging callback fields',async t=>{
+  const {makeConsentFlow}=await import('../oauth/auth-server/src/consent-flow.mjs');
+  const lines=[];t.mock.method(console,'warn',v=>lines.push(JSON.parse(v)));
+  const flow=makeConsentFlow({getOAuth:()=>{throw Error('Must not load missing state');}});
+  const response=await flow.callback(new Request('https://auth.whooplens.tech/oauth/upstream/callback?code=synthetic-private'),
+    {OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true',DIAGNOSTICS_CAPTURE_ENABLED:'true'});
+  assert.equal(response.status,400);
+  assert.deepEqual(lines,[{event:'oauth_authorization_failure',stage:'upstream_state_failed',reason:'request_rejected'}]);
+});
