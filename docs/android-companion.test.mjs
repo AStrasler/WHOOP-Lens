@@ -3,6 +3,21 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 
+test('Normal Android screens allow capture independently of private recents previews', () => {
+  const activity = read('../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt');
+  const rationale = read('../android/app/src/main/java/io/github/astrasler/whooplens/PermissionsRationaleActivity.kt');
+  const policy = read('../android/app/src/main/java/io/github/astrasler/whooplens/ScreenCapturePrivacy.kt');
+  for (const method of ['onCreate', 'onResume', 'render']) {
+    assert.match(activity, new RegExp('(?:override|private) fun ' + method + '\\([^]*?applyScreenCapturePrivacy\\(this\\)'));
+  }
+  assert.doesNotMatch(activity + rationale, /addFlags\(WindowManager\.LayoutParams\.FLAG_SECURE\)/);
+  assert.match(rationale, /applyScreenCapturePrivacy\(this\)/);
+  assert.match(policy, /setSecure\(exposesCredentials\)/);
+  assert.match(policy, /clearFlags\(WindowManager\.LayoutParams\.FLAG_SECURE\)/);
+  assert.match(policy, /setRecentsCapture\(false\)/);
+  assert.match(policy, /activity::setRecentsScreenshotEnabled/);
+});
+
 test("Android dashboard requires private login, read permission and independently gated background reads", () => {
   const manifest=read("../android/app/src/main/AndroidManifest.xml");
   const build=read("../android/app/build.gradle.kts");

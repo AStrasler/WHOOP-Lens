@@ -60,7 +60,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        applyScreenCapturePrivacy(this)
         page = savedInstanceState?.getString("page") ?: "Home"
         frame = FrameLayout(this).apply { setBackgroundColor(LensColors.background) }
         setContentView(frame)
@@ -101,6 +101,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyScreenCapturePrivacy(this)
         foreground = true
         resumeAccount()
         handler.postDelayed(periodic, 300000)
@@ -462,6 +463,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun render() {
+        applyScreenCapturePrivacy(this)
         if (!::frame.isInitialized) return
         drawer = null
         frame.removeAllViews()

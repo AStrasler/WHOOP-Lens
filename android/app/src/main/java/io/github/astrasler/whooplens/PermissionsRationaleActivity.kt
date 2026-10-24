@@ -25,6 +25,7 @@ class PermissionsRationaleActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    applyScreenCapturePrivacy(this)
 
     val background = LensColors.background
     val foreground = LensColors.text
