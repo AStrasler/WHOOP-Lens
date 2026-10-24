@@ -2,10 +2,12 @@ package io.github.astrasler.whooplens
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.time.Instant
 import java.time.LocalDate
 
-/** In-memory preview of one day of aggregate steps; no credentials or persistent storage. */
+/** A five-minute, in-memory, explicitly reviewed Health Connect aggregate. */
 internal data class ReviewedSteps(
   val day: LocalDate,
   val start: Instant,
@@ -39,22 +41,35 @@ internal data class ReviewedSteps(
   }
 }
 
-/**
- * Deployment gate is intentionally OFF. Enable in a reviewed, separately approved
- * release after the health_connect_records migration + v2 Edge Function are live.
- * No caller may override this gate or pass an arbitrary destination URL.
- */
+/** The server verifies the existing OAuth token and derives user identity itself. */
 internal object ManualSync {
+  // Keep OFF until the replacement Cloudflare endpoint is deployed and verified.
   const val ENABLE_UPLOADS = false
-  // Uploads require a reviewed Cloudflare endpoint and mobile OAuth session.
-  // No legacy endpoint fallback is permitted.
-
-  /** No network fallback to Supabase. Cloudflare mobile OAuth is not yet released. */
-  fun deleteApprovedSteps(day: LocalDate, token: String): Int {
-    throw UnsupportedOperationException("Cloudflare mobile sync is not released")
-  }
+  private const val ENDPOINT = "https://whooplens.tech/v1/health-connect/import"
 
   fun uploadApprovedSteps(draft: ReviewedSteps, token: String): Boolean {
-    throw UnsupportedOperationException("Cloudflare mobile sync is not released")
+    check(ENABLE_UPLOADS && draft.valid()) { "Manual sync is not released" }
+    val body = JSONObject().put("consent", "store-health-connect-file")
+      .put("file", JSONObject(draft.exportJson()))
+    val connection = URL(ENDPOINT).openConnection() as HttpURLConnection
+    try {
+      connection.requestMethod = "POST"
+      connection.connectTimeout = 15000
+      connection.readTimeout = 20000
+      connection.instanceFollowRedirects = false
+      connection.doOutput = true
+      connection.setRequestProperty("Authorization", "Bearer $token")
+      connection.setRequestProperty("Content-Type", "application/json")
+      connection.setRequestProperty("Accept", "application/json")
+      connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+      if (connection.responseCode != 200) return false
+      val result = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+      return result.optInt("stored", 0) == 1 && result.optString("source") == "health_connect"
+    } finally { connection.disconnect() }
+  }
+
+  fun deleteApprovedSteps(day: LocalDate, token: String): Int {
+    // Existing API deletes every imported record, not one day. Never misrepresent it.
+    throw UnsupportedOperationException("Per-day deletion is not supported")
   }
 }

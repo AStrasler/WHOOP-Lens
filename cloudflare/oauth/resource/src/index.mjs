@@ -2,6 +2,7 @@ import { OAuthResourceServer, insufficientScope } from "@cloudflare/workers-oaut
 import { activeMembership } from "../../../src/storage.mjs";
 import { createStagingRouter } from "../../../src/router.mjs";
 import { WEBHOOK_PATH } from "../../../src/health-connect-webhook.mjs";
+import {healthConnectHttp} from '../../../src/health-import.mjs';
 import {NOTION_CALLBACK,NOTION_START} from '../../../src/notion-oauth.mjs';
 
 // Private MCP resource server for https://whooplens.tech/mcp.
@@ -24,6 +25,11 @@ const mcpResource=new OAuthResourceServer({
       const id=ctx.props?.userId;
       if(typeof id!=="string"||!env.DB||!await activeMembership(env.DB,id))
         return Response.json({error:"Not authorized"},{status:403});
+      // Android manual Health Connect import shares the verified OAuth identity
+      // and D1 membership check. It never accepts caller-supplied user IDs.
+      const url=new URL(request.url);
+      if(url.pathname==='/v1/health-connect/import'||url.pathname==='/v1/health-connect/status'||url.pathname==='/v1/health-connect')
+        return healthConnectHttp(request,env,id);
       // Identity originates ONLY from a resource/audience-validated OAuth token,
       // never a caller-selected parameter. Existing MCP router enforces its
       // own flags and membership check in addition to the OAuth wrapper.
