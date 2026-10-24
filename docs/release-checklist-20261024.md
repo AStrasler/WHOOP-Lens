@@ -1,6 +1,8 @@
 # WHOOP Lens release candidate — October 24, 2026
 
-The release candidate is prepared locally on `codex/release-candidate`. **No push, merge, preview upload, production deployment, credential rotation, or live health-data change has occurred.**
+The release candidate is on `codex/release-candidate`. This checklist originally recorded the local preparation stage. Publication and isolated preview builds are now authorized; both documented preview settings were corrected on October 24. Production deployments, merges, closures, credential rotation and live health-data changes remain unauthorized.
+
+Readback confirmed that the existing production deployment command is `npx wrangler deploy`, not the more explicit command shown in the original preparation notes below. The existing command was preserved. Only preview root/build/preview-command fields were patched; production branch, filters, credentials and caching were retained. Recorded before/after evidence is in ignored `repair-results/publication/build-settings-before-after.json`.
 
 The original checkout remains at `C:\Users\Aaron\OneDrive\Documents\ChatGPT\Whoop Lens`. All **244** source files in the start-of-turn preservation manifest still match their SHA-256 hashes. The durable previous backup and current repairs exist. Essential legacy files are present; the supplied Supabase database/storage archives were not opened, restored, or needed. A read-only D1 membership aggregate returned three active members, all with Cloudflare identities and enabled Access mappings, and reported zero rows written. No health measurements were queried.
 
