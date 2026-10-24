@@ -351,7 +351,6 @@ class MainActivity : ComponentActivity() {
       reviewButton.isEnabled = false
       deleteButton.isEnabled = false
       preparedSteps = null
-      password.text.clear()
       status.text = "Signed out. No data was uploaded."
     }
   }
