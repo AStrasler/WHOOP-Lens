@@ -1,4 +1,7 @@
 import {flareTools,flareEnabled,flareArguments,runFlareTool} from './flare-journal.mjs';
+import {notionTools,isNotionTool,notionArguments,runNotionTool,publicNotionError} from './notion.mjs';
+import {notionEnabled} from './notion-client.mjs';
+import {errorReportToolsFor,isErrorReportTool,errorReportArguments,runErrorReportTool} from './error-reports.mjs';
 import {activeMembership,connectionStatus} from './storage.mjs';
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
 import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
@@ -108,8 +111,9 @@ const weeklyDigestTool=Object.freeze({
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
 });
 function listedTools(env,userId){
-  const issueTools=issueToolsFor(env,userId);
-  return issueTools.length?[...baseListedTools(env),...issueTools]:baseListedTools(env);
+  const issueTools=[...issueToolsFor(env,userId),...errorReportToolsFor(env,userId)];
+  const tools=issueTools.length?[...baseListedTools(env),...issueTools]:baseListedTools(env);
+  return notionEnabled(env)?[...tools,...notionTools]:tools;
 }
 function baseListedTools(env){
   const summaryOn=aiSummaryEnabled(env);
@@ -125,6 +129,8 @@ function baseListedTools(env){
   return tools;
 }
 function optionalTool(name,env,userId){
+  if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name);
+  if(isNotionTool(name))return notionEnabled(env);
   if(issueToolsFor(env,userId).some(t=>t.name===name))return true;
   if(flareTools.some(t=>t.name===name))return flareEnabled(env);
   if(name==="get_ai_usage")return aiSummaryEnabled(env);
@@ -150,6 +156,8 @@ function toolError(id,message,modern) {
 }
 function checkArguments(name,args,env,userId) {
   if(!isObject(args))return null;
+  if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name)?errorReportArguments(name,args):null;
+  if(isNotionTool(name))return notionEnabled(env)?notionArguments(name,args):null;
   if(issueToolsFor(env,userId).some(t=>t.name===name))return issueArguments(name,args);
   if(flareTools.some(t=>t.name===name))return flareEnabled(env)?flareArguments(name,args):null;
   if(name==="get_ai_usage"){
@@ -266,7 +274,11 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   try {
     const resource=toolToResource[name];
     let data;
-    if(flareTools.some(t=>t.name===name)){
+    if(isErrorReportTool(name)){
+      data=await runErrorReportTool(name,args,{db,userId,env,requestId});
+    }else if(isNotionTool(name)){
+      data=await runNotionTool(name,args,{db,userId,env});
+    }else if(flareTools.some(t=>t.name===name)){
       data=await runFlareTool(name,args,{db,userId,env,whoopRequest});
     }else if(name==='connect_whoop'){
       if(env.WHOOP_OAUTH_ENABLED!=='true'||typeof whoopAuthorize!=='function')throw new FeatureDisabled('whoop_connection');
@@ -315,6 +327,17 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       data=await updateIssueReport(db,userId,args,{env});
     }else if(extraTools.some(t=>t.name===name)){
       data=await readExtraTool(db,userId,name,queryArgs(args),env);
+      if(name==='get_capabilities'&&(args.offset??0)===0){
+        // Describe the same caller-filtered inventory used by discovery.
+        // Never advertise owner-only controls to ordinary members.
+        data.tool_permissions=listedTools(env,userId).map(tool=>({
+          tool:tool.name,allowed_use:tool.description,
+          owner_only:['get_reportable_links','review_issue_reports','update_issue_report'].includes(tool.name),
+          read_only_hint:tool.annotations?.readOnlyHint===true,
+          destructive_hint:tool.annotations?.destructiveHint===true
+        }));
+        data.permissions_scope='All tools currently registered for this authenticated caller. Server flags, account ownership, consent, confirmation, quota and record availability still apply. Not limited by capability-category pagination.';
+      }
     }else if(!historyTools.has(name)){
       data=attributeWhoop(await whoopRequest(db,userId,resource,env,queryArgs(args)),name,false);
     }else{
@@ -345,6 +368,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     else await capture(env,db,{category:"mcp_tool",subsystem:"issue_reports",code:"report_not_submitted_"+error.reason,
       outcome:"fail",retryable:error.reason!=="too_short",requestId,userId});
     if(error instanceof ReportNotSubmitted)return toolError(id,error.message,modern);
+    if(isNotionTool(name))return toolError(id,publicNotionError(error)+(Number.isSafeInteger(error.retryAfter)?` Retry after ${error.retryAfter} seconds.`:''),modern);
     // No details about secrets, token status, providers, account existence or SQL.
     // File-import validation messages are safe to show; everything else stays generic.
     if(error instanceof SeatsFull)return toolError(id,error.message,modern);

@@ -1,5 +1,6 @@
 import {consentPage,noStoreHeaders,unavailable} from '../../consent.mjs';
 import {createVerifier,checkUpstreamConfig,upstreamAuthorizationUrl,verifyUpstreamCode} from './upstream.mjs';
+import {logOAuthStage} from './oauth-diagnostics.mjs';
 const SCOPES=new Set(['mcp:read','offline_access']);
 const ORIGIN='https://auth.whooplens.tech';
 const CALLBACK_PATH='/oauth/upstream/callback';
@@ -116,7 +117,7 @@ export function makeConsentFlow({
       params.has('code')===params.has('error')||
       !(params.get('code')||params.get('error')))
       return oauthError();
-    let cleanup;
+    let cleanup,stage='upstream_state_failed';
     try{
       const oauth=getOAuth(env);
       // Official provider validates one-time upstream state + browser cookie.
@@ -144,11 +145,13 @@ export function makeConsentFlow({
         return oauthError(400,cleanup);
       // Subject must be validated by Cloudflare Access and ACTIVE D1 membership.
       // No access or refresh tokens enter the Cloudflare OAuth grant.
+      stage='upstream_identity_failed';
       const userId=await verifyIdentity({request,code,verifier:data.verifier,env});
       const props={userId};
       // See refresh-grant.mjs. Do not copy this flag onto a declined
       // offline_access selection; that selection must stay without a refresh token.
       if(data.offlineOffered===false)props.connectorRefresh=true;
+      stage='authorization_completion_failed';
       const completed=await oauth.completeAuthorization({
         request:finished.request,userId,scope:data.grantedScopes,
         metadata:{},props
@@ -157,8 +160,9 @@ export function makeConsentFlow({
       headers.set('location',completed.redirectTo);
       headers.set('cache-control','no-store');
       headers.set('referrer-policy','no-referrer');
+      logOAuthStage(env,'authorization_completed');
       return new Response(null,{status:302,headers});
-    }catch{return oauthError(401,cleanup);}
+    }catch{logOAuthStage(env,stage);return oauthError(401,cleanup);}
   }
   return {authorize,callback};
 }
