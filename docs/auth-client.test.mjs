@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createAuthClient, safeRedirect, validateAuthorizationId, SUPABASE_URL } from "../docs/auth-client.mjs";
+import { createAuthClient, safeRedirect, validateAuthorizationId, SUPABASE_URL, PUBLIC_KEY, MCP_URL } from "../docs/auth-client.mjs";
 
 test("consent and session security controls", async () => {
 
@@ -24,68 +24,26 @@ assert(safeRedirect("http://localhost:1455/auth/callback").startsWith("http://lo
 await reject(() => validateAuthorizationId("../token?grant_type=password"), "Blocks malformed authorization IDs");
 const id = "12345678-1234-1234-1234-123456789abc";
 assert(validateAuthorizationId(id) === id, "Accepts authorization UUIDs");
-let time = 1000;
-const calls = [];
-const fakeFetch = async (url, options) => {
- calls.push({url, options});
- if (url.endsWith("/token?grant_type=password")) return {ok:true,status:200,json:async()=>({access_token:"private-test-token",refresh_token:"private-refresh-token",expires_in:60,user:{email:"test@example.com"}})};
- return {ok:true,status:200,json:async()=>({authorization_id:id})};
-};
-const auth = createAuthClient(fakeFetch, () => time);
-await reject(() => auth.details(id), "Requires sign-in before reading consent");
-assert(calls.length === 0, "Does not send unauthenticated consent requests");
-const user = await auth.signIn("test@example.com","test-password");
-assert(!("access_token" in user) && !("refresh_token" in user), "Keeps session tokens out of UI results");
-assert(!calls[0].options.headers.Authorization, "Does not send a prior session when signing in");
-await auth.details(id);
-assert(calls[1].url === SUPABASE_URL + "/auth/v1/oauth/authorizations/" + id, "Uses the fixed Supabase consent endpoint");
-assert(calls[1].options.headers.Authorization === "Bearer private-test-token", "Sends the session only to the trusted API");
-assert(calls[1].options.redirect === "manual" && calls[1].options.credentials === "omit", "Does not follow fetch redirects and omits ambient cookies");
-await reject(() => auth.decide(id, "autoapprove"), "Rejects invalid decisions");
-await auth.decide(id, "deny");
-assert(JSON.parse(calls.at(-1).options.body).action === "deny", "Submits denial explicitly");
-time = 62000;
-await reject(() => auth.status(), "Expires browser sessions");
-const before = calls.length;
-await reject(() => auth.connect(), "Cannot link WHOOP after session expiry");
-assert(calls.length === before, "Does not send expired credentials");
-await auth.signIn("test@example.com","test-password");
-await auth.signOut();
-await reject(() => auth.details(id), "Sign-out clears the session");
-console.log("Passed " + results.length + " security checks.");
-
+console.log("Passed " + results.length + " redirect security checks.");
 });
 
-test("seat responses stay fixed strings and do not surface upstream bodies", async () => {
-  const fakeFetch = async (url) => {
-    if (url.endsWith("/token?grant_type=password")) {
-      return { ok: true, status: 200, json: async () => ({ access_token: "private-test-token", refresh_token: "private-refresh-token", expires_in: 60, user: { email: "test@example.com" } }) };
-    }
-    return {
-      ok: false,
-      status: 403,
-      json: async () => ({ code: "seat_full", error: "Public WHOOP seats are full.", access_token: "should-not-surface", refresh_token: "should-not-surface-either" }),
-    };
-  };
-  const auth = createAuthClient(fakeFetch, () => 1000);
-  await auth.signIn("test@example.com", "test-password");
-  const denied = await auth.connect().then(() => null, (error) => error);
-  assert.match(denied.message, /Public WHOOP seats are full/);
-  assert.equal(denied.message.includes("should-not-surface"), false);
-  assert.equal(denied.message.includes("refresh_token"), false);
-  const developerFetch = async (url) => {
-    if (url.endsWith("/token?grant_type=password")) {
-      return { ok: true, status: 200, json: async () => ({ access_token: "private-test-token", refresh_token: "private-refresh-token", expires_in: 60, user: { email: "test@example.com" } }) };
-    }
-    return { ok: false, status: 403, json: async () => ({ code: "developer_seat_taken", error: "raw upstream", authorization: "Bearer leaked" }) };
-  };
-  const developerAuth = createAuthClient(developerFetch, () => 1000);
-  await developerAuth.signIn("test@example.com", "test-password");
-  const developerDenied = await developerAuth.connect().then(() => null, (error) => error);
-  assert.match(developerDenied.message, /developer seat is already assigned/);
-  assert.equal(developerDenied.message.includes("Bearer leaked"), false);
+test("legacy authentication fails closed without transmitting credentials or upstream bodies", async () => {
+  let calls = 0;
+  const auth = createAuthClient(async () => { calls++; throw Error("upstream-secret"); });
+  for (const invoke of [() => auth.signIn("test@example.com", "test-password"),
+    () => auth.details("synthetic"), () => auth.decide("synthetic", "approve"),
+    () => auth.status(), () => auth.connect(), () => auth.signOut()]) {
+    await assert.rejects(invoke, error => {
+      assert.equal(error.message, "Legacy Supabase sign-in has been retired. Connect using https://whooplens.tech/mcp instead.");
+      assert.doesNotMatch(error.message, /test-password|upstream-secret/);
+      return true;
+    });
+  }
+  assert.equal(calls, 0);
+  assert.equal(SUPABASE_URL, "");
+  assert.equal(PUBLIC_KEY, "");
+  assert.equal(MCP_URL, "https://whooplens.tech/mcp");
 });
-
 
 test('independent Cloudflare callback is not a Supabase redirect target',()=>{
   const url='https://auth.whooplens.tech/oauth/upstream/callback?code=synthetic&state=synthetic';

@@ -32,22 +32,38 @@ test("Android requires private login, consent and manual local-only steps aggreg
   assert.match(source,/AlertDialog\.Builder\(this\)/);
   assert.match(source,/snapshot === preparedSteps/);
   assert.match(source,/ManualSync\.uploadApprovedSteps/);
-  assert.match(source,/DatePickerDialog\(this/);
-  assert.match(source,/ManualSync\.deleteApprovedSteps/);
-  assert.match(source,/setPositiveButton\("Delete uploaded record"\)/);
+  assert.match(source,/Preview yesterday's steps locally/);
+  assert.match(source,/ManualSync\.deleteAccountData/);
+  assert.match(source,/Confirm Server Data Deletion/);
 });
 
 test("Private upload export remains disabled pending approved migrations", () => {
   const source=read("../android/app/src/main/java/io/github/astrasler/whooplens/ManualSync.kt");
   assert.match(source,/const val ENABLE_UPLOADS = false/);
-  assert.match(source,/UnsupportedOperationException\("Cloudflare mobile sync is not released"\)/);
+  assert.match(source,/check\(ENABLE_UPLOADS && draft\.valid\(\)\)/);
+  assert.match(source,/if \(!ENABLE_UPLOADS\) return DeletionResult\.Disabled/);
   assert.match(source,/schema_version", 2/);
   assert.match(source,/source", "health_connect"/);
   assert.match(source,/metric", "steps_daily"/);
   assert.match(source,/record_key", "daily:/);
   assert.doesNotMatch(source,/supabase\.co|functions\/v1\/samsung-health|sb_publishable_/);
   assert.match(source,/preparedAtMs/);
-  assert.match(source,/fun deleteApprovedSteps\(/);
+  assert.match(source,/fun deleteAccountData\(/);
   assert.match(source,/fun uploadApprovedSteps\(/);
   assert.doesNotMatch(source,/SERVICE_ROLE_KEY|sb_secret_|supabase_service_role/);
+});
+
+test('Android production wiring persists sessions and excludes backup and transfer', () => {
+  const activity = read('../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt');
+  const storage = read('../android/app/src/main/java/io/github/astrasler/whooplens/AndroidSessionStorage.kt');
+  assert.match(activity, /AndroidSessions\.get\(applicationContext\)/);
+  assert.doesNotMatch(activity.slice(activity.indexOf('override fun onDestroy')), /auth\.(signOut|clearForSignOut)/);
+  assert.match(storage, /noBackupFilesDir/);
+  assert.match(storage, /AtomicFile/);
+  assert.match(storage, /AndroidKeyStore/);
+  for (const file of ['backup_rules.xml', 'data_extraction_rules.xml']) {
+    const rules = read('../android/app/src/main/res/xml/' + file);
+    assert.match(rules, /<exclude domain="root" path="\."\s*\/>/);
+    assert.match(rules, /<exclude domain="sharedpref" path="\."\s*\/>/);
+  }
 });

@@ -22,7 +22,7 @@ async function realD1(upTo){
   const db=await mf.getD1Database('DB');
   for(const f of MIGRATIONS){if(upTo&&f>upTo)break;await db.exec(oneLine(readFileSync(new URL(f,DIR),'utf8')));}
   for(const id of [OWNER,MEMBER]){
-    await db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?1,'supabase',?1)").bind(id).run();
+    await db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?1,'cloudflare_access',?1)").bind(id).run();
     await db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?1,1)').bind(id).run();
   }
   return {db,close:()=>mf.dispose()};
@@ -57,7 +57,7 @@ test('real D1: approval without a token works across separate calls; other membe
   const {db,close}=await realD1();
   try{
     const OTHER='0c0c0c0c-0000-4000-8000-00000000000c';
-    await db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?1,'supabase',?1)").bind(OTHER).run();
+    await db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?1,'cloudflare_access',?1)").bind(OTHER).run();
     await db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?1,1)').bind(OTHER).run();
     const t0=Date.now(),args={category:'backend_failure',description:'Report button says unavailable'};
     const preview=await reportIssue(db,MEMBER,args,{requestId:newRequestId(),env:ENV,now:t0});

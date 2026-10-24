@@ -3,3 +3,4 @@
 local.properties
 *.apk
 *.aab
+gradle-*-bin.zip
