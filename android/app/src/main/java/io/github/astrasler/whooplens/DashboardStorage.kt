@@ -68,7 +68,7 @@ internal object DashboardCodec {
             j.put(
                 "exercise",
                 JSONArray(
-                    b.exercises.take(50).map {
+                    b.exercises.sortedByDescending { it.start }.take(50).map {
                         JSONArray().put(it.start).put(it.end).put(it.title).put(it.origin)
                     }
                 ),
