@@ -1,1 +1,10 @@
-<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android" android:minWidth="180dp" android:minHeight="180dp" android:minResizeWidth="140dp" android:minResizeHeight="80dp" android:resizeMode="horizontal|vertical" android:initialLayout="@layout/lens_widget" android:initialKeyguardLayout="@layout/lens_widget" android:widgetCategory="home_screen" android:updatePeriodMillis="1800000" android:description="@string/widget_sleep" />
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:targetCellWidth="1" android:targetCellHeight="1"
+    android:minWidth="40dp" android:minHeight="40dp"
+    android:minResizeWidth="40dp" android:minResizeHeight="40dp"
+    android:maxResizeWidth="320dp" android:maxResizeHeight="160dp"
+    android:resizeMode="horizontal|vertical"
+    android:initialLayout="@layout/lens_widget_responsive"
+    android:previewLayout="@layout/lens_widget_responsive"
+    android:widgetCategory="home_screen" android:updatePeriodMillis="1800000"
+    android:description="@string/widget_sleep" />

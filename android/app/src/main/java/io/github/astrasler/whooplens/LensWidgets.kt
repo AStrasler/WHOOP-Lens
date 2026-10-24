@@ -4,6 +4,8 @@ import android.app.*
 import android.appwidget.*
 import android.content.*
 import android.os.Bundle
+import android.util.SizeF
+import android.view.View
 import android.widget.RemoteViews
 
 /** Widgets are cache consumers: no token refresh, Health Connect read, upload or network here. */
@@ -63,7 +65,7 @@ internal object LensWidgets {
         return views
     }
 
-    private val profiles =
+    internal val profiles =
         mapOf<Class<out LensWidget>, List<String>>(
             DailyWidget::class.java to listOf("recovery", "strain", "sleep"),
             RecoveryWidget::class.java to listOf("recovery", "strain"),
@@ -83,6 +85,31 @@ internal object LensWidgets {
                 ),
             PrivateLockWidget::class.java to emptyList(),
         )
+
+    internal fun responsiveViews(context: Context, content: WidgetPresentation): RemoteViews {
+        val views =
+            RemoteViews(
+                context.packageName,
+                if (content.wide) R.layout.lens_widget_wide else R.layout.lens_widget_responsive,
+            )
+        for ((id, text) in
+            listOf(
+                R.id.widget_title to content.title,
+                R.id.widget_body to content.primary,
+                R.id.widget_supporting to content.supporting,
+                R.id.widget_footer to content.footer,
+            )) {
+            views.setTextViewText(id, text)
+            views.setViewVisibility(id, if (text.isEmpty()) View.GONE else View.VISIBLE)
+        }
+        views.setInt(R.id.widget_supporting, "setMaxLines", content.supporting.lines().size)
+        views.setContentDescription(R.id.widget_root, content.description)
+        views.setTextColor(
+            R.id.widget_body,
+            if (content.stale) LensColors.amber else LensColors.text,
+        )
+        return views
+    }
 
     fun updateAll(context: Context) {
         val m = AppWidgetManager.getInstance(context)
@@ -114,50 +141,84 @@ internal object LensWidgets {
                 null
             }
         val cache = if (!lock && account != null) DashboardRepository.read(context, auth) else null
-        val height =
-            manager
-                .getAppWidgetOptions(id)
-                .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 180)
-        val compact = type == StepsWidget::class.java || lockSurface || height < 120
+        val options = manager.getAppWidgetOptions(id)
         val keys =
-            profiles[type]
-                .orEmpty()
-                .filter {
-                    it in
-                        prefs
-                            .getStringSet("widget-keys", profiles.values.flatten().toSet())
-                            .orEmpty()
-                }
-                .let { if (compact) it.take(1) else it }
-        val text =
-            if (lock) "WHOOP Lens\nUnlock to view"
-            else
-                widgetText(
-                    cache,
-                    account,
-                    privacy,
-                    false,
-                    lockSurface,
-                    keys,
-                    System.currentTimeMillis(),
-                )
-        val stale =
-            cache?.let {
-                listOfNotNull(it.whoop, it.health).any { b -> b.stale(System.currentTimeMillis()) }
-            } ?: false
-        val views = widgetViews(context, text, compact, lockSurface, stale)
+            profiles[type].orEmpty().filter {
+                it in prefs.getStringSet("widget-keys", profiles.values.flatten().toSet()).orEmpty()
+            }
+        val now = System.currentTimeMillis()
         val intent =
             Intent(context, MainActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-        views.setOnClickPendingIntent(
-            R.id.widget_root,
+        val open =
             PendingIntent.getActivity(
                 context,
                 id,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            ),
-        )
+            )
+        fun clickable(view: RemoteViews) =
+            view.apply { setOnClickPendingIntent(R.id.widget_root, open) }
+        val views =
+            if (lockSurface) {
+                clickable(
+                    widgetViews(
+                        context,
+                        widgetText(cache, account, privacy, lock, true, keys, now),
+                        true,
+                        true,
+                        false,
+                    )
+                )
+            } else {
+                val sizes =
+                    options
+                        .getParcelableArrayList(
+                            AppWidgetManager.OPTION_APPWIDGET_SIZES,
+                            SizeF::class.java,
+                        )
+                        ?.filter { it.width > 0 && it.height > 0 }
+                        ?.distinct()
+                        ?.take(16)
+                val supported =
+                    if (!sizes.isNullOrEmpty()) sizes
+                    else
+                        listOf(
+                                SizeF(
+                                    options
+                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 56)
+                                        .toFloat(),
+                                    options
+                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 56)
+                                        .toFloat(),
+                                ),
+                                SizeF(
+                                    options
+                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 56)
+                                        .toFloat(),
+                                    options
+                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 56)
+                                        .toFloat(),
+                                ),
+                            )
+                            .distinct()
+                RemoteViews(
+                    supported.associateWith { size ->
+                        val space =
+                            WidgetSpace(
+                                size.width,
+                                size.height,
+                                context.resources.configuration.fontScale,
+                            )
+                        clickable(
+                            responsiveViews(
+                                context,
+                                widgetPresentation(cache, account, privacy, lock, keys, space, now),
+                            )
+                        )
+                    }
+                )
+            }
         manager.updateAppWidget(id, views)
     }
 }

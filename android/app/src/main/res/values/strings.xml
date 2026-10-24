@@ -25,4 +25,5 @@
   <string name="widget_vitals">Vitals summary</string>
   <string name="widget_expanded">Expanded dashboard</string>
   <string name="widget_private_lock">Private lock-screen summary</string>
+  <string name="widget_missing_value">\u2014</string>
 </resources>

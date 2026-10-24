@@ -249,65 +249,146 @@ class DesignReviewInstrumentation : Instrumentation() {
                 capture(name)
             }
 
-            for ((label, keys, size) in
-                listOf(
-                    Triple("Daily", listOf("recovery", "strain", "sleep"), 180 to 180),
-                    Triple("Recovery", listOf("recovery", "strain"), 180 to 180),
-                    Triple("Steps", listOf("steps"), 360 to 90),
-                    Triple("Sleep", listOf("sleep", "performance"), 180 to 180),
-                    Triple("Vitals", listOf("hrv", "rhr", "respiratory", "spo2"), 360 to 180),
-                    Triple(
-                        "Expanded",
-                        listOf(
-                            "recovery",
-                            "strain",
-                            "sleep",
-                            "hrv",
-                            "rhr",
-                            "steps",
-                            "distance",
-                            "exercise",
-                        ),
-                        360 to 360,
-                    ),
-                    Triple("Lock", emptyList(), 180 to 100),
-                )) {
-                runOnMainSync {
-                    val content =
-                        widgetText(
-                            snapshot,
-                            "visual-test",
-                            WidgetPrivacy.DETAILED,
-                            false,
-                            label == "Lock",
-                            keys,
-                            now,
-                        )
-                    val remote =
-                        LensWidgets.widgetViews(
-                            targetContext,
-                            content,
-                            label in listOf("Steps", "Lock"),
-                            label == "Lock",
-                            false,
-                        )
-                    val view = remote.apply(targetContext, null)
-                    val density = targetContext.resources.displayMetrics.density
-                    val width = (size.first * density).toInt()
-                    val height = (size.second * density).toInt()
-                    view.measure(
-                        View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                        View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
-                    )
-                    view.layout(0, 0, width, height)
-                    val image = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-                    view.draw(Canvas(image))
-                    File(directory, "Widget-" + label + ".png").outputStream().use {
-                        image.compress(Bitmap.CompressFormat.PNG, 100, it)
+            val providers =
+                android.appwidget.AppWidgetManager.getInstance(targetContext).installedProviders
+            for (type in LensWidgets.profiles.keys.filter { it != PrivateLockWidget::class.java }) {
+                val info = providers.single { it.provider.className == type.name }
+                check(info.targetCellWidth == 1 && info.targetCellHeight == 1)
+                check(
+                    info.resizeMode == 3 &&
+                        info.maxResizeWidth > info.minResizeWidth &&
+                        info.maxResizeHeight > info.minResizeHeight
+                )
+                check(info.previewLayout == R.layout.lens_widget_responsive)
+            }
+            var widgetRenders = 0
+            for ((type, keys) in
+                LensWidgets.profiles.filterKeys { it != PrivateLockWidget::class.java }) {
+                for (font in listOf(1f, 2f)) {
+                    for (scenario in
+                        if (type == ExpandedWidget::class.java)
+                            listOf(
+                                "normal",
+                                "missing",
+                                "signed-out",
+                                "summary",
+                                "stale",
+                                "long-label",
+                            )
+                        else listOf("normal")) {
+                        for ((label, size) in
+                            listOf(
+                                "1x1" to (56 to 56),
+                                "2x1" to (150 to 72),
+                                "2x2" to (150 to 160),
+                                "4x1" to (320 to 72),
+                                "4x2" to (320 to 160),
+                            )) {
+                            runOnMainSync {
+                                val config =
+                                    android.content.res
+                                        .Configuration(targetContext.resources.configuration)
+                                        .apply { fontScale = font }
+                                val context = targetContext.createConfigurationContext(config)
+                                val content =
+                                    widgetPresentation(
+                                        when (scenario) {
+                                            "missing" -> null
+                                            "stale" ->
+                                                snapshot.copy(
+                                                    whoop =
+                                                        snapshot.whoop!!.copy(
+                                                            fetchedAt = now - 13 * 3600000L
+                                                        )
+                                                )
+                                            "long-label" ->
+                                                snapshot.copy(
+                                                    whoop =
+                                                        snapshot.whoop!!.copy(
+                                                            metrics =
+                                                                snapshot.whoop!!.metrics.map {
+                                                                    it.copy(
+                                                                        title =
+                                                                            "A very long measurement label for accessibility"
+                                                                    )
+                                                                }
+                                                        )
+                                                )
+                                            else -> snapshot
+                                        },
+                                        if (scenario == "signed-out") "other-account"
+                                        else "visual-test",
+                                        if (scenario == "summary") WidgetPrivacy.SUMMARY
+                                        else WidgetPrivacy.DETAILED,
+                                        false,
+                                        keys,
+                                        WidgetSpace(
+                                            size.first.toFloat(),
+                                            size.second.toFloat(),
+                                            font,
+                                        ),
+                                        now,
+                                    )
+                                val remote = LensWidgets.responsiveViews(context, content)
+                                val view = remote.apply(context, null)
+                                val density = context.resources.displayMetrics.density
+                                val width = (size.first * density).toInt()
+                                val height = (size.second * density).toInt()
+                                view.measure(
+                                    View.MeasureSpec.makeMeasureSpec(
+                                        width,
+                                        View.MeasureSpec.EXACTLY,
+                                    ),
+                                    View.MeasureSpec.makeMeasureSpec(
+                                        height,
+                                        View.MeasureSpec.EXACTLY,
+                                    ),
+                                )
+                                view.layout(0, 0, width, height)
+                                // Primary must be visible and fit, including the large-font compact
+                                // case.
+                                val primary =
+                                    view.findViewById<android.widget.TextView>(R.id.widget_body)
+                                check(primary.width > 0 && primary.height > 0)
+                                check(primary.layout.getLineWidth(0) <= primary.width + 1)
+                                check(primary.layout.height <= primary.height + 1) {
+                                    type.simpleName +
+                                        " " +
+                                        label +
+                                        " font=" +
+                                        font +
+                                        " primary=" +
+                                        primary.text +
+                                        " textHeight=" +
+                                        primary.layout.height +
+                                        " available=" +
+                                        primary.height
+                                }
+                                val image =
+                                    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                                view.draw(Canvas(image))
+                                File(
+                                        directory,
+                                        "Widget-" +
+                                            type.simpleName +
+                                            "-" +
+                                            label +
+                                            "-" +
+                                            scenario +
+                                            "-font" +
+                                            (font * 100).toInt() +
+                                            ".png",
+                                    )
+                                    .outputStream()
+                                    .use { image.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                                image.recycle()
+                                widgetRenders++
+                            }
+                        }
                     }
-                    image.recycle()
                 }
             }
+            results.putInt("responsive_widget_renders", widgetRenders)
 
             val originalConfig = android.content.res.Configuration(activity.resources.configuration)
             runOnMainSync {
@@ -386,7 +467,7 @@ class DesignReviewInstrumentation : Instrumentation() {
 
             results.putString(
                 "result",
-                "PASS: 22 native renders, emulator Keystore persistence/erasure, and stale-account WorkManager execution with test-only fixture. No real sign-in, network health call, cloud upload or personal device used.",
+                "PASS: 110 responsive widget renders at 100/200% fonts plus app renders, emulator Keystore persistence/erasure, and stale-account WorkManager execution with test-only fixture. No real sign-in, network health call, cloud upload or personal device used.",
             )
             finish(Activity.RESULT_OK, results)
         } catch (error: Throwable) {

@@ -1,0 +1,18 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="6dp" android:background="@drawable/widget_surface">
+    <TextView android:id="@+id/widget_title" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:visibility="gone" android:textColor="#4FD8CF" android:textSize="12sp" android:fontFamily="@font/inter"
+        android:maxLines="1" android:ellipsize="end" />
+    <TextView android:id="@+id/widget_body" android:layout_width="match_parent" android:layout_height="0dp"
+        android:layout_weight="1" android:gravity="center_vertical" android:text="@string/widget_missing_value" android:textColor="#EEF6F5"
+        android:textSize="28sp" android:fontFamily="@font/jetbrains_mono" android:maxLines="1"
+        android:autoSizeTextType="uniform" android:autoSizeMinTextSize="7sp" android:autoSizeMaxTextSize="32sp"
+        android:autoSizeStepGranularity="1sp" android:includeFontPadding="false" />
+    <TextView android:id="@+id/widget_supporting" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:visibility="gone" android:textColor="#EEF6F5" android:textSize="13sp" android:fontFamily="@font/inter"
+        android:ellipsize="end" />
+    <TextView android:id="@+id/widget_footer" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:visibility="gone" android:textColor="#8AA3A6" android:textSize="11sp" android:fontFamily="@font/inter"
+        android:maxLines="1" android:ellipsize="end" />
+</LinearLayout>

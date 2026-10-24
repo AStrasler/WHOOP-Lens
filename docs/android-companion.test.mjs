@@ -89,3 +89,33 @@ test('Android production wiring persists sessions and excludes backup and transf
     assert.match(rules, /<exclude domain="sharedpref" path="\."\s*\/>/);
   }
 });
+
+
+test('All six home widgets declare compact picker previews and bounded two-axis resizing', () => {
+  for (const name of ['daily', 'recovery', 'steps', 'sleep', 'vitals', 'expanded']) {
+    const xml = read('../android/app/src/main/res/xml/widget_' + name + '.xml');
+    for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.match(xml, new RegExp('android:' + attr + '="1"'));
+    for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.match(xml, new RegExp('android:' + attr + '="40dp"'));
+    assert.match(xml, /maxResizeWidth="320dp"/);
+    assert.match(xml, /maxResizeHeight="160dp"/);
+    assert.match(xml, /resizeMode="horizontal\|vertical"/);
+    assert.match(xml, /previewLayout="@layout\/lens_widget_responsive"/);
+    assert.match(xml, /initialLayout="@layout\/lens_widget_responsive"/);
+  }
+});
+
+test('Widgets remain cache-only consumers and resize/background callbacks update current account views', () => {
+  const widget=read('../android/app/src/main/java/io/github/astrasler/whooplens/LensWidgets.kt');
+  const worker=read('../android/app/src/main/java/io/github/astrasler/whooplens/DashboardRefresh.kt');
+  const main=read('../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt');
+  assert.match(widget,/OPTION_APPWIDGET_SIZES/);
+  assert.match(widget,/RemoteViews\(\s*supported\.associateWith/);
+  assert.match(widget,/configuration\.fontScale/);
+  assert.match(widget,/override fun onAppWidgetOptionsChanged/);
+  assert.match(widget,/DashboardRepository\.read\(context, auth\)/);
+  assert.match(widget,/if \(!lock && account != null\)/);
+  assert.doesNotMatch(widget,/refreshToken|readRecords|insertRecords|deleteRecords|HttpURLConnection/);
+  assert.match(worker,/LensWidgets\.updateAll/);
+  assert.match(main,/LensWidgets\.updateAll/);
+  assert.match(widget,/FLAG_IMMUTABLE/);
+});
