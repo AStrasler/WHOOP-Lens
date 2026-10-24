@@ -5,6 +5,8 @@ import {
 import {WorkerEntrypoint} from 'cloudflare:workers';
 import {makeConsentFlow} from './consent-flow.mjs';
 import {refreshGrantResult} from './refresh-grant.mjs';
+import {logOAuthError,logOAuthStage} from './oauth-diagnostics.mjs';
+import {registeredClientDiscovery} from './client-discovery.mjs';
 // The Cloudflare OAuth provider issues tokens only after an explicit member
 // consent and independently validated Cloudflare Access application JWT.
 // All routes remain disabled until a separately approved staging rollout.
@@ -15,6 +17,11 @@ export const server=new OAuthAuthorizationServer({
   scopesSupported:['mcp:read','offline_access'],
   clientIdMetadataDocumentEnabled:true,
   clientRegistrationEndpoint:'/oauth/register',
+  // Keep active connectors connected; expire grants after 30 days idle.
+  // The provider default otherwise expires even continuously refreshed grants.
+  refreshTokenTTL:30*24*60*60,
+  refreshTokenIdleTTL:30*24*60*60,
+  onError:logOAuthError,
   // The SDK issues refresh tokens by default, independently of scope names.
   // Honor an explicit offline_access decline. Also issue a refresh token when
   // the client never requested that scope: ChatGPT follows the resource
@@ -22,7 +29,12 @@ export const server=new OAuthAuthorizationServer({
   // a refresh token.
   tokenExchangeCallback:input=>{
     const decision=refreshGrantResult(input);
-    if(decision?.reject)throw new OAuthError('invalid_grant');
+    if(decision?.reject){
+      logOAuthStage(input?.env,'refresh_permission_denied');
+      throw new OAuthError('invalid_grant');
+    }
+    if(input?.grantType==='authorization_code'||input?.grantType==='refresh_token')
+      logOAuthStage(input?.env,input.grantType==='refresh_token'?'refresh_token_allowed':'authorization_code_allowed');
     // connectorRefresh stays on the grant for later refreshes. The access
     // token presented to the resource carries only the member id.
     const userId=input?.props?.userId;
@@ -56,7 +68,8 @@ export default class WhoopLensAuthServer extends WorkerEntrypoint {
     const path=new URL(request.url).pathname;
     if(path==='/authorize')return flow.authorize(request,this.env);
     if(path==='/oauth/upstream/callback')return flow.callback(request,this.env);
-    return server.fetch(request,this.env,this.ctx);
+    return server.fetch(request,this.env,this.ctx)
+      .then(response=>registeredClientDiscovery(request,response));
   }
   validateToken(resource,token){
     if(this.env.OAUTH_SERVER_ENABLED!=='true'||

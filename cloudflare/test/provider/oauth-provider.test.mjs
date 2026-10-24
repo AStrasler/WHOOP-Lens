@@ -15,9 +15,26 @@ registerHooks({resolve(specifier,context,next){
   return next(specifier,context);
 }});
 const {authorizationErrorRedirect}=await import('@cloudflare/workers-oauth-provider');
-const {server}=await import('../../oauth/auth-server/src/index.mjs');
+const {server,default:AuthWorker}=await import('../../oauth/auth-server/src/index.mjs');
 const ORIGIN='https://auth.whooplens.tech',RESOURCE='https://whooplens.tech/mcp';
 const USER='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+test('live Worker discovery advertises DCR and registration works without metadata fetches',async t=>{
+  t.mock.method(globalThis,'fetch',()=>{throw Error('Metadata origin must not be needed');});
+  const env={OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true'};
+  const metadata=await AuthWorker.prototype.fetch.call({env,ctx:{}},new Request(ORIGIN+'/.well-known/oauth-authorization-server'));
+  const body=await metadata.json();
+  assert.equal(body.client_id_metadata_document_supported,false);
+  assert.equal(body.registration_endpoint,ORIGIN+'/oauth/register');
+  assert.equal(body.authorization_response_iss_parameter_supported,true);
+  env.OAUTH_KV=new MemoryKV();
+  const registered=await AuthWorker.prototype.fetch.call({env,ctx:{}},new Request(ORIGIN+'/oauth/register',{
+    method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+      client_name:'Synthetic ChatGPT',redirect_uris:['https://chatgpt.com/connector_platform_oauth_redirect'],
+      token_endpoint_auth_method:'none',grant_types:['authorization_code','refresh_token'],response_types:['code']})}));
+  assert.equal(registered.status,201);
+  assert.ok((await registered.json()).client_id);
+});
 class MemoryKV {
   records=new Map(); now=0;
   async put(key,value,options={}){this.records.set(key,{value,
@@ -237,6 +254,65 @@ test('resource routes the WHOOP callback and Health Connect webhook outside MCP 
 });
 
 function makeConsentFlow(options){return baseConsentFlow({checkConfig:checkUpstreamConfig,startUrl:upstreamAuthorizationUrl,verifyIdentity:verifyUpstreamCode,...options});}
+test('active connector survives original expiry, rotates repeatedly, and expires after inactivity',async t=>{
+  const f=await fixture();
+  const initial=Date.now();let now=initial;
+  t.mock.method(Date,'now',()=>now);
+  const advance=days=>{now=initial+days*86400000;f.kv.now=days*86400;};
+  try{
+    const a=await f.start(false,'mcp:read');
+    const send=body=>f.server.fetch(request('/oauth/token','POST',{
+      client_id:f.client.clientId,resource:RESOURCE,...body
+    }),f.env,{waitUntil:()=>{}});
+    const done=await f.flow.callback(request(a.callback,'GET',null,a.cookie),f.env);
+    const issued=await send({grant_type:'authorization_code',
+      code:new URL(done.headers.get('location')).searchParams.get('code'),
+      code_verifier:a.verifier,redirect_uri:'https://client.invalid/callback'});
+    assert.equal(issued.status,200);
+    let tokens=await issued.json();
+    const original=tokens.refresh_token,access=tokens.access_token;
+    for(const day of [1,29,31,59,87]){
+      advance(day);
+      const response=await send({grant_type:'refresh_token',refresh_token:tokens.refresh_token});
+      assert.equal(response.status,200,await response.clone().text());
+      const next=await response.json();
+      assert.notEqual(next.refresh_token,tokens.refresh_token);
+      assert.equal(next.scope,'mcp:read');
+      const valid=await f.server.validateToken(RESOURCE,next.access_token,f.env);
+      assert.deepEqual(valid.props,{userId:USER});
+      await assert.rejects(f.server.validateToken('https://other.invalid/mcp',next.access_token,f.env));
+      tokens=next;
+    }
+    assert.equal(await f.server.validateToken(RESOURCE,access,f.env),null);
+    assert.equal((await send({grant_type:'refresh_token',refresh_token:original})).status,400);
+    // A rejected stale token must not revoke the current session.
+    const retry=await send({grant_type:'refresh_token',refresh_token:tokens.refresh_token});
+    assert.equal(retry.status,200);
+    tokens=await retry.json();
+    advance(118);
+    assert.equal((await send({grant_type:'refresh_token',refresh_token:tokens.refresh_token})).status,400);
+  }finally{f.db.close();}
+});
+
+test('a lost refresh response can retry the previous token without losing connector permission',async()=>{
+  const f=await fixture();try{
+    const a=await f.start(false,'mcp:read');
+    const done=await f.flow.callback(request(a.callback,'GET',null,a.cookie),f.env);
+    const send=body=>f.server.fetch(request('/oauth/token','POST',{
+      client_id:f.client.clientId,resource:RESOURCE,...body
+    }),f.env,{waitUntil:()=>{}});
+    const issued=await send({grant_type:'authorization_code',
+      code:new URL(done.headers.get('location')).searchParams.get('code'),
+      code_verifier:a.verifier,redirect_uri:'https://client.invalid/callback'});
+    const tokens=await issued.json();
+    for(let i=0;i<2;i++){
+      const response=await send({grant_type:'refresh_token',refresh_token:tokens.refresh_token});
+      assert.equal(response.status,200);
+      const next=await response.json();
+      assert.deepEqual((await f.server.validateToken(RESOURCE,next.access_token,f.env)).props,{userId:USER});
+    }
+  }finally{f.db.close();}
+});
 test('member cannot add offline_access that the client never requested',async()=>{
   const f=await fixture();try{
     await assert.rejects(f.start(true,'mcp:read'));

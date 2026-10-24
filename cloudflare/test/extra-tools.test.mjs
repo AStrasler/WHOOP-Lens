@@ -117,7 +117,7 @@ test('experimental stress estimate is listed only with STRESS_ESTIMATE_ENABLED; 
   }finally{db.sql.close();}
 });
 test('host instructions: Stress Monitor stays unsupported; the experimental index is described only with the flag on',()=>{
-  const mainText=readFileSync(new URL('./fixtures/host-instructions-main.txt',import.meta.url),'utf8').replace(/\n$/,'');
+  const mainText=readFileSync(new URL('./fixtures/host-instructions-main.txt',import.meta.url),'utf8').replace(/\r?\n$/,'');
   for(const env of [undefined,{},{STRESS_ESTIMATE_ENABLED:'false'},{STRESS_ESTIMATE_ENABLED:'TRUE'}]){
     assert.equal(hostInstructionsFor(env),mainText);
     assert.doesNotMatch(hostInstructionsFor(env),/experimental (?:daily )?physiological stress/);

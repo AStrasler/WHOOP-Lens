@@ -6,6 +6,7 @@
 import {SeatsFull} from './seat-limit.mjs';
 import {CursorError} from './history-pagination.mjs';
 import {FeatureDisabled} from './member-guidance.mjs';
+import {NotionError} from './notion-client.mjs';
 
 export const CATEGORIES=Object.freeze(['whoop_api','auth','rate_limit','health_connect','ai_summary','mcp_validation',
   'mcp_tool','infrastructure','authorization','consent','setup']);
@@ -122,6 +123,7 @@ export async function capture(env,db,event,{now=Date.now()}={}){
   return true;
 }
 export function toolSubsystem(name){
+  if(typeof name==='string'&&/^[a-z_]{1,40}$/.test(name)&&name.includes('notion'))return 'notion';
   if(['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles'].includes(name))return 'whoop_api';
   if(name==='issue_health_connect_ingest_token'||name==='revoke_health_connect_ingest_token')return 'hc_token';
   if(name==='import_health_connect_file')return 'hc_import';
@@ -130,7 +132,7 @@ export function toolSubsystem(name){
   if(name==='connect_whoop'||name==='disconnect_whoop')return 'whoop_oauth';
   if(name==='get_ai_usage')return 'ai_summary';
   if(name==='get_weekly_digest')return 'weekly_digest';
-  if(name==='report_issue'||name==='review_issue_reports'||name==='update_issue_report')return 'issue_reports';
+  if(name==='report_issue'||name==='review_issue_reports'||name==='update_issue_report'||name==='report_error'||name==='get_reportable_links')return 'issue_reports';
   if(typeof name==='string'&&/^[a-z_]{1,40}$/.test(name)&&/flare/.test(name))return 'flare_journal';
   return 'mcp_tool';
 }
@@ -140,6 +142,8 @@ export function classifyToolError(error,name){
   const subsystem=toolSubsystem(name);
   const message=error instanceof Error?error.message:'';
   const c=(category,code,retryable,kind)=>({category,subsystem,code,retryable,kind});
+  if(error instanceof NotionError)return error.status===429?c('rate_limit','notion_rate_limited',true,'temporary'):
+    c('mcp_tool','notion_request_failed',error.status>=500,error.status>=500?'temporary':'other');
   if(error instanceof SeatsFull)return c('authorization','seats_full',false,'incomplete_setup');
   if(error instanceof FeatureDisabled)return c('setup','feature_disabled',false,'incomplete_setup');
   if(error instanceof CursorError)return c('mcp_validation',error.reason==='expired'?'cursor_expired':'cursor_invalid',true,'temporary');

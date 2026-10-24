@@ -19,6 +19,44 @@ When `DIAGNOSTICS_CAPTURE_ENABLED` is on, every member's `account.role_boundarie
 Retention: 30 days. Each write sweeps at most 50 expired rows. The sweep keeps running on failure events even after capture is turned off.
 
 ## Member reports (`src/issue-reports.mjs`)
+
+### Structured MCP reporting (preferred)
+
+With `ISSUE_REPORTS_ENABLED=true`, `get_reportable_links` is owner-only and
+returns only the authenticated active owner's own eligible WHOOP link handles.
+Non-owners cannot discover it or call it directly, including through cached
+tool inventories. The backend checks this before querying account storage.
+`report_error`
+requires one of those `link_id` values. Eligibility means an active approved
+identity/member, a currently stored WHOOP connection and a matching connection
+generation. Handles are hashes scoped to member/provider/generation; they do
+not expose member IDs and are never authorization credentials. Reconnecting
+changes the handle. There is no caller-supplied user ID, email or target owner.
+
+`report_error` accepts `link_id`, structured `diagnostics` and optional
+`approved:true` on the second call. Diagnostics allow only enumerated code,
+stage, operation and HTTP status, a bounded recent ISO timestamp, and an optional
+request ID verified against this member's recent diagnostic events. No free
+text, headers, raw errors, URLs, tokens or health values are accepted. Code and
+status supplied by the host remain labeled `client_reported`, not server-proven.
+
+Members without an already available current own-account handle use the
+existing `report_issue` flow; they must not be directed to call owner-only
+link discovery. Member `report_error` calls still require their own eligible
+handle and never accept an owner's or another member's handle.
+
+The first call previews the exact structure. Approval binds every field and
+the link handle; changing a value needs a fresh preview. Submission rechecks
+active membership and live connection generation inside the conditional INSERT.
+Foreign, unknown, disconnected, inactive and stale links are rejected with
+`link_id must identify an eligible linked account` and produce no report.
+The same existing queue, deduplication, approval expiry, submission limits,
+retention, owner review and readback-confirmed WL references are used. Only
+this member's own recent server evidence is attached. WHOOP credentials,
+grants, membership and connection generations are never modified by reporting.
+
+For free-text issues, the existing `report_issue` flow remains available:
+
 - `report_issue` takes `{category, description, approved?}`. There is no member id argument; the member is the authenticated one.
 - The first call (no `approved`) returns the cleaned text and records a pending approval server-side, keyed by the authenticated member and a SHA-256 of the exact cleaned text and category, for 10 minutes, with at most 10 open per member. No token or secret is returned: an opaque approval token in the tool result did not reach the next ChatGPT turn, so approved reports were never submitted. Submitting resends the same category and description with `approved: true`; the server re-cleans the text and needs a pending approval for this member and that exact text. It is checked again inside the insert, and every pending approval for that member and text is consumed only if this submission was stored, so replays, other members and modified text all need a fresh preview. The server cannot tell whether a person or the AI host approved, but it guarantees that the exact text was previewed first (the approval is bound to the cleaned text case-sensitively, separately from the case-insensitive dedupe key).
 - Cleaning removes every number in any script (health values, dates, phone numbers), labeled secrets ("password: …", "my pin is …"), email addresses, links, UUIDs, bearer, JWT and other token-like strings, and markup. 500 characters max. Cleaning is a best-effort denylist, not a guarantee: a credential in an unrecognized form ("bluehorse is my password") can survive, and any other words (for example a diagnosis or other personal details) reach the owner as written. The tool description, the preview (`shared_as_written`), the member/owner role boundaries and the host guidance all say so and ask members to leave such details out; none of them claims reports carry no health data or that credentials are always removed.

@@ -1,4 +1,5 @@
 import {readBounded} from './bounded-body.mjs';
+import {notionOAuthHttp,NOTION_CALLBACK,NOTION_START} from './notion-oauth.mjs';
 import { resolveSecrets } from "./secrets.mjs";
 import { AccessDenied } from "./access-denied.mjs";
 import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
@@ -53,6 +54,7 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
     // or health metadata may leak to unauthenticated callers.
     let preliminaryUrl;
     try{preliminaryUrl=new URL(request.url);}catch{return json({error:"Invalid request"},400);}
+    if([NOTION_CALLBACK,NOTION_START].includes(preliminaryUrl.pathname))return notionOAuthHttp(request,env);
     if(preliminaryUrl.pathname==="/mcp") {
       if(env?.MCP_ENABLED!=="true")return json({error:"Cloudflare MCP is not activated"},503);
       if(request.method!=="POST")return json({error:"MCP requires POST"},405);

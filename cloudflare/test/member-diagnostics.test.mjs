@@ -41,6 +41,22 @@ async function call(db,userId,name,args={},env=ON,requestId){
   const r=await handleMcpRpc({jsonrpc:'2.0',id:7,method:'tools/call',params:{name,arguments:args}},{db,userId,env,requestId},{...transport,modern:false});
   return r;
 }
+
+test('capability permissions reflect each caller inventory without exposing owner-only controls',async()=>{
+  const db=await fixture();try{
+    const env={...ON,AI_SUMMARY_ENABLED:'true',WEEKLY_DIGEST_ENABLED:'true',FLARE_JOURNAL_ENABLED:'true',NOTION_ENABLED:'true'};
+    const member=JSON.parse((await call(db,AMYLIKE,'get_capabilities',{limit:1},env)).result.content[0].text);
+    const names=member.tool_permissions.map(p=>p.tool);
+    for(const tool of ['get_profile','get_body_measurements','get_recovery','get_sleep','get_cycles','get_workouts','connect_whoop','disconnect_whoop',
+      'get_weekly_digest','get_ai_usage','get_health_connect','import_health_connect_file','issue_health_connect_ingest_token','revoke_health_connect_ingest_token',
+      'withdraw_health_connect_import','get_samsung_health','get_medical_context','set_flare_consent','save_flare_context','save_flare_entry','get_flare_journal',
+      'delete_flare_entry','analyze_flare_patterns','pause_flare_analysis','withdraw_flare_journal','get_capabilities','report_issue','connect_notion','get_notion_daily_log'])assert.ok(names.includes(tool),tool);
+    for(const tool of ['get_reportable_links','review_issue_reports','update_issue_report'])assert.ok(!names.includes(tool),tool);
+    const owner=JSON.parse((await call(db,OWNER,'get_capabilities',{limit:1},env)).result.content[0].text);
+    for(const tool of ['get_reportable_links','review_issue_reports','update_issue_report'])assert.equal(owner.tool_permissions.find(p=>p.tool===tool)?.owner_only,true);
+    assert.ok(member.permissions_scope.includes('consent'));
+  }finally{db.close();}
+});
 const text=r=>r.result.content[0].text;
 const data=r=>JSON.parse(text(r));
 const rows=(db,sql='SELECT * FROM diagnostic_events ORDER BY id')=>db.sqlite.prepare(sql).all();

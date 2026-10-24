@@ -17,7 +17,10 @@ export const SECRET_RULES=Object.freeze({
   WHOOP_CLIENT_SECRET:v=>noSpace(v)&&v.length>=16&&v.length<=512,
   WHOOP_TOKEN_AES256_KEY:decodesTo32,
   WHOOP_TOKEN_AES256_KEY_NEXT:decodesTo32,
-  AI_ACCOUNT_ANALYTICS_TOKEN:v=>noSpace(v)&&v.length>=20&&v.length<=4096
+  AI_ACCOUNT_ANALYTICS_TOKEN:v=>noSpace(v)&&v.length>=20&&v.length<=4096,
+  NOTION_CLIENT_ID:v=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v),
+  NOTION_CLIENT_SECRET:v=>noSpace(v)&&v.length>=16&&v.length<=512,
+  NOTION_TOKEN_AES256_KEY:decodesTo32
 });
 export const BACKUP_PREFIX="BK_";
 // Each distinct outcome is logged once per isolate, not on every request.
@@ -57,6 +60,8 @@ export async function resolveSecrets(env){
   if(!env||typeof env!=="object")return env;
   const out={...env};
   for(const name of Object.keys(SECRET_RULES)){
+    // Optional Notion bindings are not accessed while the feature is off.
+    if(name.startsWith('NOTION_')&&env.NOTION_ENABLED!=='true')continue;
     const value=await getSecret(env,name);
     if(value!=null)out[name]=value;
   }

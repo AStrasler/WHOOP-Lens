@@ -3,6 +3,7 @@
 // evidence labels. Read-only. Reports flags and this account's own counts and
 // timestamps only; never a secret value, another member, or record content.
 import {whoopConnectConfigured} from './whoop-oauth.mjs';
+import {notionConfigured} from './notion-client.mjs';
 import {analyticsConfigured} from './ai-account.mjs';
 import {selectModel,aiSummaryEnabled} from './ai-summary.mjs';
 import {memberLimits,memberLimitEnabled,missingTable} from './member-rate-limit.mjs';
@@ -41,6 +42,8 @@ export function featureStates(env){
   // Same binding check attachSummary uses: AI must be a callable Workers AI binding.
   const ai=typeof env?.AI?.run==='function'&&analyticsConfigured(env)&&selectModel(env)!==null;
   const features=[
+    {id:'notion_daily_log',tools:['connect_notion','get_notion_status','disconnect_notion','list_notion_databases','get_notion_database_schema','configure_notion_daily_log','get_notion_daily_log','preview_notion_daily_log_update','save_notion_daily_log_update'],
+      state:state(on(env,'NOTION_ENABLED'),notionConfigured(env))},
     {id:'whoop_connection',tools:['connect_whoop','disconnect_whoop'],
       state:state(on(env,'WHOOP_OAUTH_ENABLED'),whoopConfigured)},
     {id:'health_connect_file_import',tools:['import_health_connect_file'],

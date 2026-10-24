@@ -29,7 +29,8 @@ export class ReportNotSubmitted extends Error{
       too_short:'Describe the problem in a few plain words first.',
       credential_like:'This description may include a password, PIN or other secret. Describe the problem again without it (for example "my password is rejected").',
       not_found:'No report with that reference was found.',
-      approval_invalid:'This report needs a fresh preview, and the member must approve that exact text.'}[reason]??'The report could not be saved.';
+      approval_invalid:'This report needs a fresh preview, and the member must approve that exact text.',
+      invalid_link:'link_id must identify an eligible linked account belonging to the signed-in member.'}[reason]??'The report could not be saved.';
     super(`${text} The report was not submitted and no reference was created.`);
     this.name='ReportNotSubmitted';this.reason=reason;
   }
@@ -147,6 +148,10 @@ const INSERT='INSERT INTO issue_reports(reference,user_id,category,severity,stat
   "status=CASE WHEN status='resolved' THEN 'recurring' ELSE status END,"+
   'updated_at=excluded.updated_at,request_id=excluded.request_id,evidence_json=excluded.evidence_json,'+
   'subsystems=excluded.subsystems,severity=excluded.severity';
+const STRUCTURED_INSERT=INSERT.replace('ON CONFLICT(user_id,dedupe_key)',
+  'AND EXISTS (SELECT 1 FROM whoop_connections WHERE user_id=?1) '+
+  'AND EXISTS (SELECT 1 FROM whoop_connection_generations WHERE user_id=?1 AND generation=?17) '+
+  'ON CONFLICT(user_id,dedupe_key)');
 const CONFIRM_SQL='SELECT reference,occurrences,status,created_at FROM issue_reports '+
   'WHERE user_id=?1 AND dedupe_key=?2 AND request_id=?3 AND last_submitted_at=?4 LIMIT 1';
 const PREVIEW='INSERT INTO issue_report_approvals(token_hash,user_id,dedupe_key,expires_at) SELECT ?2,?1,?3,?4 WHERE '+
@@ -185,7 +190,7 @@ function approvalRowId(){
   return 'ira_'+btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
 }
 
-export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}={}){
+export async function reportIssue(db,userId,args,{requestId,env,now=Date.now(),structuredReport=null}={}){
   if(!issueReportsEnabled(env))throw new ReportNotSubmitted('unavailable');
   if(!validRequestId(requestId))throw new ReportNotSubmitted('unavailable');
   const clean=sanitizeDescription(args.description);
@@ -194,9 +199,10 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
   if(clean.ambiguous_credential)throw new ReportNotSubmitted('credential_like');
   const kind=args.category;
   const since=new Date(now-86400000).toISOString();
-  const key=await sha256Hex(userId+'\n'+kind+'\n'+clean.text.toLowerCase());
+  const structuredContext=structuredReport?JSON.stringify(structuredReport.publicEvidence):'';
+  const key=await sha256Hex(userId+'\n'+kind+'\n'+clean.text.toLowerCase()+structuredContext);
   // Approvals bind the exact (case-sensitive) cleaned text; key above only dedupes reports.
-  const approvalKey=await sha256Hex('approval\n'+userId+'\n'+kind+'\n'+clean.text);
+  const approvalKey=await sha256Hex('approval\n'+userId+'\n'+kind+'\n'+clean.text+structuredContext);
   if(args.approved!==true){
     // Preview: record a pending approval bound server-side to this verified
     // member and this exact cleaned text. No report exists yet, and no secret
@@ -229,7 +235,11 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     throw new ReportNotSubmitted('rate_limited');
   }
   if(!await activeMembership(db,userId))throw new ReportNotSubmitted('unavailable');
-  const evidence=await memberEvidence(db,userId,since);
+  let evidence=await memberEvidence(db,userId,since);
+  if(structuredReport){
+    evidence=[structuredReport.publicEvidence,...evidence];
+    while(JSON.stringify(evidence).length>3900&&evidence.length>1)evidence.pop();
+  }
   const subsystems=[...new Set(evidence.map(e=>e.subsystem))].join(',').slice(0,200);
   const at=new Date(now).toISOString();
   let run;
@@ -237,9 +247,9 @@ export async function reportIssue(db,userId,args,{requestId,env,now=Date.now()}=
     // One transaction: the insert re-checks the approval, the approval is
     // consumed only if this exact submission was stored, then retention runs.
     const results=await db.batch([
-      db.prepare(INSERT).bind(userId,newReference(),kind,severityFor(kind,evidence),clean.text,key,requestId,
+      db.prepare(structuredReport?STRUCTURED_INSERT:INSERT).bind(userId,newReference(),kind,severityFor(kind,evidence),clean.text,key,requestId,
         JSON.stringify(evidence),subsystems,at,at.slice(0,10),new Date(now-LIMITS.perMemberIntervalMs).toISOString(),
-        LIMITS.perMemberPerDay,LIMITS.serverPerDay,now,approvalKey),
+        LIMITS.perMemberPerDay,LIMITS.serverPerDay,now,approvalKey,...(structuredReport?[structuredReport.generation]:[])),
       db.prepare(CONSUME).bind(approvalKey,userId,key,requestId,at),
       ...retentionStatements(db,now)
     ]);
