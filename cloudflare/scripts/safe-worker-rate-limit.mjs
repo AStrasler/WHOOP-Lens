@@ -6,7 +6,7 @@ const apply=args.includes('--apply');
 const updates={};
 for(const [arg,name] of [['--member','WHOOP_MEMBER_LIMIT_PER_MINUTE'],['--developer','WHOOP_DEVELOPER_LIMIT_PER_MINUTE']]){
  const value=get(arg);
- if(value!==undefined){if(!/^[1-9]\\d*$/.test(value)||Number(value)>100)throw Error(arg+' must be an integer from 1 to 100');updates[name]=value;}
+ if(value!==undefined){if(!/^[1-9]\d*$/.test(value)||Number(value)>100)throw Error(arg+' must be an integer from 1 to 100');updates[name]=value;}
 }
 if(!Object.keys(updates).length)throw Error('Specify --member and/or --developer');
 const token=process.env.CLOUDFLARE_API_TOKEN,account=process.env.CLOUDFLARE_ACCOUNT_ID;
