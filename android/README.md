@@ -7,7 +7,7 @@
 ## Implemented on the draft branch
 
 - Android 14+ (minSdk 34, compileSdk 36) with Health Connect stable 1.1.0.
-- Account sign-in via Supabase with an **in-memory** token. WHOOP Lens status must confirm an existing connection. Sign-out invalidates stale sign-in and preview callbacks.
+- Cloudflare OAuth authorization-code + PKCE using the external browser, dynamic client registration and an **in-memory** access token. Cloudflare Access and D1 enforce membership. Sign-out invalidates stale sign-in and preview callbacks. Native redirect and token exchange require real-device verification before release.
 - Explicit permission chooser. No background health reads.
 - Manual local previews: yesterday's **aggregate** steps, plus up to 50 sleep, heart-rate and exercise records each in the last 24 hours. Counts are capped, not guaranteed to represent full totals.
 - One-day aggregate steps prepared in a memory-only, five-minute-expiring snapshot. Separate Review control displays the date, count, mixed/unknown source origin, and destination. Actual Upload requires additional confirmation.
@@ -17,7 +17,7 @@
 
 ManualSync.ENABLE_UPLOADS is intentionally **false**. Both uploads and deletions remain disabled in the compiled APK until the production backend migration and private release are approved.
 
-Protocol v2 sends schema_version 2, source health_connect, metric steps_daily, record_key daily:YYYY-MM-DD:local and the aggregate value and dates. No user ID is trusted from the phone. Server derives ownership from Supabase Auth. Stable keys permit correction without duplicate rows.
+Protocol v2 sends schema_version 2, source health_connect, metric steps_daily, record_key daily:YYYY-MM-DD:local and the aggregate value and dates. No user ID is trusted from the phone. Server must derive ownership from Cloudflare OAuth and D1 membership. Stable keys permit correction without duplicate rows.
 
 ## Build / validation
 

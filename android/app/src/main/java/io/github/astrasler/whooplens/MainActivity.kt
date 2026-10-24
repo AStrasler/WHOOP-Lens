@@ -1,11 +1,11 @@
 package io.github.astrasler.whooplens
 
 import android.os.Bundle
+import android.content.Intent
+import android.net.Uri
 import android.app.AlertDialog
 import android.app.DatePickerDialog
-import android.text.InputType
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -53,6 +53,34 @@ class MainActivity : ComponentActivity() {
     }
   }
 
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleOAuthCallback(intent)
+  }
+
+  private fun handleOAuthCallback(intent: Intent?) {
+    val callback = intent?.data ?: return
+    if (callback.scheme != "io.github.astrasler.whooplens") return
+    val attempt = uiGeneration
+    findViewById<TextView>(4001)?.text = "Verifying Cloudflare authorization..."
+    Thread {
+      val ok = try { auth.completeSignIn(callback, attempt) } catch (_: Exception) { false }
+      runOnUiThread {
+        if (attempt != uiGeneration || isDestroyed || isFinishing) return@runOnUiThread
+        verified = ok
+        findViewById<Button>(4002)?.isEnabled = false
+        findViewById<Button>(4003)?.isEnabled = false
+        findViewById<Button>(4004)?.isEnabled = false
+        findViewById<TextView>(4001)?.text = if (ok)
+          "Cloudflare authorization complete. No health data uploaded."
+        else "Cloudflare sign-in failed or expired. Please retry."
+        // Permissions are requested only after the authenticated callback.
+        findViewById<Button>(4005)?.isEnabled = ok &&
+          HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE
+      }
+    }.start()
+  }
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     val layout = LinearLayout(this).apply {
@@ -60,20 +88,13 @@ class MainActivity : ComponentActivity() {
       setPadding(40, 64, 40, 40)
     }
     val heading = TextView(this).apply { text = "WHOOP Lens Companion"; textSize = 23f }
-    val email = EditText(this).apply {
-      hint = "Authorized email"
-      inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS
-    }
-    val password = EditText(this).apply {
-      hint = "Password"
-      inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-    }
     val status = TextView(this).apply {
       text = "Private beta. Sign in before requesting access to your health data."
       id = 4001
     }
-    val loginButton = Button(this).apply { text = "Sign in" }
+    val loginButton = Button(this).apply { text = "Sign in with Cloudflare" }
     val permissionsButton = Button(this).apply {
+      id = 4005
       text = "Choose Health Connect permissions"
       isEnabled = false
     }
@@ -104,8 +125,6 @@ class MainActivity : ComponentActivity() {
     }
     layout.addView(heading)
     layout.addView(TextView(this).apply { text = hcStatus })
-    layout.addView(email)
-    layout.addView(password)
     layout.addView(loginButton)
     layout.addView(permissionsButton)
     layout.addView(previewButton)
@@ -118,13 +137,11 @@ class MainActivity : ComponentActivity() {
       text = "Steps are read on Preview, then reviewed separately. Upload remains disabled until the private backend is approved. No automatic synchronization."
     })
     setContentView(ScrollView(this).apply { addView(layout) })
+    handleOAuthCallback(intent)
 
     loginButton.setOnClickListener {
       val attempt = ++uiGeneration
       val authAttempt = auth.beginSignIn()
-      val address = email.text.toString().trim()
-      val secret = password.text.toString()
-      password.text.clear()
       verified = false
       permissionsButton.isEnabled = false
       previewButton.isEnabled = false
@@ -133,22 +150,20 @@ class MainActivity : ComponentActivity() {
       deleteButton.isEnabled = false
       preparedSteps = null
       loginButton.isEnabled = false
-      status.text = "Checking your private WHOOP Lens access..."
+      status.text = "Preparing secure Cloudflare sign-in..."
       Thread {
-        val result = try { auth.signIn(address, secret, authAttempt) } catch (_: Exception) { false }
+        val url = try { auth.authorizationUrl(authAttempt) } catch (_: Exception) { null }
         runOnUiThread {
           if (attempt != uiGeneration || isDestroyed || isFinishing) return@runOnUiThread
-          verified = result
           loginButton.isEnabled = true
-          deleteButton.isEnabled = result && ManualSync.ENABLE_UPLOADS
-          permissionsButton.isEnabled = result &&
-            HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE
-          status.text = if (result) "Authorized account confirmed. No health data accessed."
-            else "Sign-in failed or this account is not yet connected to WHOOP Lens."
+          if (url == null) status.text = "Cloudflare OAuth registration unavailable."
+          else {
+            status.text = "Complete sign-in in your browser."
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+          }
         }
       }.start()
     }
-
     permissionsButton.setOnClickListener {
       if (verified && auth.currentToken() != null &&
           HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE) {
