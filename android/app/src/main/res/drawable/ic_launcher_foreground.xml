@@ -1,31 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Outer focus ring -->
-    <path
-        android:strokeColor="#EFF7F9"
-        android:strokeWidth="3.5"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M54,26 A28,28 0 1,1 53.9,26"/>
-    <!-- Inner lens aperture ring -->
-    <path
-        android:strokeColor="#00E5FF"
-        android:strokeWidth="2.5"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M54,36 A18,18 0 1,1 53.9,36"/>
-    <!-- Center focal point -->
-    <path
-        android:fillColor="#00E5FF"
-        android:pathData="M54,49 A5,5 0 1,1 53.9,49"/>
-    <!-- Accent tick marks -->
-    <path
-        android:strokeColor="#00E5FF"
-        android:strokeWidth="2"
-        android:strokeLineCap="round"
-        android:pathData="M54,19 L54,23 M54,85 L54,89 M19,54 L23,54 M85,54 L89,54"/>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <group android:translateX="22" android:translateY="22">
+    <path android:fillColor="#00000000" android:strokeColor="#4FD8CF" android:strokeWidth="4" android:strokeLineCap="round" android:pathData="M32,5A27,27 0,1 1,31.99 5" />
+    <path android:fillColor="#00000000" android:strokeColor="#EEF6F5" android:strokeWidth="2.5" android:strokeLineJoin="round" android:strokeLineCap="round" android:pathData="M8,32L19,32L23,24L28,43L33,18L38,32L56,32" />
+    <path android:fillColor="#6AE6DD" android:pathData="M56,29A3,3 0,1 1,55.99 29" />
+  </group>
 </vector>

@@ -1,5 +1,7 @@
 # WHOOP Lens Android companion (optional, unreleased)
 
+The local `codex/android-approved-design` branch now implements the approved native dashboard and opt-in WorkManager background refresh. See [design implementation and verification](../docs/android-design-implementation-20261024.md) for current behaviour, data limits, widget privacy, APK and tests. The older preview-only notes below describe the production baseline before this development branch. Uploads and deletion remain disabled; nothing on this branch has been pushed or deployed.
+
 > **Not required.** WHOOP Lens is now browser-first. This Android code is retained for an optional future Health Connect bridge. Users should not need to install an APK to access WHOOP Lens or review supported manual exports. See [browser workspace](../docs/WEB_WORKSPACE.md). Keep Android uploads and deletes disabled.
 
 **Status:** Debug APK compiled; not yet installed or tested on a phone. No production uploads, deletes, or migrations enabled.

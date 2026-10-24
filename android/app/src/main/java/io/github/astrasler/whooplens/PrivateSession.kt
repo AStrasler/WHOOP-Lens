@@ -142,6 +142,8 @@ internal class PrivateSession(
     saved?.takeIf { now() < it.refreshAt }?.access
   }
   fun hasStoredSession(): Boolean = synchronized(lock) { loadLocked(); saved?.refresh != null }
+  /** Opaque local grant identity, not a WHOOP user ID or credential. */
+  fun accountKey(): String? = synchronized(lock) { loadLocked(); saved?.takeIf { it.refresh != null }?.account }
   fun sessionGeneration(): Long = synchronized(lock) { loadLocked(); revision }
   fun nextRefreshDelayMs(): Long? = synchronized(lock) {
     loadLocked()

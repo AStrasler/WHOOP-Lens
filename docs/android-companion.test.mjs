@@ -3,11 +3,14 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 
-test("Android requires private login, consent and manual local-only steps aggregation", () => {
+test("Android dashboard requires private login, read permission and independently gated background reads", () => {
   const manifest=read("../android/app/src/main/AndroidManifest.xml");
   const build=read("../android/app/build.gradle.kts");
   const source=read("../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt");
   const auth=read("../android/app/src/main/java/io/github/astrasler/whooplens/PrivateSession.kt");
+  const health=read("../android/app/src/main/java/io/github/astrasler/whooplens/HealthDashboard.kt");
+  const worker=read("../android/app/src/main/java/io/github/astrasler/whooplens/DashboardRefresh.kt");
+  const network=read("../android/app/src/main/java/io/github/astrasler/whooplens/DashboardStorage.kt");
   assert.match(build,/minSdk = 34/);
   assert.match(build,/compileSdk = 36/);
   assert.match(build,/connect-client:1\.1\.0/);
@@ -19,22 +22,26 @@ test("Android requires private login, consent and manual local-only steps aggreg
   assert.match(source,/auth\.authorizationUrl\(authAttempt\)/);
   assert.match(auth,/fun beginSignIn\(\): Long/);
   assert.match(auth,/attempt != revision/);
-  assert.match(source,/attempt != uiGeneration/);
+  assert.match(source,/attempt\s*!=\s*uiGeneration/);
   assert.match(source,/\+\+uiGeneration/);
   assert.match(auth,/code_challenge_method/);
   assert.match(auth,/fun signOut/);
-  assert.match(source,/hc\.aggregate\(AggregateRequest/);
+  assert.match(health,/hc\.aggregateGroupByPeriod\(\s*AggregateGroupByPeriodRequest/);
   assert.match(source,/getGrantedPermissions\(/);
-  assert.match(source,/hc\.readRecords\(ReadRecordsRequest/);
-  assert.doesNotMatch(source,/insertRecords\(/);
+  assert.match(health,/hc\.readRecords\(\s*ReadRecordsRequest/);
+  assert.doesNotMatch(source+health+worker,/insertRecords\(|deleteRecords\(|uploadApprovedSteps\(|deleteAccountData\(/);
+  assert.doesNotMatch(manifest,/android\.permission\.health\.WRITE_/);
   assert.match(source,/Nothing has been sent/i);
-  assert.match(source,/reviewButton\.setOnClickListener/);
   assert.match(source,/AlertDialog\.Builder\(this\)/);
-  assert.match(source,/snapshot === preparedSteps/);
-  assert.match(source,/ManualSync\.uploadApprovedSteps/);
-  assert.match(source,/Preview yesterday's steps locally/);
-  assert.match(source,/ManualSync\.deleteAccountData/);
-  assert.match(source,/Confirm Server Data Deletion/);
+  assert.match(source,/Review upload \(off\)/);
+  assert.match(source,/deletion is OFF/);
+  assert.match(worker,/PeriodicWorkRequestBuilder<DashboardRefreshWorker>/);
+  assert.match(worker,/FEATURE_READ_HEALTH_DATA_IN_BACKGROUND/);
+  assert.match(worker,/PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND/);
+  assert.match(worker,/current\s*!=\s*expected/);
+  assert.match(network,/require\(tool in WhoopDashboard\.tools\)/);
+  assert.match(network,/instanceFollowRedirects\s*=\s*false/);
+  assert.doesNotMatch(network,/getString\("user_id"\)|put\("user_id"/);
 });
 
 test("Private upload export remains disabled pending approved migrations", () => {
@@ -57,7 +64,7 @@ test('Android production wiring persists sessions and excludes backup and transf
   const activity = read('../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt');
   const storage = read('../android/app/src/main/java/io/github/astrasler/whooplens/AndroidSessionStorage.kt');
   assert.match(activity, /AndroidSessions\.get\(applicationContext\)/);
-  assert.doesNotMatch(activity.slice(activity.indexOf('override fun onDestroy')), /auth\.(signOut|clearForSignOut)/);
+  assert.doesNotMatch(activity.match(/override fun onDestroy\([\s\S]*?super\.onDestroy\(\)/)[0], /auth\.(signOut|clearForSignOut)/);
   assert.match(storage, /noBackupFilesDir/);
   assert.match(storage, /AtomicFile/);
   assert.match(storage, /AndroidKeyStore/);

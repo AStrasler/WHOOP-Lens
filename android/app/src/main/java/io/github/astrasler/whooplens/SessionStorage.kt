@@ -32,11 +32,12 @@ internal interface CredentialKeys {
 internal class EncryptedSessionStorage(
   private val blob: CredentialBlob,
   private val keys: CredentialKeys,
-  private val binding: String = "io.github.astrasler.whooplens|https://auth.whooplens.tech|https://whooplens.tech/mcp|v1"
+  private val binding: String = "io.github.astrasler.whooplens|https://auth.whooplens.tech|https://whooplens.tech/mcp|v1",
+  private val maxPlaintextBytes: Int = 100000
 ) : SessionStorage {
   @Synchronized override fun read(): String? {
     val bytes = blob.read() ?: return null
-    require(bytes.size in 30..131072 && bytes[0] == 1.toByte()) { "Invalid credential storage" }
+    require(bytes.size in 30..(maxPlaintextBytes + 32) && bytes[0] == 1.toByte()) { "Invalid credential storage" }
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(Cipher.DECRYPT_MODE, keys.get(false), GCMParameterSpec(128, bytes.copyOfRange(1, 13)))
     cipher.updateAAD(binding.toByteArray(Charsets.UTF_8))
@@ -44,7 +45,7 @@ internal class EncryptedSessionStorage(
   }
 
   @Synchronized override fun write(value: String) {
-    require(value.toByteArray(Charsets.UTF_8).size <= 100000) { "Invalid credential storage" }
+    require(value.toByteArray(Charsets.UTF_8).size <= maxPlaintextBytes) { "Invalid credential storage" }
     val cipher = Cipher.getInstance("AES/GCM/NoPadding")
     cipher.init(Cipher.ENCRYPT_MODE, keys.get(true))
     cipher.updateAAD(binding.toByteArray(Charsets.UTF_8))
