@@ -272,6 +272,9 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
       if(winner)return winner;
       throw Error("WHOOP refresh raced or failed");
     }
+    // RB-021: a successful refresh was otherwise invisible. Console only (Workers
+    // Logs), no D1 write, and no member id, token, scope or expiry.
+    try{console.log(JSON.stringify({event:"whoop_refresh",outcome:"ok",rotated:tokens.refresh_token!=null}));}catch{/* log only */}
     if(key.current==="k2"){try{await migrateAllTokens(db,env,{now});}catch{/* logged when it runs */}}
     return tokens.access_token;
   };
