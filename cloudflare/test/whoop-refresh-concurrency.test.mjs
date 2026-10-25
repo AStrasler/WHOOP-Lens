@@ -187,3 +187,69 @@ test("key-rotation re-encryption never rewrites a row that is due for refresh (c
     assert.deepEqual(row(db),before);
   }finally{db.close();}
 });
+// Virtual clock for a follower isolate: each 500 ms poll advances it.
+function virtualClock(){let offset=0;return {now:()=>Date.now()+offset,sleep:async ms=>{offset+=ms;await new Promise(r=>setTimeout(r,2));},advanced:()=>offset};}
+const routerWith=(w,api,deps)=>createStagingRouter({verifyIdentity:async()=>M,
+  whoopRequest:(d,u,r,e,o)=>api(d,u,r,e,o,{fetcher:w.fetch,...deps})});
+test("a follower in another isolate outwaits a slow holder (over 4.5 s, under the 12 s fetch limit): one refresh, both succeed",async()=>{
+  const other=await import("../src/whoop-api.mjs?isolate=3");
+  let open;const gate=new Promise(r=>{open=r;});
+  const db=await fixture(),w=rotatingWhoop({delay:1,tokenEndpoint:async()=>{await gate;return null;}});
+  const clock=virtualClock();
+  try{
+    const holder=call(router(w),db,"get_recovery");
+    while(!String(row(db).updated_at).startsWith("lease:"))await new Promise(r=>setTimeout(r,2));
+    let settled=false;
+    const follower=call(routerWith(w,other.callWhoop,clock),db,"get_sleep").finally(()=>{settled=true;});
+    while(!settled&&clock.advanced()<8000)await new Promise(r=>setTimeout(r,2));
+    assert.equal(settled,false,"the follower is still waiting 8 s into the holder's refresh");
+    open();
+    const results=await Promise.all([holder,follower]);
+    assert.deepEqual(results.map(failed),[false,false]);
+    assert.equal(w.log.refresh,1,"the follower never sends the refresh token");
+    assert.ok(clock.advanced()>=8000&&clock.advanced()<=15500);
+    assert.deepEqual(codes(db),[]);
+  }finally{open();db.close();}
+});
+test("a stuck holder: the follower gives up at the holder deadline, inside the lease, without refreshing",async()=>{
+  const other=await import("../src/whoop-api.mjs?isolate=4");
+  const db=await fixture(),w=rotatingWhoop(),clock=virtualClock();
+  try{
+    db.sqlite.prepare("UPDATE whoop_connections SET updated_at='lease:'||strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE user_id=?").run(M);
+    const before=row(db);
+    const r=await call(routerWith(w,other.callWhoop,clock),db,"get_sleep");
+    assert.equal(failed(r),true);
+    assert.deepEqual(codes(db),["whoop_refresh_failed"]);
+    assert.ok(clock.advanced()>=15000&&clock.advanced()<30000,"waits to the holder deadline, never past the lease");
+    assert.deepEqual(row(db),before);assert.equal(w.log.refresh,0);
+  }finally{db.close();}
+});
+test("a holder that gives up releases its followers at once",async()=>{
+  const other=await import("../src/whoop-api.mjs?isolate=5");
+  const db=await fixture(),w=rotatingWhoop(),clock=virtualClock();
+  try{
+    db.sqlite.prepare("UPDATE whoop_connections SET updated_at='lease:'||strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE user_id=?").run(M);
+    setTimeout(()=>db.sqlite.prepare("UPDATE whoop_connections SET updated_at=datetime('now','-1 hour') WHERE user_id=?").run(M),20);
+    const r=await call(routerWith(w,other.callWhoop,clock),db,"get_sleep");
+    assert.equal(failed(r),true);
+    assert.ok(clock.advanced()<15000,"stops once the marker is gone");
+    assert.equal(w.log.refresh,0);
+  }finally{db.close();}
+});
+for(const [label,endpoint] of [
+  ["network error",()=>{throw new TypeError("fetch failed");}],
+  ["timeout",()=>{throw new DOMException("timed out","TimeoutError");}],
+  ["malformed JSON",()=>new Response("not json",{status:200})]]){
+  test(`shared refresh failure (${label}): every caller in the burst reports whoop_refresh_failed`,async()=>{
+    const db=await fixture(),w=rotatingWhoop({tokenEndpoint:endpoint});
+    try{
+      const before=row(db),route=router(w);
+      const results=await Promise.all(TOOLS.map(t=>call(route,db,t)));
+      assert.deepEqual(results.map(failed),[true,true,true,true]);
+      for(const r of results)assert.match(r.result.content[0].text,/could not renew/,"refresh-specific guidance, not generic unavailable data");
+      assert.deepEqual([...new Set(codes(db))],["whoop_refresh_failed"],"no tool_failed (capture dedupes repeats)");
+      assert.equal(w.log.refresh,1);
+      assert.deepEqual(row(db),before,"tokens kept and lease released");
+    }finally{db.close();}
+  });
+}

@@ -75,7 +75,7 @@ async function boundedJson(response){
   return JSON.parse(text);
 }
 async function concurrentlyRefreshed(db,id,previous,key,now,sleep,attempts=4){
-  // Bounded wait (about 1.5 s, or 4.5 s behind a lease) for the winning
+  // Bounded wait (about 1.5 s; lease followers use waitForHolder) for the winning
   // request to store its rotation.
   for(let attempt=0;attempt<attempts;attempt++){
     if(attempt)await sleep(500);
@@ -108,6 +108,25 @@ async function storedRotation(db,id,previous,key,now){
 //    No schema change; no other code reads this column.
 const inflightRefresh=new Map();
 const LEASE_SECONDS=30;
+// A holder's refresh is bounded: the token fetch aborts at 12 s, then a few D1
+// writes. Followers wait up to this long after the holder's claim (well inside
+// the 30 s lease, so no follower can take over a live holder) and stop early
+// once the marker is gone, i.e. the holder stored a rotation or gave up.
+const HOLDER_DEADLINE_MS=15_000;
+async function waitForHolder(db,id,row,key,now,sleep){
+  for(let attempt=0;attempt<=HOLDER_DEADLINE_MS/500+1;attempt++){
+    if(attempt)await sleep(500);
+    const token=await storedRotation(db,id,row,key,now);
+    if(token)return token;
+    const current=await db.prepare("SELECT updated_at FROM whoop_connections WHERE user_id=?1 LIMIT 1").bind(id).first();
+    const marker=typeof current?.updated_at==="string"&&current.updated_at.startsWith("lease:")?Date.parse(current.updated_at.slice(6)):NaN;
+    // No live marker: the holder finished. One last read covers a rotation
+    // stored between the two queries.
+    if(!Number.isFinite(marker)||now()-marker>=LEASE_SECONDS*1000)return storedRotation(db,id,row,key,now);
+    if(now()>marker+HOLDER_DEADLINE_MS)return null;
+  }
+  return null;
+}
 const claimLeaseSql="UPDATE whoop_connections SET updated_at='lease:'||?3 "+
   "WHERE user_id=?1 AND encrypted_refresh_token=?2 AND NOT ("+
   "substr(updated_at,1,6)='lease:' AND julianday(substr(updated_at,7)) IS NOT NULL AND "+
@@ -147,7 +166,7 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
   const claimedAt=new Date(now()).toISOString();
   const lease=await db.prepare(claimLeaseSql).bind(id,row.encrypted_refresh_token,claimedAt).run();
   if(!lease?.success||lease.meta?.changes!==1){
-    const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep,10);
+    const winner=await waitForHolder(db,id,row,key,now,sleep);
     if(winner)return winner;
     throw Error("WHOOP refresh raced or failed");
   }
@@ -165,10 +184,16 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
       // only documents offline, and the response scope is stored as returned.
       scope:"offline"
     });
-    const response=await fetcher(TOKEN_ENDPOINT,{
-      method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},
-      body:form,redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
-    });
+    // Transport failures, the 12 s timeout and unreadable bodies are labelled
+    // here, inside the shared refresh, so every caller sharing it (not only the
+    // one whose fetch ran) reports a refresh failure.
+    let response;
+    try{
+      response=await fetcher(TOKEN_ENDPOINT,{
+        method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},
+        body:form,redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
+      });
+    }catch{throw Error("WHOOP refresh failed");}
     if(!response.ok){
       // WHOOP rotates refresh tokens: a parallel request that already used this
       // one makes ours fail. Use the access token that request stored, if any.
@@ -181,7 +206,8 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
       if(response.status===400||response.status===401)throw refreshRejected(response.status);
       throw Error("WHOOP refresh failed");
     }
-    const tokens=await boundedJson(response);
+    let tokens;
+    try{tokens=await boundedJson(response);}catch{throw Error("WHOOP refresh failed");}
     if(typeof tokens?.access_token!=="string"||tokens.access_token.length<1||
        !Number.isFinite(Number(tokens.expires_in))||Number(tokens.expires_in)<60 ||
        Number(tokens.expires_in)>31_536_000 ||
