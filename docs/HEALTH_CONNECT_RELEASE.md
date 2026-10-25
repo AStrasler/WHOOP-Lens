@@ -1,10 +1,10 @@
-# WHOOP Lens private Health Connect release gate
+# WhoopLens private Health Connect release gate
 
 **Status: review only. No production migration, function deployment, user-data import or app rollout authorized by this document.**
 
 ## Implementation chain
 
-- PR #8 provides WHOOP Lens capability/limitation discovery.
+- PR #8 provides WhoopLens capability/limitation discovery.
 - PR #9 adds compatible Samsung v1 and new Health Connect v2 ingestion plus read-only MCP.
 - PR #10 adds source-attributed private medical-context functionality.
 - PR #11 adds the Android companion and a release-gated reviewed **steps-only** v2 export/delete workflow.
@@ -13,7 +13,7 @@ These are **stacked draft branches**, not separately deployable as though they h
 
 ## Preflight checks (no production mutations)
 
-1. Reconfirm WHOOP Lens is private, invite-only, and the known authorized beta users and developer seat remain correct.
+1. Reconfirm WhoopLens is private, invite-only, and the known authorized beta users and developer seat remain correct.
 2. Review Supabase Free project quota, edge logs, Auth policy and security/performance advisors. Do not assume that a free tier is unlimited.
 3. Run Node tests and Android compile workflow. Confirm both succeed on the **exact proposed release commit**.
 4. Confirm the separate Health Connect PostgreSQL smoke workflow passes, including owner-only authenticated SELECT, no direct inserts/updates/deletes, and repeat-key upsert behavior. CI uses **disposable Postgres**, not live Supabase.
@@ -37,7 +37,7 @@ No public enrollment, app marketplace release, credential copying across users, 
 
 ## Rollback
 
-- If Android is not approved or testing fails, leave the upload feature OFF. Existing WHOOP Lens use remains unchanged.
+- If Android is not approved or testing fails, leave the upload feature OFF. Existing WhoopLens use remains unchanged.
 - If v2 ingestion has a problem, disable upload on Android and restore the reviewed older Edge Function code while retaining database rows for user-controlled cleanup.
 - Never DROP the new table as an automatic rollback: removing it would delete privately uploaded records. Any retention/delete operation must receive separate approval.
 - Re-run owner-isolation tests after corrective redeployment. Do not claim that a passing CI smoke test alone establishes the live production grants.

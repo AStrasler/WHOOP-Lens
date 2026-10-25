@@ -1,8 +1,8 @@
-# WHOOP Lens: every open PR and Android companion review
+# WhoopLens: every open PR and Android companion review
 
 Completed locally on October 24, 2026. The open PR list was retrieved twice, including at completion: **#79, #80 and #83 are the complete current list**. Nothing was pushed, published, deployed, merged on GitHub, closed, or changed in live user data. All 244 preserved original source files still match their start-of-repair hashes. Existing backups and retired Supabase components remain intact.
 
-Work continues on `codex/release-candidate` in `C:\Users\Aaron\OneDrive\Documents\ChatGPT\Whoop Lens\backups\release-candidate`. The chat's managed checkout is a review copy of the same committed source. Raw PR descriptions, changed-file inventory, reviews, checks and per-PR commit lists are saved in ignored `repair-results/pr-android-review/`. No extra authentication service or production migration was added.
+Work continues on `codex/release-candidate` in `C:\Users\Aaron\OneDrive\Documents\ChatGPT\WhoopLens\backups\release-candidate`. The chat's managed checkout is a review copy of the same committed source. Raw PR descriptions, changed-file inventory, reviews, checks and per-PR commit lists are saved in ignored `repair-results/pr-android-review/`. No extra authentication service or production migration was added.
 
 ## Every open PR
 
