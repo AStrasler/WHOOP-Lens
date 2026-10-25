@@ -198,4 +198,6 @@ test('privacy and support agree on a private deletion route', () => {
   assert.match(support, /mailto:whoop-lens@outlook\.com/);
   assert.match(support, /GitHub issues are public/);
   assert.match(support, /If your membership has ended/);
+  assert.match(support, /handles these requests by hand: deletion is not automatic/);
+  assert.doesNotMatch(support, /github\.com[^<]*delet/i, 'deletion is never routed to public issues');
 });

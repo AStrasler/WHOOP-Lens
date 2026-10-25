@@ -50,9 +50,9 @@ Experimental stress estimates are WhoopLens calculations, not official WHOOP Str
 
 These features are off unless the server owner enables them. They are the one place where the server owner sees information about other members.
 
-- **Diagnostic codes.** When diagnostic capture is enabled, WhoopLens records sanitized failure codes for every signed-in member, whether or not they submit a report: an error code, the affected area, a count and a time window, linked to the account. No health values, message text or tokens are stored. The server owner can see server-wide 24-hour counts, and on a small server may be able to tell which member a count came from. Codes are deleted after 30 days.
+- **Diagnostic codes.** When diagnostic capture is enabled, WhoopLens records sanitized failure codes for every signed-in member, whether or not they submit a report: an error code, the affected area, a count and a time window, linked to the account. No health values, message text or tokens are stored. The server owner can see server-wide 24-hour counts, and on a small server may be able to tell which member a count came from. Codes are deleted after 30 days; cleanup runs during normal use, so removal can happen somewhat later.
 - **Issue reports.** When issue reporting is enabled, a member can send a report with `report_issue` after previewing and approving the cleaned text. Cleaning is best-effort: it removes numbers, links, contact details and recognizable credentials, but a secret written in another form can be missed, and every other word, including any health or personal details the member writes, is stored and shown to the server owner as written. Leave health details, personal details and passwords out of a report. A report also attaches up to 10 of that member's recent diagnostic codes. The owner sees reports under a stable pseudonymous member reference, not an account id, and can change only a report's status.
-- **Retention.** Unapproved previews expire after 10 minutes. Reports are kept until the owner resolves them, then deleted 180 days after their last update.
+- **Retention.** Unapproved previews expire after 10 minutes. Reports are kept until the owner resolves them, then deleted 180 days after their last update (cleanup runs during normal use, so removal can happen somewhat later).
 
 ## Optional flare journal (separate opt-in)
 
