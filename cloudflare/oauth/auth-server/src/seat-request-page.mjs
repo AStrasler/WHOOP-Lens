@@ -5,7 +5,7 @@ export const seatRequestShell = body => `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<title>Request a WHOOP Lens seat</title>
+<title>Request a WhoopLens seat</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500&amp;display=swap" rel="stylesheet">
 <style>
@@ -69,9 +69,9 @@ footer{margin-top:20px;padding-top:16px;border-top:1px solid var(--card-edge);te
 </head>
 <body><main>
 <div class="mark" aria-hidden="true"><svg viewBox="0 0 64 64" fill="none"><circle cx="32" cy="32" r="27" stroke="#4fd8cf" stroke-width="4"/><path class="pulse-line" d="M8 33h13l3-5 4 12 5-20 4 15 3-2h12" stroke="#eef6f5" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="56" cy="33" r="2.6" fill="#4fd8cf"/></svg></div>
-<h1>Request a <span>WHOOP Lens</span> seat</h1>
+<h1>Request a <span>WhoopLens</span> seat</h1>
 ${body}
-<footer>Only invited, active WHOOP Lens members can finish connecting.</footer>
+<footer>Only invited, active WhoopLens members can finish connecting.</footer>
 </main></body></html>`;
 
 // Owner-declared seat allocation shown on the public request page. Counts
@@ -98,7 +98,7 @@ const seatLegend=(a=seatCounts())=>[
 ].join('');
 // siteKey must be HTML-escaped by the caller, never a secret key.
 export const seatRequestForm = siteKey => `
-<p class="lede">WHOOP Lens is private. Only the owner can approve access.</p>
+<p class="lede">WhoopLens is private. Only the owner can approve access.</p>
 <div class="seats">
 <div class="seat-row" aria-hidden="true">${seatBoxes()}</div>
 <div class="seat-legend">${seatLegend()}</div>
@@ -110,7 +110,7 @@ export const seatRequestForm = siteKey => `
 <label class="field"><span>Email you want to use</span><input name="email" type="email" required maxlength="254" autocomplete="email"></label>
 <label class="field"><span>Message <em>(optional)</em></span><textarea name="message" maxlength="1000" rows="4"></textarea></label>
 <label class="trap" aria-hidden="true">Leave empty<input name="website" tabindex="-1" autocomplete="off"></label>
-<label class="consent"><input type="checkbox" name="consent" value="contact-me" required><span>I agree to email these details to the WHOOP Lens owner and be contacted about my request.</span></label>
+<label class="consent"><input type="checkbox" name="consent" value="contact-me" required><span>I agree to email these details to the WhoopLens owner and be contacted about my request.</span></label>
 <div class="note"><svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="2" stroke="#4fd8cf" stroke-width="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke="#4fd8cf" stroke-width="2"/></svg><span><strong>Do not include health information, passwords or tokens.</strong> Your details are emailed to <code>whoop-lens@outlook.com</code>. Hashed request metadata is used for duplicate and abuse protection; form contents are not stored in the request database. The owner's mailbox retains the email under its retention settings. Cloudflare Turnstile checks this form for abuse.</span></div>
 <div class="cf-turnstile" data-sitekey="${siteKey}" data-action="seat-request" data-theme="dark" data-size="compact"></div>
 <button type="submit">Request a seat</button>
