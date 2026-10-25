@@ -463,6 +463,15 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
       }})
     }));
     assert.equal(filtered.result.summary.fallback_reason,"filter");
+    assert.equal(filtered.result.summary.fallback_detail,"selection_not_json","prose instead of a selection is distinguishable");
+    assert.equal(Object.hasOwn(broken.result.summary,"fallback_detail"),false,"thrown model errors carry no detail");
+    db.sqlite.prepare("UPDATE ai_usage SET used=0").run();
+    const empty=await quiet(()=>attachSummary(pageA,{
+      db,userId:A,tool:"get_recovery",now:Date.parse("2026-10-14T00:00:00Z"),
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(){return {response:""};}}})
+    }));
+    assert.equal(empty.result.summary.fallback_reason,"model_error");
+    assert.equal(empty.result.summary.fallback_detail,"empty_output","an empty model reply is distinguishable from a thrown error");
     assert.deepEqual(filtered.lines,[JSON.stringify({event:"summary_filter",rule:"advice"}),"filter"]);
     assert.equal(filtered.lines.join("\n").includes("doctor"),false);
     const original=JSON.stringify;

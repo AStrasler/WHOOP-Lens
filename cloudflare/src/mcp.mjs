@@ -349,8 +349,10 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       try{
         data=await attachSummary(data,{db,userId,env,tool:name,whoopRequest});
         const reason=data?.summary?.status==="template"?data.summary.fallback_reason:null;
+        const detail=data?.summary?.fallback_detail;
+        const suffix=typeof detail==="string"&&/^[a-z_]{1,24}$/.test(detail)?"_"+detail:"";
         if(typeof reason==="string"&&/^[a-z_]{1,30}$/.test(reason))
-          await capture(env,db,{category:"ai_summary",subsystem:"ai_summary",code:"summary_fallback_"+reason,
+          await capture(env,db,{category:"ai_summary",subsystem:"ai_summary",code:"summary_fallback_"+reason+suffix,
             outcome:"partial",retryable:true,requestId,userId});
       }catch{
         /* Authorized records stay available when a summary fails. */
