@@ -7,7 +7,7 @@ import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
 import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
 import {buildWeeklyDigest,parseWeekEnding,weeklyDigestEnabled} from './ai-digest.mjs';
 import {readOwnUsage,utcDay} from './ai-quota.mjs';
-import {revokeWhoopConnection} from './whoop-oauth.mjs';
+import {disconnectWhoop} from './whoop-disconnect.mjs';
 import {FeatureDisabled} from './member-guidance.mjs';
 import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
@@ -288,7 +288,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       return ok(id,content);
     }else if(name==='disconnect_whoop'){
       if(env.WHOOP_OAUTH_ENABLED!=='true')throw new FeatureDisabled('whoop_connection');
-      data=await revokeWhoopConnection(db,userId);
+      data=await disconnectWhoop(db,userId,env);
     }else if(name==='import_health_connect_file'){
       if(env.WEB_HEALTH_IMPORT_ENABLED!=='true')throw new FeatureDisabled('health_connect_file_import');
       data=await importHealthConnectFile(db,userId,args.file_json,args.consent);
