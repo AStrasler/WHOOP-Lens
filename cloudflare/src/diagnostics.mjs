@@ -81,6 +81,25 @@ function markCapped(clean){attempts.set(attemptKey(clean),{bucket:clean.bucket,n
 let lastOffSweep=-Infinity;
 export function resetCaptureThrottle(){lastOffSweep=-Infinity;attempts.clear();}
 const SWEEP='DELETE FROM diagnostic_events WHERE id IN (SELECT id FROM diagnostic_events WHERE last_at<?1 ORDER BY last_at LIMIT 50)';
+// Scheduled retention, independent of member activity. capture() only sweeps
+// when an authenticated member produces a diagnostic event, so with no
+// activity old rows would otherwise stay past the published 30/180 days.
+// Each statement is bounded; loop a few rounds so a backlog drains.
+export const SCHEDULED_ROUNDS=20;
+export async function runRetention(db,{now=Date.now()}={}){
+  if(!db||typeof db.prepare!=='function'||typeof db.batch!=='function')return {deleted:0,ok:false};
+  const cutoff=new Date(now-RETENTION_DAYS*86400000).toISOString();
+  let deleted=0;
+  for(let round=0;round<SCHEDULED_ROUNDS;round++){
+    let results;
+    try{results=await db.batch([db.prepare(SWEEP).bind(cutoff),...retentionStatements(db,now)]);}
+    catch{return {deleted,ok:false};}
+    const changed=(results??[]).reduce((n,r)=>n+(Number(r?.meta?.changes)||0),0);
+    deleted+=changed;
+    if(!changed)break;
+  }
+  return {deleted,ok:true};
+}
 export async function capture(env,db,event,{now=Date.now()}={}){
   const clean=sanitizeEvent(event,{now});
   if(!clean)return false;
