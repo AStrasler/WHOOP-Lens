@@ -207,8 +207,8 @@ internal class BleSessionController(
     }
 
     fun connect(id: String) {
-        val selected = state.candidates.find { it.id == id } ?: return
         if (!ready()) return
+        val selected = state.candidates.find { it.id == id } ?: return
         retries = 0
         beginConnect(selected)
     }

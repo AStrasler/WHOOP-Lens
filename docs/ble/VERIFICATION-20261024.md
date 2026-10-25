@@ -3,7 +3,8 @@
 Date: 2026-10-24 (America/Chicago). Branch: `codex/android-direct-ble-release`.
 Baseline: PR #85 head `e833d93d9e01c5fffad6ee8d7d9f377885984da5`, with its
 exercise-cache fix; attribution commit `2034715c124d3b787e0ec5f352605732bd71da58`
-is included once. No PR, production configuration, source fork or live health
+is included once. The initial verification below preceded publication; PR #86
+now contains this work. No production configuration, source fork or live health
 record was modified.
 
 ## Automated/local results
@@ -59,16 +60,31 @@ by this first implementation.
 Proposed tag `android-v0.3.0-beta.1`; one signed universal APK named
 `WHOOP-Lens-android-v0.3.0-beta.1.apk` plus its SHA-256 checksum. Experimental
 must be a prerelease, never stable/latest. No tag/release/assets have been created
-remotely. GitHub CI has not run on these unpublished implementation commits.
+remotely. The original implementation commit `daaab643` passed all nine GitHub checks
+on PR #86. Follow-up review fixes receive a separate CI run.
 
 The repository is currently public, so no Obtainium authentication is required
 for future public release assets. No visibility change was made. Repository
 signing secrets are absent and protected `android-release` environment is not
 configured. Exact setup and Obtainium instructions: [ANDROID_RELEASES.md](../ANDROID_RELEASES.md).
 
-Remaining approvals/actions: review and approve pushing this separate branch;
+The branch push and PR creation were subsequently approved. Remaining actions:
 approve installing the selected signed APK on the Samsung without resetting
 data; complete real-strap checks; provision protected signing secrets/reviewers;
 separately approve the first experimental publication and workflow activation.
 Do not merge PR #84 or #85, activate uploads/deletion, or deploy infrastructure
 as part of any of these steps without separate authorization.
+
+## PR #86 review follow-up
+
+Two confirmed P2 findings are repaired: account readiness now resets stale
+candidates before resolving a connection selection, and packet/freshness updates
+retain their view binding rather than rebuilding navigation. Regression coverage
+checks the A-to-B account transition and native drawer/scroll/focus retention.
+
+Local follow-up verification: 118 Android unit tests and 587 Node/Worker/site
+tests passed; debug and test APK assembly succeeded; lint has 0 errors and 46
+warnings. API 36 emulator instrumentation passed ten native fixtures at 100%/200%
+text, retained navigation during updates, and Android Keystore/account-isolation
+checks. No physical strap or Samsung verification is implied. Local APKs from
+the initial validation are earlier candidates; no APK was published.

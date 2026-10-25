@@ -169,6 +169,42 @@ class BleReviewInstrumentation : Instrumentation() {
                         val root = ui.column()
                         renderOpenSourceCredits(ui, root)
                         check(root.childCount >= 6)
+                        val host = android.widget.FrameLayout(ui.context)
+                        val viewport = android.widget.ScrollView(ui.context)
+                        val content = ui.column(16)
+                        viewport.addView(content)
+                        host.addView(viewport, android.widget.FrameLayout.LayoutParams(-1, -1))
+                        val live = BleViewState(phase = BlePhase.LIVE, sample = sample)
+                        val binding = renderBleScreen(ui, content, live, 1100, {}, {}, {})
+                        host.measure(
+                            View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY),
+                        )
+                        host.layout(0, 0, 1080, 900)
+                        val stop = content.findViewWithTag<View>("ble-stop")
+                        stop.isFocusableInTouchMode = true
+                        check(stop.requestFocus())
+                        viewport.scrollTo(0, 300)
+                        val position = viewport.scrollY
+                        check(position > 0)
+                        val drawer = ui.text("Navigation drawer overlay")
+                        host.addView(drawer)
+                        binding.update(
+                            live.copy(
+                                sample =
+                                    sample.copy(measurement = sample.measurement.copy(bpm = 65))
+                            ),
+                            1500,
+                        )
+                        binding.update(live, 20000) // freshness tick without a packet
+                        host.measure(
+                            View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+                            View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY),
+                        )
+                        host.layout(0, 0, 1080, 900)
+                        check(host.childCount == 2 && drawer.parent === host)
+                        check(content.findViewWithTag<View>("ble-stop") === stop && stop.isFocused)
+                        check(viewport.scrollY == position)
                     }
                 } catch (e: Throwable) {
                     uiFailure = e
@@ -179,7 +215,7 @@ class BleReviewInstrumentation : Instrumentation() {
             cache.clear()
             result.putString(
                 "result",
-                "PASS: 10 native BLE fixtures, 100%/200% fonts, UI controls, offline credits, real Android Keystore ciphertext/restart/isolation/erasure. No RF or physical WHOOP validation.",
+                "PASS: 10 native BLE fixtures, 100%/200% fonts, UI controls, retained drawer/scroll/focus during packet/freshness updates, offline credits, real Android Keystore ciphertext/restart/isolation/erasure. No RF or physical WHOOP validation.",
             )
             finish(android.app.Activity.RESULT_OK, result)
         } catch (e: Throwable) {

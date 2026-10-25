@@ -32,6 +32,12 @@ test('BLE lifecycle and copied parser notices are present in repository and APK 
   assert.match(read('docs/ble/upstream-provenance.md'),/parse_hr_measurement/);
   assert.match(read('THIRD_PARTY_NOTICES.md'),/BleModels.kt/);
 });
+test('BLE packet and freshness updates retain their view binding instead of rebuilding navigation',()=>{
+  const activity=read('android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt');
+  assert.match(activity,/bleScreen\?\.update\(it, SystemClock.elapsedRealtime\(\)\)/);
+  assert.match(activity,/bleScreen\?\.update\(ble.state, SystemClock.elapsedRealtime\(\)\)/);
+  assert.match(read(base+'BleScreen.kt'),/internal class BleScreenBinding/);
+});
 test('release workflow is manual, separates signing from source builds and defaults to no publication',()=>{
   const workflow=read('.github/workflows/android-release.yml');
   assert.match(workflow,/workflow_dispatch:/);assert.doesNotMatch(workflow,/^  (?:push|pull_request):/m);

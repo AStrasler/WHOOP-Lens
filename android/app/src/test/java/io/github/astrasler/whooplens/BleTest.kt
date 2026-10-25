@@ -179,6 +179,18 @@ class BleTest {
     }
 
     @Test
+    fun selectionFromPreviousAccountCannotStartNewOwnersSession() {
+        val f = Fixture()
+        f.discover()
+        f.account = "B"
+        f.c.connect(device.id)
+        assertEquals(0, f.transport.connections)
+        assertTrue(f.c.state.candidates.isEmpty())
+        assertNull(f.c.state.selected)
+        assertNull(f.c.state.sample)
+    }
+
+    @Test
     fun scanIsBoundedAndLateDiscoveriesAreIgnored() {
         val f = Fixture()
         f.c.scan()

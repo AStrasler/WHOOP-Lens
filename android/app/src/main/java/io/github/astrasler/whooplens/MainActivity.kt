@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private var message = ""
     private var drawer: View? = null
     private lateinit var frame: FrameLayout
+    private var bleScreen: BleScreenBinding? = null
     private val ble by lazy {
         BleSessionController(
             AndroidBleTransport(this),
@@ -54,7 +55,8 @@ class MainActivity : ComponentActivity() {
             System::currentTimeMillis,
             SystemClock::elapsedRealtime,
         ) {
-            if (foreground && page == "Direct BLE" && !isDestroyed) render()
+            if (foreground && page == "Direct BLE" && !isDestroyed)
+                bleScreen?.update(it, SystemClock.elapsedRealtime())
         }
     }
     private var pendingBleScan = false
@@ -71,7 +73,7 @@ class MainActivity : ComponentActivity() {
             override fun run() {
                 if (foreground && page == "Direct BLE") {
                     ble.checkAccess()
-                    render()
+                    bleScreen?.update(ble.state, SystemClock.elapsedRealtime())
                     handler.postDelayed(this, 5000)
                 }
             }
@@ -513,6 +515,7 @@ class MainActivity : ComponentActivity() {
     private fun render() {
         applyScreenCapturePrivacy(this)
         if (!::frame.isInitialized) return
+        bleScreen = null
         if (
             page != "Direct BLE" &&
                 ble.state.phase in
@@ -588,24 +591,25 @@ class MainActivity : ComponentActivity() {
             "Health Connect" -> health(root)
             "Arrange Home" -> customize(root)
             "Direct BLE" ->
-                renderBleScreen(
-                    ui,
-                    root,
-                    ble.state,
-                    SystemClock.elapsedRealtime(),
-                    {
-                        if (blePermissions(this)) ble.scan()
-                        else
-                            blePermissionsLauncher.launch(
-                                arrayOf(
-                                    android.Manifest.permission.BLUETOOTH_SCAN,
-                                    android.Manifest.permission.BLUETOOTH_CONNECT,
+                bleScreen =
+                    renderBleScreen(
+                        ui,
+                        root,
+                        ble.state,
+                        SystemClock.elapsedRealtime(),
+                        {
+                            if (blePermissions(this)) ble.scan()
+                            else
+                                blePermissionsLauncher.launch(
+                                    arrayOf(
+                                        android.Manifest.permission.BLUETOOTH_SCAN,
+                                        android.Manifest.permission.BLUETOOTH_CONNECT,
+                                    )
                                 )
-                            )
-                    },
-                    { ble.connect(it) },
-                    { ble.stop() },
-                )
+                        },
+                        { ble.connect(it) },
+                        { ble.stop() },
+                    )
             "Open Source Licenses & Credits" -> renderOpenSourceCredits(ui, root)
             else -> settings(root)
         }
