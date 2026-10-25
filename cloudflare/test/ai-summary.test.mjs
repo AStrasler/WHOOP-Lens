@@ -463,6 +463,8 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
       }})
     }));
     assert.equal(filtered.result.summary.fallback_reason,"filter");
+    assert.equal(filtered.result.summary.fallback_detail,"selection_not_json","prose instead of a selection is distinguishable");
+    assert.equal(Object.hasOwn(broken.result.summary,"fallback_detail"),false,"thrown model errors carry no detail");
     assert.deepEqual(filtered.lines,[JSON.stringify({event:"summary_filter",rule:"advice"}),"filter"]);
     assert.equal(filtered.lines.join("\n").includes("doctor"),false);
     const original=JSON.stringify;
