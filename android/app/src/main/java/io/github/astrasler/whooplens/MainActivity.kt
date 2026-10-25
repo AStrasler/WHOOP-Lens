@@ -135,7 +135,7 @@ class MainActivity : ComponentActivity() {
       setPadding(20.dp(), 24.dp(), 20.dp(), 28.dp())
     }
     val heading = TextView(this).apply {
-      text = "WHOOP Lens"
+      text = "WhoopLens"
       textSize = 27f
       setTextColor(foreground)
       setTypeface(null, Typeface.BOLD)
@@ -466,7 +466,7 @@ class MainActivity : ComponentActivity() {
             "Please distinguish between local session, device permissions, and server data:\n\n" +
             "• Local Session: Use 'Sign out' below to erase encrypted credentials and cached previews, and request server grant revocation.\n\n" +
             "• Device Permissions: Open Android Settings > Security & Privacy > Health Connect to view or revoke on-device permissions.\n\n" +
-            "• Server-Held Data: Request deletion of any Health Connect records synced to your WHOOP Lens account. " +
+            "• Server-Held Data: Request deletion of any Health Connect records synced to your WhoopLens account. " +
             if (!ManualSync.ENABLE_UPLOADS)
               "(Note: Sync and deletion are currently OFF in this companion build. Existing server records may still exist.)"
             else "(This removes all synced records from the server; phone records are never deleted.)"
@@ -481,7 +481,7 @@ class MainActivity : ComponentActivity() {
                   "Server deletion is unavailable from this build. Existing server records may still exist.\n\n" +
                   "Would you like to open the web deletion request page instead?"
                 else
-                  "Are you sure you want to delete all Health Connect records stored on your WHOOP Lens server account? " +
+                  "Are you sure you want to delete all Health Connect records stored on your WhoopLens server account? " +
                   "This action cannot be undone."
               )
               .setNegativeButton("Cancel", null)
