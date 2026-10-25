@@ -39,7 +39,11 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 | RB-012 | Medium | Apex root, Previews config, external privacy/terms links, GitHub Pages, deletion promise | Deletion fix on `docs/private-deletion-requests` (dc71393); apex fix on `fix/apex-site-redirect` (8b6ece4); PRs pending. External links unverified | not yet requested (both) | Mailbox confirmation, merge, site and worker release, external settings |
 | RB-013 | Low | Android test suite (38 tests) not reproducible on the Grok box (no JDK/Gradle) | Tooling gap | n/a | None |
 | RB-014 | Medium | Rejected WHOOP refresh told members to "Retry shortly" although it's non-retryable | PR #92 (48d8349): CI 9/9 success, Codex completed with no findings. **Ready for release approval** | completed: no major issues (48d8349, 11:11 AM) | Merge + controlled release (owner) |
-| RB-016 | Low | Retention deletions (30-day codes, 180-day reports) run only during normal use; no scheduled cleanup | Wording fix on PR #93 | #93 | Owner: approve wording |
+| RB-016 | Low | Retention deletions (30-day codes, 180-day reports) run only on member activity; no scheduled cleanup | Wording on PR #93; scheduled cleanup PR #96 (e426abb), draft | #96 requested 12:05 PM | Owner: approve release + separate cron trigger |
+| RB-017 | Medium | WHOOP disconnect deletes tokens locally but never revokes at WHOOP, and does not tell the member to remove the app in WHOOP | Confirmed in code; not fixed | n/a | Owner: decide on upstream revoke vs guidance text |
+| RB-018 | Low | Former members have no deletion path; process undocumented | Runbook PR #97 (d6db735), draft | #97 requested 12:07 PM | Owner: confirm private channel; approve runbook |
+| RB-019 | Low | Notion network failures and real 503s share one code (`notion_unavailable`) | Assessed: not worth splitting now | n/a | None |
+| RB-020 | Process | Several agents push to the same branches under the owner identity; provenance not recoverable from commits | Coordination rule below | n/a | Owner: confirm rule |
 | RB-015 | Low | GitHub Pages duplicates the www site | Documented; recommendation below | n/a | Owner: keep or disable Pages |
 
 ---
@@ -193,6 +197,35 @@ The Android suite can't run on the Grok box. Verification requirement: a CI job 
 
 **PR #94 routing (read-only).** The custom domains are: apex to `whoop-lens`, www to `whoop-lens-site`, auth to `whoop-lens-auth`. There are no zone Worker routes and no page rules, and only managed rulesets. The redirect target is always www, which is served by a different Worker, so it cannot loop. The query string is now preserved.
 
+## Fourth pass (Oct 25, about 12:10 PM CT)
+
+**RB-016 trigger paths (code).** `capture()` in `cloudflare/src/diagnostics.mjs` runs `SWEEP` (diagnostic_events older than 30 days, 50 rows per batch) plus `retentionStatements` (resolved issue_reports older than 180 days, 20 per batch; expired approvals) only when (a) an authenticated member's event creates a new 10-minute bucket row with capture on, or (b) capture is off and an authenticated member's event arrives, at most once a minute per instance. Owner `review_issue_reports` also runs `retentionStatements` (not `SWEEP`). Pre-auth failures and rate-limit events never trigger cleanup. No Worker has a cron trigger. So if no member is active, nothing is deleted. Production (counts only, 12:00 PM CT): 519 diagnostic rows, oldest Oct 19, 0 past 30 days; 1 resolved report (Oct 24); 0 approvals. No violation today. Fix: PR #96 adds `runRetention()` and a `scheduled()` entry. `release-worker-content.mjs` only PUTs `/content` and checks settings; it neither adds nor removes cron triggers, so enabling needs a separate owner-approved `PUT .../workers/scripts/whoop-lens/schedules` after release.
+
+**RB-017 (Medium, privacy/UX).** `revokeWhoopConnection` (`cloudflare/src/whoop-oauth.mjs`) records a revocation and deletes `whoop_oauth_states`/`whoop_connections` locally. No call to WHOOP is made, and the `disconnect_whoop` result is only `{disconnected, removed}`. Notion's disconnect, by contrast, tells the member to also revoke in Notion. Smallest fix: add the same guidance text; a WHOOP-side revoke call needs WHOOP API confirmation first.
+
+**RB-018 runbook.** PR #97 adds `docs/runbooks/former-member-deletion.md` (private intake, identity verification, external revocation, counts-only dry run, ordered D1 delete, private confirmation) with tests that every member-keyed table is covered and that the delete block runs with foreign keys on.
+
+**RB-019 assessment.** `notion-client.mjs` maps a fetch exception to a synthetic 503 and an upstream 5xx to its real status, then both to `service_unavailable`. Splitting would separate Workers egress failures from Notion outages, but member guidance is identical (retry later), volume is a handful of events, and the HTTP status is already on the error. Not worth a change now; revisit if Notion errors become frequent.
+
+**RB-020 coordination rule (proposed).**
+1. One writer per branch. Before the first push, comment "Taking branch X" on its PR; the new-branch PR body may state it.
+2. Always fetch and compare the remote head with the head you tested immediately before pushing. If it moved, do not push: comment on the PR instead.
+3. Never force-push, rebase or amend a pushed commit.
+4. After any push, check whether a Codex review is pending for the new head before requesting one; never request twice for the same head.
+5. Every PR comment states the head SHA it refers to.
+
+Evidence: every commit since 11:00 AM on #91/#93/#94/#95 is authored and committed as Aaron Strasler with no signature (pushed through connectors using the owner's credentials). Commit metadata cannot tell agents apart; PR comments made with the cursor connector show `performed_via_github_app: cursor`.
+
+**PR #94 release steps (owner approval required).**
+1. Read-only check: custom domains are apex to `whoop-lens`, www to `whoop-lens-site`, auth to `whoop-lens-auth`; zone Worker routes are empty (verified 11:45 AM and 12:00 PM CT).
+2. Build: `wrangler deploy --dry-run --outdir <dir> -c cloudflare/oauth/resource/wrangler.jsonc` at the approved head; record sha256 of `<dir>/index.js`.
+3. Snapshot settings and the current deployment; dry run `node cloudflare/scripts/release-worker-content.mjs --worker whoop-lens --snapshot <snap> --bundle <dir>/index.js` (add `--offline` without an API token). Expect `apply:false`, `bindingCount` 38, unchanged settings; note the rollback version.
+4. With approval only: the same command with `--apply`.
+5. Smoke checks: `curl -sI https://whooplens.tech/` gives 301 to `https://www.whooplens.tech/`. `/privacy`, `/terms` and `/support` (with and without a trailing slash) give 301 to the slashed www path, and `/privacy?x=1` keeps `?x=1`. Then confirm: `/mcp` without a token gives 401; `/.well-known/oauth-protected-resource/mcp` and `/.well-known/assetlinks.json` give 200; POST `/` is not redirected; `https://www.whooplens.tech/privacy/` gives 200.
+6. Rollback: redeploy the recorded rollback version through the release script if any check fails.
+
+**Refresh monitoring (RB-001).** By 12:00 PM CT there was no new refresh-failure or 401 event since the 10:34 AM deploy. The only events since are 7 `hc_delivery_stored` successes. m2's next expiry is 12:31 PM CT.
+
 ## Review log
 
 | Date (CT) | Item | Head | Request | Codex response |
@@ -202,6 +235,10 @@ The Android suite can't run on the Grok box. Verification requirement: a CI job 
 | Oct 25, 4:30 AM | RB-001 | c09ef87 | @codex review | completed: no major issues |
 | Oct 25, 11:00 AM | backlog (this PR) | 4eb5ed2 | @codex review (Aaron) | completed 11:02 AM: 1 P2 (RB-004 classification). Accepted; RB-004 reopened |
 | Oct 25, 11:09 AM | RB-014 (#92) | 48d8349 | @codex review | completed 11:11 AM: no major issues |
-| pending | RB-012 deletion | dc71393 | PR not yet open | not requested |
-| pending | RB-012 apex | 8b6ece4 | PR not yet open | not requested |
-| pending | RB-004/RB-006 | 0f08223 | PR not yet open | not requested |
+| Oct 25, 11:27 AM | RB-012 deletion (#93) | dc71393 | @codex review | still showed running at 11:45 AM; superseded by e8bd3f4 |
+| Oct 25, 11:46 AM | RB-012 deletion (#93) | e8bd3f4 | @codex review (parent) | pending |
+| Oct 25, 11:42 AM | RB-012 apex (#94) | 485eb96 | @codex review | completed: no major issues |
+| Oct 25, 11:42 AM | RB-004/RB-006 (#95) | abaefa7 | @codex review | completed: no major issues |
+| Oct 25, 11:42 AM | backlog (this PR) | 1f5947d | @codex review | completed: no major issues |
+| Oct 25, 12:05 PM | RB-016 (#96) | e426abb | @codex review | pending |
+| Oct 25, 12:07 PM | RB-018 (#97) | d6db735 | @codex review | pending |
