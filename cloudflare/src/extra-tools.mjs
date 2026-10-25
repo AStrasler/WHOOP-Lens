@@ -16,7 +16,7 @@ const definitions=[
     category:{type:'string',enum:categories},limit:{type:'integer',minimum:1,maximum:25},
     offset:{type:'integer',minimum:0,maximum:1000},include_planned:{type:'boolean'}}],
   ['connect_whoop','Create a short-lived WHOOP consent link for the signed-in account. Requires user completion.',{}],
-  ['disconnect_whoop','Delete only this account’s stored WHOOP credentials on WhoopLens. The WHOOP account itself is unchanged.',{}],
+  ['disconnect_whoop','Delete this account’s stored WHOOP credentials on WhoopLens. The reply says whether WhoopLens access was also revoked at WHOOP; WHOOP’s own data is unchanged.',{}],
   ['import_health_connect_file','Store a user-selected WhoopLens Health Connect v2 JSON file for the signed-in account. This is a file import, not a live Health Connect sync.',{
     consent:{type:'string',enum:['store-health-connect-file']},
     file_json:{type:'string',minLength:2,maxLength:400000}}],
