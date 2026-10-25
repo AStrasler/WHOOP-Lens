@@ -106,7 +106,10 @@ test("refresh failure has its own message and code",async()=>{
     const r=await call(db,fetcher,"get_recovery");
     assert.match(r.result.content[0].text,/^WhoopLens could not renew this connection's WHOOP authorization\./);
     // A 400 from the token endpoint is WHOOP refusing the stored refresh
-    // token: same member message, but not labelled a temporary failure.
+    // token: not labelled temporary, and the member is not told to retry.
+    assert.match(r.result.content[0].text,/retrying will not help; reconnect WHOOP in WhoopLens/);
+    assert.doesNotMatch(r.result.content[0].text,/Retry shortly/);
+    assert.doesNotMatch(r.result.content[0].text,/invalid_grant|refresh_token|SECRET/i);
     assert.ok(rows(db).some(x=>x.code==="whoop_refresh_rejected"));
     assert.equal(rows(db).some(x=>x.code==="whoop_refresh_failed"),false);
   }finally{db.close();}
@@ -125,6 +128,7 @@ for(const [label,tokenEndpoint] of [
       const fetcher=async raw=>{if(new URL(raw).pathname.includes("/oauth/"))return tokenEndpoint();api++;return Response.json({});};
       const r=await call(db,fetcher,"get_recovery");
       assert.match(r.result.content[0].text,/^WhoopLens could not renew this connection's WHOOP authorization\./);
+      assert.match(r.result.content[0].text,/Retry shortly/);
       assert.deepEqual(rows(db).map(x=>x.code),["whoop_refresh_failed"]);
       assert.equal(api,0,"no WHOOP API call without a token");
       assert.deepEqual(db.sqlite.prepare("SELECT encrypted_access_token,encrypted_refresh_token,expires_at FROM whoop_connections WHERE user_id=?").get(M),before);
