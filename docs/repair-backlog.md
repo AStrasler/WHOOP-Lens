@@ -25,20 +25,21 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 
 | ID | Severity | Item | Status | Codex | Owner approval needed |
 |---|---|---|---|---|---|
-| RB-001 | High | WHOOP refresh-token reuse under concurrent reads (PR #87) | Merged and deployed; monitoring: 0 refresh failures since deploy, but no refresh observed yet (not proof) | completed, no major issues (6d57a83, c09ef87) | None now. Release already done by owner. |
+| RB-001 | High | WHOOP refresh-token reuse under concurrent reads (PR #87) | Merged and deployed. 11:25 AM check: 0 refresh events of any kind since deploy; no refresh has run on the new code yet. **Not validated** | completed, no major issues (6d57a83, c09ef87) | None now. Release already done by owner. |
 | RB-002 | High | m3's WHOOP connection is unusable after the Oct 24 reuse incident | Still broken; no safe server-side recovery found. Related message fix under RB-014 | see RB-014 | Member reconnect (not forced); owner decides on outreach |
 | RB-003 | Medium | m1's WHOOP access token expired since Oct 18; member inactive on WHOOP reads | Not a defect by itself; refresh state unknown until the next read. Reconnect message inaccuracy fixed under RB-014 | see RB-014 | Outreach decision (owner) |
-| RB-004 | Low | AI summary `summary_fallback_filter` events | Reopened: cause under investigation (Codex P2) | completed on backlog: P2 finding accepted | None |
+| RB-004 | Low | AI summary `summary_fallback_filter` events | Cause open; diagnostic fix on `fix/diagnostic-reason-codes` (0f08223), PR pending | backlog P2 accepted; fix: not yet requested | Merge/deploy (owner) |
 | RB-005 | Low | Health Connect `hc_only_unsupported_types` | Expected classification; tests added in PR #87 | completed (as part of #87) | None |
-| RB-006 | Low | Notion: 1 of 2 accounts connected; one `notion_request_failed` | Likely an unconnected account calling a Notion tool, not a defect (unconfirmed: status not stored) | not requested | None |
+| RB-006 | Low | Notion: 1 of 2 accounts connected; one `notion_request_failed` | Likely unconnected, not a defect. Distinct Notion codes in the same diagnostic PR as RB-004 | not yet requested | Merge/deploy (owner) |
 | RB-007 | Medium | Unauthorized WHOOP reads (401 diagnostics) | Explained by RB-001/RB-002; the classification works | completed (as part of #87) | None |
 | RB-008 | Medium | Samsung/Android auth persistence: no physical-device verification | Unverified | n/a | Owner device run |
 | RB-009 | Medium | Real second-account isolation: verified only synthetically | Unverified in production | n/a | Another member's explicit consent for a live test |
 | RB-010 | Low | Test suite on Node 22.14 can't run `oauth-provider` (`registerHooks`) | Known environment issue; CI uses Node 24 | n/a | None |
 | RB-011 | Low | Codex's OAuth suite count (123) vs Grok's (118) | Discrepancy, probably Node or OS version | n/a | None |
-| RB-012 | Medium | Older open items: apex root, Previews config, external privacy/terms links, GitHub Pages, deletion promise | Partly verified; deletion-request gap confirmed (privacy points to support, support has no private deletion route) | not requested | Owner for site wording and external settings |
+| RB-012 | Medium | Apex root, Previews config, external privacy/terms links, GitHub Pages, deletion promise | Deletion fix on `docs/private-deletion-requests` (dc71393); apex fix on `fix/apex-site-redirect` (8b6ece4); PRs pending. External links unverified | not yet requested (both) | Mailbox confirmation, merge, site and worker release, external settings |
 | RB-013 | Low | Android test suite (38 tests) not reproducible on the Grok box (no JDK/Gradle) | Tooling gap | n/a | None |
-| RB-014 | Medium | Rejected WHOOP refresh told members to "Retry shortly" although it's non-retryable | Fix on branch `fix/refresh-rejected-message` (48d8349); PR pending owner form | to be requested on the PR | Merge/deploy (owner) |
+| RB-014 | Medium | Rejected WHOOP refresh told members to "Retry shortly" although it's non-retryable | PR #92 (48d8349): CI 9/9 success, Codex completed with no findings. **Ready for release approval** | completed: no major issues (48d8349, 11:11 AM) | Merge + controlled release (owner) |
+| RB-015 | Low | GitHub Pages duplicates the www site | Documented; recommendation below | n/a | Owner: keep or disable Pages |
 
 ---
 
@@ -60,7 +61,8 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 - **Deployment:**
   - **E (Cloudflare GET):** whoop-lens version `a2fd99ec` has been at 100% since Oct 25, 10:34 AM CT, with 38 bindings. The deployed code contains the `HOLDER_DEADLINE` and `takeover-failed` markers.
   - **Rollback:** `9a20fdcb`.
-- **Post-deploy verification (11:30 AM CT check, read-only D1):**
+- **11:25 AM CT check:** 0 `whoop_refresh_*` and 0 `whoop_unauthorized_*` events since 15:34Z. m2's connection was last written at 15:30:11Z, before the deploy at 15:34:30Z. **No refresh has run on a2fd99ec yet.** Not validated: this needs at least one real refresh with no failure (m2 is due after 16:30Z on its next read).
+- **Post-deploy verification (11:00 AM CT check, read-only D1):**
   - **E:** since 15:34Z (deploy): 0 `whoop_refresh_failed`, 0 `whoop_refresh_rejected`, 0 `whoop_unauthorized_*`. Only events: 3 `hc_delivery_stored` successes (one per member).
   - **E:** refresh successes are not instrumented as diagnostic events, so a success count isn't available from D1.
   - **I:** m2's stored expiry is 16:30:10Z, which implies its last refresh was about 15:30Z, before the deploy. So **no refresh has run on the new code yet**. Zero failures is not proof. Next check: after 16:30Z (11:30 AM CT), when m2's next read must refresh.
@@ -75,7 +77,8 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 - **Safe recovery check:** no code path can mint a token without a valid refresh token. A retry is attempted on every member read anyway; nothing else is safe. WHOOP's OAuth docs give a refresh-token grant only; an invalid refresh token requires re-authorization.
 - **Confirming step (needs no approval, happens naturally):** m3's next read on a2fd99ec will record either `whoop_refresh_rejected` (confirmed) or `whoop_refresh_failed` (transient). We must not trigger it.
 - **Repair:** none server-side. RB-014 makes the message tell the member to reconnect instead of "retry shortly".
-- **Owner approval:** whether to contact m3 (not approved; not done).
+- **Owner approval:** whether to contact m3 (not approved; not done). A draft message is in the 11:25 AM report.
+- **E (code, relevant to the message):** reconnecting over an existing connection keeps the seat (`seatAvailableSql` allows an existing row). Disconnecting first frees the seat, and a reconnect could then fail if seats are full. So the member should **not** disconnect first.
 
 ## RB-003: m1's WHOOP connection expired since Oct 18
 - **E (`whoop_connections`):** m1 is on a public seat. The connection expired on Oct 18, 23:38Z and has not been written since. There are no diagnostic events for m1 since Oct 23.
@@ -129,6 +132,34 @@ Environment notes; see the summary table.
 - **Previews config on whoop-lens-site:** not changed. A Preview build ran on #91 (bot comment).
 - **Deletion promise:** **E:** privacy says that after a membership ends, deleting the stored connection must be requested "through the support page". The support page only offers a **public** GitHub issue and gives no deletion instructions. **I:** a member would have to identify themselves publicly to request deletion. That's a confirmed content gap. The code has member-side deletion for WHOOP disconnect, HC withdrawal and Notion disconnect, but there's no path once membership has ended. Fix needs owner wording (for example, a private contact) and a site deploy.
 
+## RB-012 update (11:25 AM CT)
+- **Deletion (E: code vs pages):**
+  - WHOOP disconnect deletes the connection, pending OAuth states and the cached weekly AI digest (the digest wasn't mentioned in privacy). It also records a revocation stamp.
+  - Health Connect withdrawal deletes HC records and revokes ingest tokens.
+  - Notion disconnect deletes credentials and settings.
+  - Journal withdrawal deletes context and journal.
+  - All of these need an active membership. Nothing deletes data for a former member.
+  - Privacy said to use the support page; support only offered public GitHub issues.
+- **Existing private channel (E):** `whoop-lens@outlook.com` is already published in the privacy statement and README for seat requests. It's the only private channel in the repo. No contact form or deletion endpoint exists.
+- **Repair (`docs/private-deletion-requests`, dc71393):**
+  - The support page gets a "Private requests and data deletion" section using that existing mailbox, listing the in-app deletion paths and the former-member path.
+  - Privacy (HTML and `Privacy.md`) points to the mailbox and adds the digest.
+  - A test checks the two pages agree.
+  - **The owner must confirm** this mailbox may be used for deletion requests before merging.
+  - **Residual:** handling a former member's deletion is a manual owner action (a D1 delete). No tool exists for it, so a runbook is needed.
+- **Apex (E):** `whooplens.tech` is a custom domain of the whoop-lens worker. `/`, `/privacy`, `/terms` and `/support` returned 404 with an empty body (the OAuth resource wrapper's default). `/mcp` returns 401 with a `resource_metadata` challenge, and `/.well-known/oauth-protected-resource/mcp` returns 200.
+- **Apex repair (`fix/apex-site-redirect`, 8b6ece4):** GET/HEAD on exactly those 7 paths returns 301 to `https://www.whooplens.tech/...`. Unit tests show `/mcp`, `/.well-known/*`, `/api/whoop/callback`, `/v1/*`, POST `/` and look-alike paths are not redirected. Needs a whoop-lens release; no DNS or route change.
+- **External URLs to configure (unverified; Grok can't read those consoles):**
+  - Privacy: `https://www.whooplens.tech/privacy/`
+  - Terms: `https://www.whooplens.tech/terms/`
+  - Support: `https://www.whooplens.tech/support/`
+  - All three return 200 live. The apex forms return 404 until the redirect ships.
+
+## RB-015: GitHub Pages
+- **E:** the repo has `has_pages: true`, and its homepage is `https://astrasler.github.io/WHOOP-Lens/`. It's served by GitHub.com and was last modified 15:34Z today, rebuilt from `docs/` on the merge to main. The privacy, terms and support pages exist there too; the content differs from www only by the path prefix. The `/pages` API needs auth (it returns 404 unauthenticated). Neither copy has a canonical link.
+- **I:** it's a second public copy of the same pages. It isn't harmful today, but it can drift, and the repo homepage points to it rather than www.
+- **Recommendation (owner decision):** either disable Pages and set the repo homepage to `https://www.whooplens.tech/`, or keep it and add `rel=canonical` to www. Not changed.
+
 ## RB-013
 The Android suite can't run on the Grok box. Verification requirement: a CI job or the owner runs `./gradlew test` and reports the count (expected 38).
 
@@ -137,7 +168,16 @@ The Android suite can't run on the Grok box. Verification requirement: a CI job 
 - **E (code):** `whoop_refresh_rejected` is classified non-retryable (`incomplete_setup`), but the member text was "Retry shortly; if it keeps failing, reconnect WHOOP".
 - **Repair:** rejected refreshes get "WHOOP no longer accepts the saved authorization, so retrying will not help; reconnect WHOOP in WhoopLens to continue." Transient refresh failures keep the retry text. No tokens or provider body appear in the message. Nothing reconnects or disconnects anything.
 - **Tests (Node 22.23.4):** `cloudflare/test/*.test.mjs` 496 pass, 1 skip, 0 fail; provider 23/23; docs and supabase 77/77; site 6/6. CI not run yet (no PR yet).
-- **Codex:** not requested yet (PR pending the owner's form).
+- **PR:** #92. **Codex:** completed at 11:11 AM CT on 48d8349: "Didn't find any major issues". No inline findings.
+- **CI (48d8349, per check):** www-site ×2, auth-controls ×2, stage-safety ×2 (runs the full `cloudflare/test`), oauth-dry-run ×2, and Workers Builds: whoop-lens-site. 9/9 success; none pending or skipped.
+- **Status:** ready for owner release approval. Not merged or deployed.
+- **Controlled release procedure (owner-approved only):**
+  1. After merge, check out the merge commit.
+  2. Bundle: `cloudflare/node_modules/.bin/wrangler deploy --dry-run --config cloudflare/oauth/resource/wrangler.jsonc --outdir <dir>`.
+  3. Snapshot `whoop-lens` `/settings` and `/deployments` via GET.
+  4. Run `node cloudflare/scripts/release-worker-content.mjs --worker whoop-lens --snapshot <snap> --bundle <dir>` as a dry run. Expect `settingsIdentity` unchanged and `bindingCount 38`.
+  5. Rollback = the live version at release time; at 11:25 AM CT that's `a2fd99ec-a4d8-4bb3-8425-2d64fc81c800` (100%; 38 bindings by GET). Re-read it immediately before release.
+  6. Run `--apply` only with explicit owner approval. Never plain `wrangler deploy`.
 - **Risks:** text only. ChatGPT may paraphrase.
 
 ---
@@ -150,3 +190,7 @@ The Android suite can't run on the Grok box. Verification requirement: a CI job 
 | Oct 25, 4:08 AM | RB-001 | 6d57a83 | @codex review | completed: no major issues |
 | Oct 25, 4:30 AM | RB-001 | c09ef87 | @codex review | completed: no major issues |
 | Oct 25, 11:00 AM | backlog (this PR) | 4eb5ed2 | @codex review (Aaron) | completed 11:02 AM: 1 P2 (RB-004 classification). Accepted; RB-004 reopened |
+| Oct 25, 11:09 AM | RB-014 (#92) | 48d8349 | @codex review | completed 11:11 AM: no major issues |
+| pending | RB-012 deletion | dc71393 | PR not yet open | not requested |
+| pending | RB-012 apex | 8b6ece4 | PR not yet open | not requested |
+| pending | RB-004/RB-006 | 0f08223 | PR not yet open | not requested |
