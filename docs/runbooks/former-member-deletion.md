@@ -1,0 +1,143 @@
+# Runbook: deleting a former member's data
+
+Owner-only, manual. There is no in-product path once a membership has ended:
+every member-side delete (WHOOP disconnect, Health Connect withdrawal, Notion
+disconnect, journal withdrawal) requires an active membership. Nothing deletes a
+former member's data automatically. Retention cleanup covers only diagnostic
+codes (30 days) and resolved reports (180 days).
+
+Never discuss the request, the member, or the outcome in a public GitHub issue,
+pull request, commit message, or log. Never paste the member's user id,
+email, or any health data into a public place.
+
+## 1. Receive and verify the request (private channel only)
+
+1. The request must arrive by the private channel published on the support
+   page (currently pending owner confirmation of the mailbox). If it arrives
+   publicly, do not act on it there: reply privately or ask the person to use
+   the private channel, without confirming whether they were a member.
+2. Verify identity before deleting anything. A matching From address is never
+   enough on its own: sender addresses can be spoofed, and the seat-request email
+   was unverified form input. Use one of:
+   - **Authenticated sign-in (preferred):** the requester completes a fresh
+     sign-in at `auth.whooplens.tech` with the same identity-provider account,
+     and the owner confirms that the resulting identity maps to the same
+     `user_id` in `identity_links` / `access_identity_links`.
+   - **Challenge to an independently established address:** the owner sends a
+     random one-time code (at least 8 characters, valid 24 hours) to the
+     address the identity provider verified for that account (not to the
+     address the request came from, unless they are the same verified address).
+     The requester must send the code back on the private channel.
+   Do not accept a user id, screenshot, name or forwarded email as proof. If
+   verification fails, reply without confirming whether the person was ever a
+   member.
+3. Resolve the WhoopLens `user_id` privately (owner console / D1 lookup by the
+   verified identity in `identity_links` / `access_identity_links`). Record it
+   only in a private note. Record which mode the verified requester asked for
+   (section 4): **health-data-only** (the account stays usable) or **full
+   account deletion**. If unclear, ask; never default to full deletion. For an
+   active member, point them to the in-app tools first.
+
+## 2. Revoke external access first
+
+1. **WHOOP:** WhoopLens disconnect only deletes the stored tokens locally; it
+   does not call WHOOP. Ask the person to remove WhoopLens under connected apps
+   in their WHOOP account. Then delete the stored connection (step 4), which
+   ends WhoopLens's ability to refresh.
+2. **Notion:** ask the person to remove the WhoopLens integration in Notion
+   settings. WhoopLens never deletes Notion pages.
+3. **Health Connect phone ingest:** deleting `health_connect_ingest_tokens`
+   (step 4) stops the webhook accepting their phone's uploads.
+4. **MCP OAuth grants (auth worker, `OAUTH_KV`), full account deletion only:** list the user's grants with
+   the provider's `listUserGrants(userId)` and revoke each with
+   `revokeGrant(grantId, userId)` from an owner-run script, or delete the KV keys
+   prefixed `grant:<user_id>:` and `token:<user_id>:`. Count first, then delete.
+   In health-data-only mode keep the grants: they hold no health data and the
+   member's assistant connection must keep working.
+
+## 3. Dry run (counts only)
+
+Run against the production D1 database (`whoop-lens-migration`) with the
+validated id substituted for `:U` (must match
+`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`):
+
+```sql
+SELECT 'whoop_connections', COUNT(*) FROM whoop_connections WHERE user_id=':U'
+UNION ALL SELECT 'whoop_oauth_states', COUNT(*) FROM whoop_oauth_states WHERE user_id=':U'
+UNION ALL SELECT 'whoop_recovery', COUNT(*) FROM whoop_recovery WHERE user_id=':U'
+UNION ALL SELECT 'whoop_sleep', COUNT(*) FROM whoop_sleep WHERE user_id=':U'
+UNION ALL SELECT 'health_connect_records', COUNT(*) FROM health_connect_records WHERE user_id=':U'
+UNION ALL SELECT 'samsung_health_records', COUNT(*) FROM samsung_health_records WHERE user_id=':U'
+UNION ALL SELECT 'medical_context', COUNT(*) FROM medical_context WHERE user_id=':U'
+UNION ALL SELECT 'flare_journal', COUNT(*) FROM flare_journal WHERE user_id=':U'
+UNION ALL SELECT 'ai_weekly_digest', COUNT(*) FROM ai_weekly_digest WHERE scope='user::U' OR scope LIKE 'user::U:%'
+UNION ALL SELECT 'diagnostic_events', COUNT(*) FROM diagnostic_events WHERE user_key=':U';
+```
+
+Keep only the counts in the private note.
+
+## 4. Delete (owner approval per request)
+
+Two modes. Each is one D1 transaction, children before parents (most tables
+reference `identity_links` without `ON DELETE CASCADE`).
+
+### 4a. Health-data-only (account stays usable)
+
+Removes WHOOP, Health Connect, Samsung, medical context, journal, Notion,
+issue-report, diagnostic and AI data. It **keeps** the rows sign-in needs:
+`access_identity_links` (the auth worker maps the Access subject to the user
+here, `enabled=1`), `identity_links` and `whoop_members` (active-membership
+check), plus `whoop_waitlist`, `whoop_member_request_budget` and the
+`OAUTH_KV` grants. The member can sign in again and reconnect WHOOP.
+
+```sql
+DELETE FROM notion_update_previews WHERE user_id=':U';
+DELETE FROM notion_oauth_states WHERE user_id=':U';
+DELETE FROM notion_accounts WHERE user_id=':U';
+DELETE FROM whoop_oauth_states WHERE user_id=':U';
+DELETE FROM whoop_connections WHERE user_id=':U';
+DELETE FROM whoop_credential_revocations WHERE user_id=':U';
+DELETE FROM whoop_connection_generations WHERE user_id=':U';
+DELETE FROM whoop_recovery WHERE user_id=':U';
+DELETE FROM whoop_sleep WHERE user_id=':U';
+DELETE FROM health_connect_ingest_tokens WHERE user_id=':U';
+DELETE FROM health_connect_records WHERE user_id=':U';
+DELETE FROM health_import_consent WHERE user_id=':U';
+DELETE FROM samsung_health_records WHERE user_id=':U';
+DELETE FROM medical_context WHERE user_id=':U';
+DELETE FROM flare_journal WHERE user_id=':U';
+DELETE FROM flare_consent WHERE user_id=':U';
+DELETE FROM issue_report_approvals WHERE user_id=':U';
+DELETE FROM issue_reports WHERE user_id=':U';
+DELETE FROM diagnostic_events WHERE user_key=':U';
+DELETE FROM ai_weekly_digest WHERE scope='user::U' OR scope LIKE 'user::U:%';
+DELETE FROM ai_usage WHERE scope='user::U';
+```
+
+### 4b. Full account deletion
+
+Run the 4a block, then this block, then remove the `OAUTH_KV` grants (step 2.4).
+Deleting `identity_links` and `whoop_members` frees the seat; the person must
+request a new seat to return.
+
+```sql
+DELETE FROM whoop_member_request_budget WHERE user_id=':U';
+DELETE FROM whoop_waitlist WHERE user_id=':U';
+DELETE FROM access_identity_links WHERE user_id=':U';
+DELETE FROM whoop_members WHERE user_id=':U';
+DELETE FROM identity_links WHERE user_id=':U';
+```
+
+Re-run the step 3 counts; every count must be 0 in either mode. For 4b also
+confirm zero rows in `access_identity_links`, `whoop_members` and
+`identity_links` for the id. For 4a confirm those three still have their rows.
+`seat_request_delivery` holds only an email hash with a short expiry and is
+cleaned automatically.
+
+## 5. Confirm privately
+
+Reply on the same private channel: what was deleted (categories, not counts of
+health records), what they must revoke themselves (WHOOP, Notion), and that
+ChatGPT/Codex conversation history is controlled by their OpenAI settings.
+Delete the private working note once confirmed. Do not record the request
+anywhere public.
