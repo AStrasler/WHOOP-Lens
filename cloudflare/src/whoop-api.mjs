@@ -93,31 +93,14 @@ async function storedRotation(db,id,previous,key,now){
   if(!Number.isFinite(expiry)||expiry<=now()+60_000)return null;
   return openToken(row.encrypted_access_token,id,"access",key);
 }
-// Refresh serialization. WHOOP rotates refresh tokens, so two refreshes that
-// send the same stored refresh token cannot both succeed; a lost race discards
-// one rotation and (observed in production on 2026-10-24) the connection's
-// stored tokens were then rejected by WHOOP. Two layers, both per member:
-// 1. In this isolate, concurrent callers share one in-flight refresh.
-// 2. Across isolates, a short D1 lease lets only one caller contact WHOOP;
-//    the others wait for the stored rotation. The lease is a marker in
-//    whoop_connections.updated_at ("lease:" + claim time), set by a
-//    compare-and-set on the row that still holds the old refresh token. Only a
-//    fresh marker (under LEASE_SECONDS old) blocks; ordinary timestamps never
-//    do, and the next stored rotation or reconnect rewrites updated_at. A
-//    marker left by a failed attempt shows when the last refresh was tried.
-//    A stale-lease takeover rejected with no stored rotation leaves
-//    "takeover-failed:" + claim time (never blocks a claim, never a takeover).
-//    No schema change; no other code reads this column.
+// Per-member single flight plus a persistent reservation. Reservations expire
+// before dispatch, but a dispatched refresh must never be taken over: WHOOP
+// may already have consumed the stored token while its rotated pair is waiting
+// for D1. A crashed dispatched holder requires reconnect rather than token reuse.
+// No schema change; reconnect replaces the marker and credentials together.
 const inflightRefresh=new Map();
-// 120 s, not 30 s: once WHOOP has rotated the token, a holder whose D1 write
-// stalls must keep the lease, or a takeover resends the rotated-away token
-// (reuse). A crashed holder costs at most 120 s of retryable failures, since
-// every failure path clears its own marker.
 const LEASE_SECONDS=120;
-// A holder's refresh is bounded: the token fetch aborts at 12 s, then a few D1
-// writes. Followers wait up to this long after the holder's claim (well inside
-// the 120 s lease, so no follower can take over a live holder) and stop early
-// once the marker is gone, i.e. the holder stored a rotation or gave up.
+// Followers remain bounded even when the holder's persistence is stalled.
 const HOLDER_DEADLINE_MS=15_000;
 async function waitForHolder(db,id,row,key,now,sleep){
   for(let attempt=0;attempt<=HOLDER_DEADLINE_MS/500+1;attempt++){
@@ -125,16 +108,16 @@ async function waitForHolder(db,id,row,key,now,sleep){
     const token=await storedRotation(db,id,row,key,now);
     if(token)return token;
     const current=await db.prepare("SELECT updated_at FROM whoop_connections WHERE user_id=?1 LIMIT 1").bind(id).first();
-    const marker=typeof current?.updated_at==="string"&&current.updated_at.startsWith("lease:")?Date.parse(current.updated_at.slice(6)):NaN;
+    const marker=typeof current?.updated_at==="string"&&/^(lease:|refreshing:)/.test(current.updated_at)?Date.parse(current.updated_at.replace(/^[^:]+:/,"")):NaN;
     // No live marker: the holder finished. One last read covers a rotation
     // stored between the two queries.
-    if(!Number.isFinite(marker)||now()-marker>=LEASE_SECONDS*1000)return storedRotation(db,id,row,key,now);
+    if(!Number.isFinite(marker)||(current.updated_at.startsWith("lease:")&&now()-marker>=LEASE_SECONDS*1000))return storedRotation(db,id,row,key,now);
     if(now()>marker+HOLDER_DEADLINE_MS)return null;
   }
   return null;
 }
 const claimLeaseSql="UPDATE whoop_connections SET updated_at='lease:'||?3 "+
-  "WHERE user_id=?1 AND encrypted_refresh_token=?2 AND NOT ("+
+  "WHERE user_id=?1 AND encrypted_refresh_token=?2 AND substr(updated_at,1,11)<>'refreshing:' AND NOT ("+
   "substr(updated_at,1,6)='lease:' AND julianday(substr(updated_at,7)) IS NOT NULL AND "+
   "julianday(substr(updated_at,7))>julianday(?3)-"+LEASE_SECONDS+"/86400.0 AND "+
   "julianday(substr(updated_at,7))<=julianday(?3)+"+LEASE_SECONDS+"/86400.0)";
@@ -198,6 +181,13 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
     if(winner)return winner;
     throw Error("WHOOP refresh raced or failed");
   }
+  // Fence dispatch against an expired reservation's late holder. Once sent,
+  // this marker blocks takeover even beyond the reservation timeout.
+  const dispatchMarker='refreshing:'+claimedAt;
+  const dispatch=await db.prepare("UPDATE whoop_connections SET updated_at=?3 WHERE user_id=?1 AND encrypted_refresh_token=?2 AND updated_at=?4")
+    .bind(id,row.encrypted_refresh_token,dispatchMarker,'lease:'+claimedAt).run();
+  if(!dispatch?.success||dispatch.meta?.changes!==1)throw Error("WHOOP refresh raced or failed");
+  let receivedRotation=false;
   // Any outcome that did not store a rotation restores the previous
   // updated_at (only if our marker is still there), so a 429, outage or
   // rejected token leaves the row exactly as it was and never blocks the
@@ -250,6 +240,7 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
        Number(tokens.expires_in)>31_536_000 ||
        (tokens.refresh_token!=null&&typeof tokens.refresh_token!=="string"))
       throw Error("Invalid WHOOP refresh response");
+    receivedRotation=true;
     const nextRefresh=tokens.refresh_token||refresh;
     const nextAccessEnvelope=await sealWithKeyring(tokens.access_token,{userId:id,purpose:"access",keys:key});
     const nextRefreshEnvelope=await sealWithKeyring(nextRefresh,{userId:id,purpose:"refresh",keys:key});
@@ -259,9 +250,9 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
     const write=expected=>db.prepare(
       "UPDATE whoop_connections SET encrypted_access_token=?1,encrypted_refresh_token=?2,"+
       "expires_at=?3,scope=?4,encryption_key_version=?7,updated_at=CURRENT_TIMESTAMP "+
-      "WHERE user_id=?5 AND encrypted_refresh_token=?6"
+      "WHERE user_id=?5 AND encrypted_refresh_token=?6 AND updated_at=?8"
     ).bind(nextAccessEnvelope,nextRefreshEnvelope,expiresAt,scope,id,expected,
-           key.current==="k2"?"k2":"v1").run();
+           key.current==="k2"?"k2":"v1",dispatchMarker).run();
     let result=await write(row.encrypted_refresh_token);
     if(!result.success||result.meta?.changes!==1){
       // The ciphertext may have changed only because the row was re-encrypted
@@ -286,8 +277,10 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
   };
   try{return await rotate();}
   catch(error){
-    try{await db.prepare("UPDATE whoop_connections SET updated_at=?3 WHERE user_id=?1 AND updated_at=?2")
-      .bind(id,'lease:'+claimedAt,error?.failedTakeover?'takeover-failed:'+claimedAt:row.updated_at).run();}catch{/* the marker expires on its own */}
+    // Preserve the dispatch marker if WHOOP returned a usable rotation but
+    // encryption/persistence failed; retrying the old token could revoke it.
+    if(!receivedRotation)try{await db.prepare("UPDATE whoop_connections SET updated_at=?3 WHERE user_id=?1 AND updated_at=?2")
+      .bind(id,dispatchMarker,error?.failedTakeover?'takeover-failed:'+claimedAt:row.updated_at).run();}catch{/* retain the marker rather than risking duplicate dispatch */}
     throw error;
   }
 }

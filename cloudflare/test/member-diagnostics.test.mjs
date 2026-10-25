@@ -204,7 +204,13 @@ test('Kimberly-like delivery that stores nothing is captured as partial for her 
     const amy=data(await call(db,AMYLIKE,'issue_health_connect_ingest_token',{consent:ISSUE_CONSENT}));
     await webhook(db,amy.header_value.slice(7),envelope({steps:[{count:1200,start_time:'2026-10-17T00:00:00Z',end_time:'2026-10-18T00:00:00Z',metadata:{id:'s1',lastModifiedTime:'2026-10-18T01:00:00Z'}}]}));
     assert.ok(rows(db).some(x=>x.code==='hc_delivery_stored'&&x.outcome==='success'&&x.user_key===AMYLIKE));
-    assert.ok(!JSON.stringify(rows(db)).includes('1200'));
+    // Timestamps and random request IDs can contain the digits 1200. Check
+    // the complete allowlisted row shape instead of accidental substrings.
+    for(const event of rows(db)){
+      assert.deepEqual(Object.keys(event).sort(),['id','user_key','category','subsystem','code','outcome','retryable','bucket','count','first_at','last_at','request_id'].sort());
+      assert.ok(['hc_only_unsupported_types','hc_delivery_stored'].includes(event.code));
+      assert.equal(event.category,'health_connect');
+    }
   }finally{db.close();}
 });
 

@@ -7,6 +7,7 @@
 // Synthetic members, tokens and records only.
 import assert from "node:assert/strict";
 import test from "node:test";
+import {fork} from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -202,7 +203,7 @@ test("a follower in another isolate outwaits a slow holder (over 4.5 s, under th
   const clock=virtualClock();
   try{
     const holder=call(router(w),db,"get_recovery");
-    while(!String(row(db).updated_at).startsWith("lease:"))await new Promise(r=>setTimeout(r,2));
+    while(!/^(lease:|refreshing:)/.test(String(row(db).updated_at)))await new Promise(r=>setTimeout(r,2));
     let settled=false;
     const follower=call(routerWith(w,other.callWhoop,clock),db,"get_sleep").finally(()=>{settled=true;});
     while(!settled&&clock.advanced()<8000)await new Promise(r=>setTimeout(r,2));
@@ -286,9 +287,11 @@ test("L2: a write stalled 31 s after WHOOP rotated: the late caller does not reu
   assert.equal(o.refresh,1);
   assert.doesNotMatch(String(o.marker),/^lease:/);
 });
-test("L2 beyond the lease (stall over 120 s): a takeover's rejection re-reads state and is not reported as rejected",async()=>{
+test("L2 beyond the lease (stall over 120 s): a stalled rotation never resends the consumed token and remains usable",async()=>{
   const o=await stalledHolder(121_000,7);
-  assert.equal(o.refreshesWhileStalled,2,"a takeover after the full lease is the bounded, documented limit");
+  assert.equal(o.refreshesWhileStalled,1,"never resend a token while its successful rotation is being persisted");
+  assert.equal(failed(o.after),false,"the connection remains usable after the stalled write lands");
+  assert.equal(o.refresh,1);
   assert.ok(!o.lateCodes.includes("whoop_refresh_rejected"),"classified as a retryable refresh failure");
   assert.ok(o.lateCodes.includes("whoop_refresh_failed"));
 });
@@ -310,7 +313,7 @@ test("same isolate: a caller sharing a stalled refresh gives up at the holder de
     assert.deepEqual(codes(db),["whoop_refresh_failed"],"retryable, never rejected");
     assert.ok(clock.advanced()>=15000&&clock.advanced()<120000);
     assert.equal(w.log.refresh,1,"no second refresh");
-    assert.match(String(row(db).updated_at),/^lease:/,"the holder keeps its lease");
+    assert.match(String(row(db).updated_at),/^refreshing:/,"the holder keeps its dispatch marker");
     release();
     assert.equal(failed(await holder),false,"the holder still stores its rotation");
     assert.equal(failed(await call(routerWith(w,mod.callWhoop,clock),db,"get_cycles")),false);
@@ -382,5 +385,77 @@ test("a stale holder write never overwrites a newer rotation stored by another i
       return res;};
     await call(router(w),db,"get_recovery");
     assert.equal(row(db).r,newer,"the compare-and-set write lost and left the newer token in place");
+  }finally{db.close();}
+});
+
+
+test("three independent processes share one SQLite file: ten expired reads send exactly one refresh",{timeout:15000},async()=>{
+  const path=join(tmpdir(),"wl-process-"+randomUUID()+".db");
+  const base=await fixture({path}),w=rotatingWhoop({delay:80});
+  const children=[];
+  try{
+    const ready=[],done=[];
+    for(let i=0;i<3;i++){
+      const child=fork(new URL('./fixtures/whoop-refresh-process.mjs',import.meta.url),[],{stdio:['ignore','ignore','ignore','ipc']});
+      children.push(child);
+      ready.push(new Promise(resolve=>child.on('message',m=>{if(m.kind==='ready')resolve();})));
+      done.push(new Promise((resolve,reject)=>{
+        child.on('error',reject);
+        child.on('exit',code=>{if(code)reject(Error('Synthetic child failed'));});
+        child.on('message',async m=>{
+          if(m.kind==='fetch'){
+            const response=await w.fetch(m.url,{body:m.body,headers:m.headers});
+            child.send({kind:'response',id:m.id,status:response.status,body:await response.text()});
+          }
+          if(m.kind==='done')resolve(m.count);
+          if(m.kind==='failed')reject(Error('Synthetic child read failed'));
+        });
+      }));
+      child.send({kind:'init',path,member:M,env});
+    }
+    await Promise.all(ready);
+    children.forEach((c,i)=>c.send({kind:'run',count:i===0?4:3}));
+    assert.deepEqual(await Promise.all(done),[4,3,3]);
+    assert.equal(w.log.refresh,1);
+    assert.equal(w.log.api.length,10);assert.ok(w.log.api.every(x=>x.ok));
+    assert.doesNotMatch(String(row(base).updated_at),/^(lease:|refreshing:)/);
+  }finally{
+    await Promise.all(children.map(c=>new Promise(resolve=>{if(c.exitCode!==null)return resolve();c.once('exit',resolve);c.kill();})));
+    base.close();rmSync(path,{force:true});rmSync(path+'-wal',{force:true});rmSync(path+'-shm',{force:true});
+  }
+});
+
+test("failed rotation persistence keeps its dispatch fence; later callers never resend the consumed token",async()=>{
+  const db=await fixture(),w=rotatingWhoop({delay:1});
+  const broken={...db,prepare(sql){
+    if(!sql.startsWith('UPDATE whoop_connections SET encrypted_access_token='))return db.prepare(sql);
+    return {bind(){return this;},async run(){throw Error('Synthetic storage unavailable');}};
+  }};
+  try{
+    const before=row(db);
+    await assert.rejects(callWhoop(broken,M,'sleep',env,{}, {fetcher:w.fetch}));
+    assert.match(row(db).updated_at,/^refreshing:/);
+    assert.equal(row(db).r,before.r);
+    const other=await import('../src/whoop-api.mjs?failed-persist');
+    const clock=virtualClock();await clock.sleep(121000);
+    await assert.rejects(other.callWhoop(db,M,'sleep',env,{}, {fetcher:w.fetch,...clock}),/refresh raced or failed/);
+    assert.equal(w.log.refresh,1);
+  }finally{db.close();}
+});
+
+test("a superseded reservation cannot dispatch WHOOP even with the same stored ciphertext",async()=>{
+  const db=await fixture(),w=rotatingWhoop();let replaced=false;
+  const superseded={...db,prepare(sql){
+    if(!sql.startsWith('UPDATE whoop_connections SET updated_at=?3 WHERE user_id=?1 AND encrypted_refresh_token=?2'))return db.prepare(sql);
+    const st=db.prepare(sql);
+    return {bind(...args){st.bind(...args);return this;},async run(){
+      db.sqlite.prepare("UPDATE whoop_connections SET updated_at='refreshing:2099-01-01T00:00:00.000Z' WHERE user_id=?").run(M);
+      replaced=true;return st.run();
+    }};
+  }};
+  try{
+    await assert.rejects(callWhoop(superseded,M,'sleep',env,{}, {fetcher:w.fetch}),/refresh raced or failed/);
+    assert.equal(replaced,true);assert.equal(w.log.refresh,0);
+    assert.equal(row(db).updated_at,'refreshing:2099-01-01T00:00:00.000Z');
   }finally{db.close();}
 });
