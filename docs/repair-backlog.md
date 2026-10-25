@@ -181,7 +181,7 @@ The Android suite can't run on the Grok box. Verification requirement: a CI job 
   2. Bundle: `cloudflare/node_modules/.bin/wrangler deploy --dry-run --config cloudflare/oauth/resource/wrangler.jsonc --outdir <dir>`.
   3. Snapshot `whoop-lens` `/settings` and `/deployments` via GET.
   4. Run `node cloudflare/scripts/release-worker-content.mjs --worker whoop-lens --snapshot <snap> --bundle <dir>/index.js` as a dry run (pass the bundled file that `wrangler deploy --dry-run --outdir <dir>` writes, not the directory; see `docs/release-checklist-20261024.md`). Expect `settingsIdentity` unchanged and `bindingCount 38`.
-  5. Rollback = the live version at release time; at 11:25 AM CT that's `a2fd99ec-a4d8-4bb3-8425-2d64fc81c800` (100%; 38 bindings by GET). Re-read it immediately before release.
+  5. Rollback (Cloudflare Deployments or `wrangler rollback <version-id> --name whoop-lens`, not the release script; then confirm settings equal the snapshot) = the live version at release time; at 11:25 AM CT that's `a2fd99ec-a4d8-4bb3-8425-2d64fc81c800` (100%; 38 bindings by GET). Re-read it immediately before release.
   6. Run `--apply` only with explicit owner approval. Never plain `wrangler deploy`.
 - **Risks:** text only. ChatGPT may paraphrase.
 
@@ -222,7 +222,7 @@ Evidence: every commit since 11:00 AM on #91/#93/#94/#95 is authored and committ
 3. Snapshot settings and the current deployment; dry run `node cloudflare/scripts/release-worker-content.mjs --worker whoop-lens --snapshot <snap> --bundle <dir>/index.js` (add `--offline` without an API token). Expect `apply:false`, `bindingCount` 38, unchanged settings; note the rollback version.
 4. With approval only: the same command with `--apply`.
 5. Smoke checks: `curl -sI https://whooplens.tech/` gives 301 to `https://www.whooplens.tech/`. `/privacy`, `/terms` and `/support` (with and without a trailing slash) give 301 to the slashed www path, and `/privacy?x=1` keeps `?x=1`. Then confirm: `/mcp` without a token gives 401; `/.well-known/oauth-protected-resource/mcp` and `/.well-known/assetlinks.json` give 200; POST `/` is not redirected; `https://www.whooplens.tech/privacy/` gives 200.
-6. Rollback: redeploy the recorded rollback version through the release script if any check fails.
+6. Rollback (owner approval; the release script cannot redeploy an existing version): restore the recorded version through Cloudflare Deployments or `wrangler rollback <version-id> --name whoop-lens`, as in `docs/release-checklist-20261024.md`. Then GET settings and confirm they equal the saved snapshot (38 bindings), and repeat the smoke checks. Capture a fresh snapshot before any later release, because the pre-release one now fails the version-drift check.
 
 **Refresh monitoring (RB-001).** By 12:00 PM CT there was no new refresh-failure or 401 event since the 10:34 AM deploy. The only events since are 7 `hc_delivery_stored` successes. m2's next expiry is 12:31 PM CT.
 
