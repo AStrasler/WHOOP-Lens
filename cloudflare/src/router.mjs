@@ -48,7 +48,7 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
     // Deliberately disabled. This is not enabled by creating a D1 database or
     // deploying a Worker; a separately reviewed release must opt in explicitly.
     if (env?.MIGRATION_API_ENABLED !== "true")
-      return json({error:"WHOOP Lens Cloudflare migration not activated"},503);
+      return json({error:"WhoopLens Cloudflare migration not activated"},503);
 
     // MCP is gated independently, including tool discovery. No session details
     // or health metadata may leak to unauthenticated callers.
@@ -88,7 +88,7 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
         const userId=await verifyIdentity(request,env);
         if(!await activeMembership(env.DB,userId)){
           await capture(env,env.DB,{category:"authorization",subsystem:"mcp",code:"membership_inactive",outcome:"fail",retryable:false,requestId,userId});
-          return json({error:"Not authorized for WHOOP Lens"},403);
+          return json({error:"Not authorized for WhoopLens"},403);
         }
         const result=await handleMcpRpc(message,{
           db:env.DB,userId,env,whoopRequest,whoopAuthorize,requestId
@@ -120,7 +120,7 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       try{
         const userId=await verifyIdentity(request,env);
         if(!await activeMembership(env.DB,userId))
-          return json({error:"Not authorized for WHOOP Lens"},403);
+          return json({error:"Not authorized for WhoopLens"},403);
         return healthConnectHttp(request,env,userId);
       }catch(error){
         if(error instanceof AccessDenied)return json({error:"Unauthorized"},error.status);
@@ -164,7 +164,7 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
     try {
       const userId = await verifyIdentity(request, env);
       const permitted = await activeMembership(env.DB, userId);
-      if (!permitted) return json({error:"Not authorized for WHOOP Lens"},403);
+      if (!permitted) return json({error:"Not authorized for WhoopLens"},403);
       if (url.pathname === "/v1/whoop/connect") {
         if (env?.WHOOP_OAUTH_ENABLED !== "true")
           return json({error:"WHOOP Cloudflare OAuth not activated"},503);
