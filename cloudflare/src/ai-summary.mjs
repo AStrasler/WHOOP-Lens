@@ -73,7 +73,7 @@ const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
   "percent percentage degrees celsius beats minute minutes milliseconds ms within").split(" "));
 // Accepted only when stats.stress_estimate is present; with the flag off the
 // vocabulary is identical to main.
-const STRESS_WORDS=new Set("experimental physiological stress estimate lens band elevated low high confidence moderate index unavailable insufficient".split(" "));
+const STRESS_WORDS=new Set("experimental physiological stress estimate lens whooplens band elevated low high confidence moderate index unavailable insufficient".split(" "));
 const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps respiratory "+
   "spo spo2 skin temperature performance score bpm").split(" "));
 // Context may switch only for a named other measurement, not for loose words
