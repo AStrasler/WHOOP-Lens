@@ -32,6 +32,27 @@ test('Android App Links and fallback are public, match site assets, and never re
   assert.doesNotMatch(await callback.text(), /synthetic-private|<script|https?:/);
 });
 
+test('apex root and site paths 301 to www; MCP, OAuth and API paths are unchanged', async () => {
+  const {default: resource} = await import('../../oauth/resource/src/index.mjs');
+  for (const [path, target] of [['/', '/'], ['/privacy', '/privacy/'], ['/privacy/', '/privacy/'], ['/terms', '/terms/'], ['/terms/', '/terms/'], ['/support', '/support/'], ['/support/', '/support/']]) {
+    for (const method of ['GET', 'HEAD']) {
+      const r = await resource.fetch(new Request('https://whooplens.tech' + path + '?x=1', {method}), {}, {});
+      assert.equal(r.status, 301, method + ' ' + path);
+      assert.equal(r.headers.get('location'), 'https://www.whooplens.tech' + target);
+    }
+  }
+  const env = {OAUTH_RESOURCE_ENABLED: 'false'};
+  for (const path of ['/mcp', '/.well-known/oauth-protected-resource/mcp', '/api/whoop/callback', '/v1/health-connect', '/v1/status', '/privacy/extra', '/PRIVACY']) {
+    const r = await resource.fetch(new Request('https://whooplens.tech' + path), env, {});
+    assert.notEqual(r.status, 301, path);
+    assert.equal(r.headers.get('location'), null, path);
+  }
+  const post = await resource.fetch(new Request('https://whooplens.tech/', {method: 'POST'}), env, {});
+  assert.notEqual(post.status, 301, 'non-GET is never redirected');
+  const links = await resource.fetch(new Request('https://whooplens.tech/.well-known/assetlinks.json'), {}, {});
+  assert.equal(links.status, 200);
+});
+
 test('live Worker discovery advertises DCR and registration works without metadata fetches',async t=>{
   t.mock.method(globalThis,'fetch',()=>{throw Error('Metadata origin must not be needed');});
   const env={OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true'};
