@@ -25,7 +25,7 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 
 | ID | Severity | Item | Status | Codex | Owner approval needed |
 |---|---|---|---|---|---|
-| RB-001 | High | WHOOP refresh-token reuse under concurrent reads (PR #87) | Merged and deployed 10:34 AM CT. Natural refreshes seen for m2 at 11:31 AM and 12:32 PM CT (D1 `updated_at`/`expires_at` advanced by 1 h). No `whoop_refresh_*` failures or 401s since deploy. Only 2 samples, 1 member. **Not declared resolved** | completed, no major issues (6d57a83, c09ef87) | None now; keep monitoring |
+| RB-001 | High | WHOOP refresh-token reuse under concurrent reads (PR #87) | Merged and deployed 10:34 AM CT. Natural refreshes seen for m2 at 11:31 AM, 12:32 PM and 1:33 PM CT (D1 `updated_at`/`expires_at` advanced by 1 h). No `whoop_refresh_*` failures or 401s since deploy. Only 3 samples, 1 member. **Not declared resolved** | completed, no major issues (6d57a83, c09ef87) | None now; keep monitoring |
 | RB-002 | High | m3's WHOOP connection is unusable after the Oct 24 reuse incident | Still broken; no safe server-side recovery found. Related message fix under RB-014 | see RB-014 | Member reconnect (not forced); owner decides on outreach |
 | RB-003 | Medium | m1's WHOOP access token expired since Oct 18; member inactive on WHOOP reads | Not a defect by itself; refresh state unknown until the next read. Reconnect message inaccuracy fixed under RB-014 | see RB-014 | Outreach decision (owner) |
 | RB-004 | Low | AI summary `summary_fallback_filter` events | Cause open; diagnostic fix on `fix/diagnostic-reason-codes` (0f08223), PR pending | backlog P2 accepted; fix: not yet requested | Merge/deploy (owner) |
@@ -44,7 +44,7 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 | RB-018 | Low | Former members have no deletion path; process undocumented | Runbook PR #97 (037b2ad), draft. Fifth-pass check: runbook covers all 24 member-keyed tables in migrations 0001–0019, plus `OAUTH_KV` grants. No R2 bucket is bound | 037b2ad requested 12:15 PM; result pending | Owner: confirm private mailbox; approve runbook |
 | RB-019 | Low | Notion network failures and real 503s share one code (`notion_unavailable`) | Assessed: not worth splitting now | n/a | None |
 | RB-020 | Process | Several agents push to the same branches under the owner identity; provenance not recoverable from commits | Workflow documented in `CONTRIBUTING.md` (fifth pass) | n/a | Owner: confirm workflow |
-| RB-021 | Low | A successful WHOOP refresh writes no diagnostic event, so refreshes can only be inferred from `whoop_connections.updated_at` | Confirmed: m2 rotated at 12:32 PM CT with no event | n/a | None now; consider a success counter later |
+| RB-021 | Low | A successful WHOOP refresh writes no diagnostic event, so refreshes can only be inferred from `whoop_connections.updated_at` | Fix on PR #99 (d94121a): one console line `{event:"whoop_refresh",outcome:"ok",rotated}` after the committed write; no ids, tokens, scope or expiry; no D1 write | completed, no major issues (d94121a) | Merge + release (owner) |
 | RB-015 | Low | GitHub Pages duplicates the www site | Documented; recommendation below | n/a | Owner: keep or disable Pages |
 
 ---
@@ -242,7 +242,7 @@ No `whoop_refresh_*` or 401 events since the 10:34 AM CT deploy; the only events
 - **Independent of members:** `scheduled()` calls `runRetention(env.DB)`, which has no user context.
 - **Scope:** writes go only to `diagnostic_events` (`last_at` older than 30 days), `issue_reports` (status `resolved` and `updated_at` older than 180 days) and `issue_report_approvals` (expired). Tests on f915111 prove that 1000-day-old rows in whoop_recovery, whoop_sleep, health_connect_records, samsung_health_records, medical_context, flare_journal, flare_consent, health_import_consent, whoop_connections and notion_accounts survive.
 - **Failure handling:** at most 20 rounds of 50/20/50 deletes. Any D1 error stops and returns `ok:false`. The log line is `{event:'retention',ok,deleted}`, with no ids.
-- **Config:** neither wrangler.jsonc declares `triggers`. `release-worker-content.mjs` PUTs only `/content` and checks `/settings` and `/deployments`, so it neither adds nor removes cron schedules. Plain `wrangler deploy` (forbidden) would sync `triggers.crons` and clear existing schedules if none are declared. Production schedules are `[]` today.
+- **Config:** neither wrangler.jsonc declares `triggers`. `release-worker-content.mjs` PUTs only `/content` and checks `/settings` and `/deployments`, so it neither adds nor removes cron schedules. Correction (sixth pass): per Cloudflare's Cron Triggers docs, `wrangler deploy` replaces schedules only when `triggers.crons` is defined; with `triggers` undefined it leaves existing schedules in place (`crons: []` would remove them). Plain `wrangler deploy` stays forbidden regardless. Production schedules are `[]` today.
 - **Change, for separate owner approval and only after #96 is released:**
   1. `GET /accounts/<acct>/workers/scripts/whoop-lens/schedules` must return `[]`.
   2. `PUT /accounts/<acct>/workers/scripts/whoop-lens/schedules` with body `[{"cron":"17 9 * * *"}]`. That is 09:17 UTC daily (4:17 AM CDT; 3:17 AM CST after DST ends Nov 1).
@@ -269,6 +269,58 @@ I enumerated the member-keyed tables from migrations 0001–0019: identity_links
 ### Observations (not defects)
 - One expired `notion_oauth_states` row (expired Oct 24 00:57 UTC) remains. It's unusable, because callbacks require `expires_at>now`, and the member's next `connect_notion` deletes it. Expired seat-request, WHOOP-state, preview and login-limit rows: 0.
 
+## Sixth pass (Oct 25, about 1:35 PM CT)
+
+### RB-001 refresh observations (read-only D1 metadata)
+| Sample (CT) | Member | Evidence | Outcome |
+|---|---|---|---|
+| 1:33:01 PM | m2 | `updated_at` 18:33:01Z, expiry 19:33Z (2:33 PM CT) | Third successful refresh since deploy (11:31, 12:32, 1:33) |
+| ongoing | m1, m3 | Unchanged since Oct 18 / Oct 24 | No reads, so no refresh; m3 untouched |
+
+Since the 10:34 AM CT deploy: no `whoop_refresh_*` events and no 401s. The only diagnostics are 12 `hc_delivery_stored` successes (last 1:23 PM CT). Refreshes are inferred from `updated_at` advancing with a new +1 h expiry; a valid-token read changes neither field. Three samples, one member: still not declared resolved.
+
+### RB-016: cron API and release interaction (Cloudflare docs, read this pass)
+- **API:** `PUT /accounts/{account_id}/workers/scripts/{script_name}/schedules`, body `[{"cron":"17 9 * * *"}]`; the response lists `schedules[{cron,created_on,modified_on}]`. The PUT replaces the full set, so repeating it is idempotent. Crons run in UTC and take up to 15 minutes to propagate.
+- **Release script:** `release-worker-content.mjs` PUTs only `/content`; a later code release does not touch schedules.
+- **Wrangler / Workers Builds:** schedules are replaced only when `triggers.crons` is declared; neither wrangler.jsonc declares `triggers`, so a `wrangler deploy` (forbidden here) or a Workers Builds run would leave them. Only `whoop-lens-site` is connected to Workers Builds (CI check name); the `whoop-lens` Worker is not.
+- **Risk:** Cloudflare recommends managing crons in config for Wrangler-managed Workers. If someone later adds `triggers.crons` to wrangler.jsonc, a deploy will overwrite the API-set schedule. Mitigation: record the schedule in the release checklist; any future config change must declare the same cron.
+- **Idempotency and failure:** every delete is conditional (`last_at`/`updated_at`/`expires_at` cutoff) and bounded (≤20 rounds of 50/20/50). A rerun after a partial run deletes only what is still past the cutoff. A D1 error stops the run with `ok:false`; the next day's run resumes. Health tables are never written (tests on f915111).
+- **Rollback:** PUT `[]`; the code stays and is simply not invoked.
+
+### RB-017 (#98): re-verified
+- WHOOP OpenAPI (`/developer/doc/openapi.json`): `DELETE /developer/v2/user/access`, `revokeUserOAuthAccess`, OAuth bearer, responses 204/400/401/429/500.
+- Mock tests on 6334e63: the request uses `redirect:'manual'`, so a 3xx is reported as `whoop_revoke_rejected` and never followed with the bearer token. Local deletion runs on every outcome (network error, timeout, 401, 429, 5xx, 400, 3xx, expired token, undecryptable token, flag off). Manual instructions are returned whenever revocation is not confirmed. `WHOOP_PROVIDER_REVOKE_ENABLED` is unset in both wrangler.jsonc, so it is off by default.
+
+| Option | What ships | Production change | Risk |
+|---|---|---|---|
+| (a) Ship with flag off | Clearer disconnect message plus manual WHOOP instructions; no provider call | Code release only | Access stays live at WHOOP until the member removes it |
+| (b) Ship and enable | Best-effort provider revoke, then local deletion | Code release **and** a new Worker variable, which changes the binding count from 38 (release script snapshot check) and is a settings publish | One outbound call per disconnect; needs an unexpired token |
+| (c) Defer | Nothing | None | Current message stays |
+
+Recommendation: (a) now; (b) later as its own approved settings change.
+
+### RB-018 (#97): operational steps (not executed)
+Preconditions: identity verified independently (challenge to an independently established address, or an owner-verifiable authenticated identity; a matching From address is not enough); member resolved to exactly one `user_id`; a second member's rows are never in scope.
+1. **Dry run:** run the runbook's count query for the target `user_id`; record per-table counts (24 tables) and the OAUTH_KV keys found. Also run it for one other member as a control.
+2. **Owner confirms** the counts and the target in writing.
+3. **Delete** with the runbook's single-batch delete block (one D1 transaction, foreign keys on, child tables first), then remove the listed OAUTH_KV keys.
+4. **Verify:** rerun the count query: every table 0 for the target; the control member's counts unchanged. No R2 is bound.
+5. Tell the requester what was deleted. Nothing in the runbook promises automatic deletion.
+
+### Release queue (one release per PR; none merged or deployed)
+| PR | Item | Head | Codex | CI | Deploy needed | Rollback | Risk | Owner approval |
+|---|---|---|---|---|---|---|---|---|
+| #91 | Backlog (docs) | this head | see review log | green on 7afa6eb | No | Revert | None | Merge |
+| #92 | RB-014 refresh-rejected message | 48d8349 | completed, clean | green | Worker release (script) | Restore prior version via Deployments | Message text only | Merge + release |
+| #93 | RB-012 deletion-request wording (draft) | e8bd3f4 | completed, clean | green | Site build | Revert | Mailbox must exist | Mailbox confirm + merge |
+| #94 | RB-012 apex redirect | 485eb96 | completed, clean | green | Site/Worker release | Revert / prior version | Routing | Merge + release |
+| #95 | RB-004/006 diagnostic codes | abaefa7 | completed, clean | green | Worker release | Prior version | New codes only | Merge + release |
+| #96 | RB-016 scheduled retention (draft) | f915111 | completed, clean | green | Worker release, then a **separate** schedule PUT | PUT `[]`; prior version | Deletes old diagnostics/resolved reports | Merge + release; schedule separately |
+| #97 | RB-018 former-member runbook (draft) | 037b2ad | fresh request 1:30 PM, pending | green | No | Revert | Manual procedure | Merge |
+| #98 | RB-017 provider revoke (draft) | 6334e63 | completed, clean | green | Worker release; (b) also a settings change | Prior version; unset flag | See options | Choose (a)/(b)/(c) |
+| #99 | RB-021 refresh-success log (draft) | d94121a | completed, clean | green | Worker release | Prior version | One log line | Merge + release |
+
+
 ## Review log
 
 | Date (CT) | Item | Head | Request | Codex response |
@@ -287,6 +339,9 @@ I enumerated the member-keyed tables from migrations 0001–0019: identity_links
 | Oct 25, 12:07 PM | RB-018 (#97) | d6db735 | @codex review | completed: P1 (identity) + P2 (test seeding); fixed in 037b2ad |
 | Oct 25, 12:08 PM | backlog (this PR) | cd8e87b | @codex review | completed: 1 P2 (rollback); fixed in 97a51b4 |
 | Oct 25, 12:15 PM | backlog (this PR) | 97a51b4 | @codex review | completed 12:17 PM: no major issues |
-| Oct 25, 12:15 PM | RB-018 (#97) | 037b2ad | @codex review | pending |
-| Oct 25, 12:45 PM | RB-016 (#96) | f915111 | @codex review | pending (test-only change) |
-| Oct 25, 12:45 PM | RB-017 (#98) | 60fe118 | @codex review | pending |
+| Oct 25, 12:15 PM | RB-018 (#97) | 037b2ad | @codex review | still running at 1:29 PM; one fresh request with a brief posted 1:30 PM (allowed after ~60 min) |
+| Oct 25, 12:45 PM | RB-016 (#96) | f915111 | @codex review | completed 12:47 PM: no major issues |
+| Oct 25, 12:45 PM | RB-017 (#98) | 60fe118 | @codex review | completed: 1 P2 (redirect follow with bearer); fixed in 6334e63 |
+| Oct 25, 12:53 PM | RB-017 (#98) | 6334e63 | @codex review | completed 12:56 PM: no major issues |
+| Oct 25, 12:46 PM | backlog (this PR) | 7afa6eb | @codex review | superseded by the sixth-pass head before completing |
+| Oct 25, 1:04 PM | RB-021 (#99) | d94121a | @codex review | completed 1:05 PM: no major issues |
