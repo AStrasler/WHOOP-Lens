@@ -39,6 +39,7 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 | RB-012 | Medium | Apex root, Previews config, external privacy/terms links, GitHub Pages, deletion promise | Deletion fix on `docs/private-deletion-requests` (dc71393); apex fix on `fix/apex-site-redirect` (8b6ece4); PRs pending. External links unverified | not yet requested (both) | Mailbox confirmation, merge, site and worker release, external settings |
 | RB-013 | Low | Android test suite (38 tests) not reproducible on the Grok box (no JDK/Gradle) | Tooling gap | n/a | None |
 | RB-014 | Medium | Rejected WHOOP refresh told members to "Retry shortly" although it's non-retryable | PR #92 (48d8349): CI 9/9 success, Codex completed with no findings. **Ready for release approval** | completed: no major issues (48d8349, 11:11 AM) | Merge + controlled release (owner) |
+| RB-016 | Low | Retention deletions (30-day codes, 180-day reports) run only during normal use; no scheduled cleanup | Wording fix on PR #93 | #93 | Owner: approve wording |
 | RB-015 | Low | GitHub Pages duplicates the www site | Documented; recommendation below | n/a | Owner: keep or disable Pages |
 
 ---
@@ -175,12 +176,22 @@ The Android suite can't run on the Grok box. Verification requirement: a CI job 
   1. After merge, check out the merge commit.
   2. Bundle: `cloudflare/node_modules/.bin/wrangler deploy --dry-run --config cloudflare/oauth/resource/wrangler.jsonc --outdir <dir>`.
   3. Snapshot `whoop-lens` `/settings` and `/deployments` via GET.
-  4. Run `node cloudflare/scripts/release-worker-content.mjs --worker whoop-lens --snapshot <snap> --bundle <dir>` as a dry run. Expect `settingsIdentity` unchanged and `bindingCount 38`.
+  4. Run `node cloudflare/scripts/release-worker-content.mjs --worker whoop-lens --snapshot <snap> --bundle <dir>/index.js` as a dry run (pass the bundled file that `wrangler deploy --dry-run --outdir <dir>` writes, not the directory; see `docs/release-checklist-20261024.md`). Expect `settingsIdentity` unchanged and `bindingCount 38`.
   5. Rollback = the live version at release time; at 11:25 AM CT that's `a2fd99ec-a4d8-4bb3-8425-2d64fc81c800` (100%; 38 bindings by GET). Re-read it immediately before release.
   6. Run `--apply` only with explicit owner approval. Never plain `wrangler deploy`.
 - **Risks:** text only. ChatGPT may paraphrase.
 
 ---
+
+## Third pass (Oct 25, about 11:50 AM CT)
+
+**RB-001 evidence (metadata only).** m2's connection row was rewritten at 16:31:15Z (11:31 AM CT), with a new expiry one hour later (17:31:15Z). m2's connection generation is unchanged since Oct 20, so this was not a reconnect: it was a real refresh exchange on the #87 build (live since 15:34Z), and it succeeded. No refresh failure events have been logged since 15:34Z. This is one successful refresh, not proof under concurrency; keep monitoring. m1 and m3 rows are unchanged.
+
+**RB-016: retention is opportunistic.** Evidence: no Worker has a cron trigger. `diagnostics.mjs` runs `SWEEP` and `retentionStatements` (report and approval purges) only inside the capture path, once per new bucket row, or every interval while capture is off. With little traffic, rows can outlive 30 or 180 days. Today no diagnostic row is older than 30 days (the oldest is from Oct 19). PR #93 now says cleanup runs during normal use, so removal can happen later.
+
+**Former-member deletion is manual.** There is no tool for it. PR #93 now says the owner handles these requests by hand, with no fixed response time.
+
+**PR #94 routing (read-only).** The custom domains are: apex to `whoop-lens`, www to `whoop-lens-site`, auth to `whoop-lens-auth`. There are no zone Worker routes and no page rules, and only managed rulesets. The redirect target is always www, which is served by a different Worker, so it cannot loop. The query string is now preserved.
 
 ## Review log
 
