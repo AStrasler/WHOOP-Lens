@@ -1203,10 +1203,11 @@ export function templateText(stats){
 function summaryObject({text,stats,model,generated_at,coverage,status,chart_data,insights}){
   return {text,stats,model,generated_at,coverage,status,chart_data,insights};
 }
-function notedFallback(data,facts,generatedAt,env,reason){
+function notedFallback(data,facts,generatedAt,env,reason,detail){
   const summary=templateSummary(facts,generatedAt,env);
   if(reason){
     summary.fallback_reason=reason;
+    if(detail)summary.fallback_detail=detail;
     console.log(reason);
   }
   return {...data,summary};
@@ -1234,6 +1235,17 @@ export function groundedStatements(facts){
     const meta=metricMeta(path),unit=meta.unit?` (${meta.unit})`:'';
     return `${meta.name}${unit}: minimum ${m.min}, maximum ${m.max}, mean ${m.mean}, median ${m.median}; latest ${m.latest}${m.latest_date?` on ${m.latest_date}`:''}.`;
   });
+}
+// Why a model reply was not a usable selection. Fixed codes only; the reply
+// text itself is never stored or logged.
+export function selectionFailure(raw,statements){
+  if(typeof raw!=='string'||raw.length>1000)return 'selection_too_long';
+  let parsed;try{parsed=JSON.parse(raw);}catch{return 'selection_not_json';}
+  if(!parsed||Array.isArray(parsed)||Object.keys(parsed).length!==1||!Array.isArray(parsed.selected))return 'selection_shape';
+  const ids=parsed.selected;
+  if(ids.length<1||ids.length>3)return 'selection_count';
+  if(new Set(ids).size!==ids.length)return 'selection_duplicate';
+  return 'selection_out_of_range';
 }
 export function selectedSummaryText(raw,statements){
   if(typeof raw!=='string'||raw.length>1000)return null;
@@ -1347,14 +1359,14 @@ export async function attachSummary(data,ctx){
     const now=typeof ctx.now==="number"?ctx.now:Date.now();
     const generatedAt=new Date(now).toISOString();
     const day=utcDay(Date.parse(generatedAt));
-    const give=(reason)=>notedFallback(data,facts,generatedAt,ctx.env,reason);
+    const give=(reason,detail)=>notedFallback(data,facts,generatedAt,ctx.env,reason,detail);
     if(!Object.keys(facts.stats.metrics).length)return give(null);
     const model=selectModel(ctx.env);
     const payload=modelPayload(facts);
     if(!model||!day)return give("model_error");
-    if(!payload)return give("filter");
+    if(!payload)return give("filter","payload_too_large");
     const json=JSON.stringify(payload);
-    if(inputTokenEstimate(SELECTION_PROMPT,json)>MAX_INPUT_TOKENS)return give("filter");
+    if(inputTokenEstimate(SELECTION_PROMPT,json)>MAX_INPUT_TOKENS)return give("filter","input_budget");
     if(/ignore previous|system prompt|diagnos|bearer|<\s*script/i.test(json))return give("injection");
     const ai=ctx.env?.AI;
     if(!ai||typeof ai.run!=="function")return give("model_error");
@@ -1389,6 +1401,6 @@ export async function attachSummary(data,ctx){
     if(text&&!failed){
       try{console.log(JSON.stringify({event:"summary_filter",rule:outputRejection(text,facts.stats)?.rule??"unknown"}));}catch{/* diagnostics only */}
     }
-    return give(failed||(text?"filter":"model_error"));
+    return failed?give(failed):text?give("filter",selectionFailure(text,payload.statements)):give("model_error","empty_output");
   }catch{return data;}
 }
