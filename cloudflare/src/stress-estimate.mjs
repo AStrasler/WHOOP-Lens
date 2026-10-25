@@ -1,11 +1,11 @@
-// WHOOP Lens physiological stress estimate (wl-stress-v1). Issue #23 section 6.
+// WhoopLens physiological stress estimate (wl-stress-v1). Issue #23 section 6.
 // Deterministic, computed in the Worker from one user's already-authorized WHOOP
 // recovery records (and that user's sleep records when available). It is our own
 // derived estimate: not WHOOP's Stress Monitor, not clinically validated, and not
 // a diagnosis. Pure functions; nothing here logs, stores, or fetches.
 
-export const STRESS_NAME="WHOOP Lens experimental physiological stress estimate";
-export const STRESS_LABEL="Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.";
+export const STRESS_NAME="WhoopLens experimental physiological stress estimate";
+export const STRESS_LABEL="Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.";
 export const STRESS_VERSION="wl-stress-v1";
 export const BASELINE_DAYS=30;
 export const MIN_BASELINE_DAYS=14;
@@ -44,7 +44,7 @@ export const BANDS=Object.freeze([
   {band:"low",max:35},{band:"typical",max:65},{band:"elevated",max:80},{band:"high",max:100}
 ]);
 export const LIMITATIONS=Object.freeze([
-  "This is the WHOOP Lens experimental physiological stress estimate, a derived daily index. It is not WHOOP's Stress Monitor and is not clinically validated.",
+  "This is the WhoopLens experimental physiological stress estimate, a derived daily index. It is not WHOOP's Stress Monitor and is not clinically validated.",
   "It compares each day with the same person's prior 30 days. 50 means typical for that person; higher values mean HRV, resting heart rate, sleep or respiratory rate moved in the direction usually linked with physiological load.",
   "WHOOP provides one value per day, with no intraday heart rate, so short events within a day are not visible.",
   "Training, illness, alcohol, travel and measurement noise can move the same inputs. The estimate does not identify a cause.",

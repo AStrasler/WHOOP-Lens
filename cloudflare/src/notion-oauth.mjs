@@ -20,7 +20,7 @@ export async function createNotionAuthorization(db,userId,env,{now=Date.now}={})
       .bind(await notionHash(state),userId,generation,now()+600000)
   ]);
   return {authorization_url:ORIGIN+NOTION_START+'?state='+state,expires_in:600,
-    instructions:'Open this private link yourself. Choose the Notion workspace and pages to share with WHOOP Lens. Do not forward it.'};
+    instructions:'Open this private link yourself. Choose the Notion workspace and pages to share with WhoopLens. Do not forward it.'};
 }
 export async function disconnectNotion(db,userId){
   await notionAccount(db,userId);
@@ -30,7 +30,7 @@ export async function disconnectNotion(db,userId){
     db.prepare('DELETE FROM notion_update_previews WHERE user_id=?1').bind(userId)
   ]);
   return {disconnected:true,local_credentials_deleted:true,
-    instructions:'WHOOP Lens has stopped using Notion. You can also revoke the connection in Notion settings. Notion pages were not deleted.'};
+    instructions:'WhoopLens has stopped using Notion. You can also revoke the connection in Notion settings. Notion pages were not deleted.'};
 }
 export async function notionOAuthHttp(request,env,{fetcher=fetch,now=Date.now}={}){
   const finish=(message,status=200,extra={})=>new Response(message,{status,headers:{...headers,...extra}});
@@ -70,6 +70,6 @@ export async function notionOAuthHttp(request,env,{fetcher=fetch,now=Date.now}={
       WHERE user_id=?3 AND generation=?4 AND EXISTS (${ACTIVE_MEMBER_SQL.replaceAll('?1','?3')})`)
       .bind(sealed,tokens.workspace_id,row.user_id,row.generation).run();
     if(saved.meta?.changes!==1)return finish('Your connection changed. Request a new Notion link if you still want to connect.',409,clear);
-    return finish('Notion connected. Return to WHOOP Lens and choose your daily-log database.',200,clear);
+    return finish('Notion connected. Return to WhoopLens and choose your daily-log database.',200,clear);
   }catch{return finish('Notion authorization could not be completed. Your WHOOP connection was not changed.',503,clear);}
 }

@@ -171,7 +171,7 @@ export function publicNotionError(error){
     preview_expired_or_used:'This approval preview expired or was already used. Generate and review a fresh preview.',
     authorization_required:'Notion rejected this authorization. Your WHOOP connection is separate and was not changed.',
     refresh_busy:'Notion authorization is already being renewed. Retry shortly; do not reconnect.',
-    permission_denied:'Notion denied access. Check the pages and permissions you shared with WHOOP Lens.',
+    permission_denied:'Notion denied access. Check the pages and permissions you shared with WhoopLens.',
     not_shared_or_missing:'The Notion item is missing or was not shared with this connection.',
     rate_limited:'Notion is rate limiting requests. Wait for Retry-After before retrying; do not reconnect.',
     write_outcome_unknown:'The Notion write outcome could not be confirmed. Read the page before creating another preview; do not blindly repeat the write.'};

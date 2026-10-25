@@ -312,7 +312,7 @@ export async function updateIssueReport(db,userId,args,{env,now=Date.now()}={}){
 }
 export const reportIssueTool=Object.freeze({
   name:'report_issue',
-  description:'Report a problem with WHOOP Lens to the server owner. First call without approved to get the cleaned text; show it to the member and, only if they approve it, call again with the same category and description and approved: true (within 10 minutes; one submission per approval). Cleaning is best-effort: numbers, links, addresses and recognizable credentials are removed, but a secret written in another form can be missed; every other word, including any health or personal details, reaches the server owner as written, so leave those and any passwords out. A reference is returned only after the report is saved.',
+  description:'Report a problem with WhoopLens to the server owner. First call without approved to get the cleaned text; show it to the member and, only if they approve it, call again with the same category and description and approved: true (within 10 minutes; one submission per approval). Cleaning is best-effort: numbers, links, addresses and recognizable credentials are removed, but a secret written in another form can be missed; every other word, including any health or personal details, reaches the server owner as written, so leave those and any passwords out. A reference is returned only after the report is saved.',
   inputSchema:{type:'object',properties:{
     category:{type:'string',enum:[...KINDS]},
     description:{type:'string',minLength:1,maxLength:MAX_INPUT,description:'What went wrong, in plain words. Do not include health values or personal details.'},
