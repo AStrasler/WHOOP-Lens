@@ -188,3 +188,14 @@ test("landing page links the seat request form on auth.whooplens.tech", () => {
   assert.match(landing, /Do not include health information, passwords or tokens/);
   assert.doesNotMatch(landing, /<script|<form/);
 });
+
+test('privacy and support agree on a private deletion route', () => {
+  const privacy = readFileSync(new URL('./privacy/index.html', import.meta.url), 'utf8');
+  const support = readFileSync(new URL('./support/index.html', import.meta.url), 'utf8');
+  assert.match(privacy, /request that deletion privately by email to whoop-lens@outlook\.com/);
+  assert.doesNotMatch(privacy, /request that deletion through the support page\./);
+  assert.match(support, /Private requests and data deletion/);
+  assert.match(support, /mailto:whoop-lens@outlook\.com/);
+  assert.match(support, /GitHub issues are public/);
+  assert.match(support, /If your membership has ended/);
+});
