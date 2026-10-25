@@ -107,10 +107,14 @@ async function storedRotation(db,id,previous,key,now){
 //    marker left by a failed attempt shows when the last refresh was tried.
 //    No schema change; no other code reads this column.
 const inflightRefresh=new Map();
-const LEASE_SECONDS=30;
+// 120 s, not 30 s: once WHOOP has rotated the token, a holder whose D1 write
+// stalls must keep the lease, or a takeover resends the rotated-away token
+// (reuse). A crashed holder costs at most 120 s of retryable failures, since
+// every failure path clears its own marker.
+const LEASE_SECONDS=120;
 // A holder's refresh is bounded: the token fetch aborts at 12 s, then a few D1
 // writes. Followers wait up to this long after the holder's claim (well inside
-// the 30 s lease, so no follower can take over a live holder) and stop early
+// the 120 s lease, so no follower can take over a live holder) and stop early
 // once the marker is gone, i.e. the holder stored a rotation or gave up.
 const HOLDER_DEADLINE_MS=15_000;
 async function waitForHolder(db,id,row,key,now,sleep){
@@ -164,6 +168,7 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
   // Cross-isolate lease: if another request already claimed this refresh
   // token, wait for its stored rotation instead of reusing the token.
   const claimedAt=new Date(now()).toISOString();
+  const tookOver=typeof row.updated_at==="string"&&row.updated_at.startsWith("lease:");
   const lease=await db.prepare(claimLeaseSql).bind(id,row.encrypted_refresh_token,claimedAt).run();
   if(!lease?.success||lease.meta?.changes!==1){
     const winner=await waitForHolder(db,id,row,key,now,sleep);
@@ -197,8 +202,14 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
     if(!response.ok){
       // WHOOP rotates refresh tokens: a parallel request that already used this
       // one makes ours fail. Use the access token that request stored, if any.
-      const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep);
+      // Taking over a stale lease means an earlier holder may have rotated
+      // this token at WHOOP and still be writing it (a D1 write stalled past
+      // the lease). Re-read the stored state for longer before classifying,
+      // and never report that case as a rejected connection.
+      const rejected=response.status===400||response.status===401;
+      const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep,rejected&&tookOver?10:4);
       if(winner)return winner;
+      if(rejected&&tookOver)throw Error("WHOOP refresh failed");
       // A rate-limited refresh is reported as such (the stored tokens are kept).
       if(response.status===429)throw rateLimited(response,"WHOOP refresh failed");
       // 400/401 from the token endpoint: WHOOP refused the stored refresh token

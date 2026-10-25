@@ -141,7 +141,7 @@ test("a fresh lease held elsewhere makes callers wait, a stale one is reclaimed,
     // OTHER is not affected by M's lease.
     assert.equal(failed(await call(router(w,callWhoop,OTHER),db,"get_recovery")),false);
     assert.equal(w.log.refresh,1);
-    db.sqlite.prepare("UPDATE whoop_connections SET updated_at='lease:'||strftime('%Y-%m-%dT%H:%M:%fZ','now','-31 seconds') WHERE user_id=?").run(M);
+    db.sqlite.prepare("UPDATE whoop_connections SET updated_at='lease:'||strftime('%Y-%m-%dT%H:%M:%fZ','now','-121 seconds') WHERE user_id=?").run(M);
     assert.equal(failed(await call(route,db,"get_recovery")),false);
     assert.equal(w.log.refresh,2);
   }finally{db.close();}
@@ -220,7 +220,7 @@ test("a stuck holder: the follower gives up at the holder deadline, inside the l
     const r=await call(routerWith(w,other.callWhoop,clock),db,"get_sleep");
     assert.equal(failed(r),true);
     assert.deepEqual(codes(db),["whoop_refresh_failed"]);
-    assert.ok(clock.advanced()>=15000&&clock.advanced()<30000,"waits to the holder deadline, never past the lease");
+    assert.ok(clock.advanced()>=15000&&clock.advanced()<120000,"waits to the holder deadline, never past the lease");
     assert.deepEqual(row(db),before);assert.equal(w.log.refresh,0);
   }finally{db.close();}
 });
@@ -253,3 +253,38 @@ for(const [label,endpoint] of [
     }finally{db.close();}
   });
 }
+// L2: the holder's WHOOP call succeeds (WHOOP rotates r0 -> r1), then its D1
+// write stalls. A caller from another isolate arrives `lateBy` later and sees
+// the holder's marker and the old r0 ciphertext.
+async function stalledHolder(lateBy,isolate){
+  const other=await import("../src/whoop-api.mjs?isolate="+isolate);
+  let release;const stall=new Promise(r=>{release=r;});let stalled=false;
+  const db=await fixture(),w=rotatingWhoop({delay:1});
+  const holderDb={...db,prepare(sql){const st=db.prepare(sql);
+    if(!/SET encrypted_access_token=\?1,encrypted_refresh_token=\?2,expires_at=\?3/.test(sql))return st;
+    return {bind(...v){st.bind(...v);return this;},async run(){stalled=true;await stall;return st.run();},first:(...a)=>st.first(...a),all:(...a)=>st.all(...a)};}};
+  const holder=call(router(w),holderDb,"get_recovery");
+  while(!stalled)await new Promise(r=>setTimeout(r,2));
+  const late=virtualClock();await late.sleep(lateBy);
+  const lateResult=await call(routerWith(w,other.callWhoop,late),db,"get_sleep");
+  const lateCodes=codes(db),refreshesWhileStalled=w.log.refresh;
+  release();await holder;
+  const after=await call(routerWith(w,other.callWhoop,late),db,"get_cycles");
+  const out={lateResult,lateCodes,refreshesWhileStalled,after,marker:row(db).updated_at,refresh:w.log.refresh};
+  db.close();return out;
+}
+test("L2: a write stalled 31 s after WHOOP rotated: the late caller does not reuse r0, and the stored rotation then works",async()=>{
+  const o=await stalledHolder(31_000,6);
+  assert.equal(o.refreshesWhileStalled,1,"the original refresh token is sent to WHOOP once");
+  assert.equal(failed(o.lateResult),true);
+  assert.deepEqual(o.lateCodes,["whoop_refresh_failed"],"retryable, never whoop_refresh_rejected");
+  assert.equal(failed(o.after),false,"after the write lands the stored rotation is used");
+  assert.equal(o.refresh,1);
+  assert.doesNotMatch(String(o.marker),/^lease:/);
+});
+test("L2 beyond the lease (stall over 120 s): a takeover's rejection re-reads state and is not reported as rejected",async()=>{
+  const o=await stalledHolder(121_000,7);
+  assert.equal(o.refreshesWhileStalled,2,"a takeover after the full lease is the bounded, documented limit");
+  assert.ok(!o.lateCodes.includes("whoop_refresh_rejected"),"classified as a retryable refresh failure");
+  assert.ok(o.lateCodes.includes("whoop_refresh_failed"));
+});
