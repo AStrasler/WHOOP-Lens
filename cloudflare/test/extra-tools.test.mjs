@@ -95,7 +95,7 @@ test('experimental stress estimate is listed only with STRESS_ESTIMATE_ENABLED; 
     for(const env of [null,{},{STRESS_ESTIMATE_ENABLED:'false'},{STRESS_ESTIMATE_ENABLED:'TRUE'}]){
       const off=await readExtraTool(db,A,'get_capabilities',{},env);
       assert.equal(off.capabilities.some(c=>c.id===STRESS_CAPABILITY.id),false);
-      assert.ok(!off.global_limitations.some(l=>/experimental WHOOP Lens physiological stress/.test(l)));
+      assert.ok(!off.global_limitations.some(l=>/experimental WhoopLens physiological stress/.test(l)));
       assert.equal(off.capabilities.find(c=>c.id==='stress-monitor').status,'unsupported');
     }
     const on=await readExtraTool(db,A,'get_capabilities',{},{STRESS_ESTIMATE_ENABLED:'true',AI_SUMMARY_ENABLED:'true'});

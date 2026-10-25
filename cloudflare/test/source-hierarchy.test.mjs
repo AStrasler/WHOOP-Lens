@@ -52,7 +52,7 @@ for(const version of ['2025-11-25','2025-06-18']){
         assert.doesNotMatch(text,/consult Health when relevant|do not finalize after retrieving WHOOP alone/);
         assert.match(text,/offer to include them, and only when the user asks for Health data call the Health connection/);
         assert.match(text,/consult Health only when the user asks for it/);
-        assert.match(text,/WHOOP Lens's own instructions; the AI host platform may have separate requirements of its own, which WHOOP Lens cannot override/);
+        assert.match(text,/WhoopLens's own instructions; the AI host platform may have separate requirements of its own, which WhoopLens cannot override/);
         assert.match(init.result.serverInfo.description,/authoritative WHOOP.*supplementary.*never substituted/);
       }
     }finally{db.close();}

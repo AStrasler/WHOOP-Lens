@@ -272,3 +272,35 @@ hr {
   .pulse-line { stroke-dashoffset: 0; }
 }
 .doc li { color: var(--muted); line-height: 1.6; margin-bottom: 6px; }
+
+/* Above-the-fold independent-project disclosure on every public page. */
+.independence-notice {
+  width: 100%;
+  margin: 0 0 24px;
+  padding: 16px 18px;
+  border: 2px solid #facc15;
+  border-radius: 12px;
+  background: #332800;
+  color: #fff8d1;
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.12);
+  font-family: system-ui, sans-serif;
+  text-align: left;
+}
+.independence-notice strong {
+  display: block;
+  color: #fff1a6;
+  font-size: clamp(15px, 3.5vw, 18px);
+  font-weight: 800;
+  letter-spacing: .045em;
+  line-height: 1.35;
+}
+.independence-notice p {
+  margin: 7px 0 0;
+  font-size: 14px;
+  font-weight: 550;
+  line-height: 1.55;
+  color: #fff8d1;
+}
+@media (max-width: 480px) {
+  .independence-notice { padding: 14px; }
+}

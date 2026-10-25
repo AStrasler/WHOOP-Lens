@@ -141,3 +141,13 @@ test('consent HTML uses same-origin referrer policy without weakening POST CSRF'
   }),env);
   assert.equal(sameSiteForeign.status,403);
 });
+
+
+test('consent policy permits the Android callback without a wildcard or unrelated form destination',()=>{
+  const policy=noStoreHeaders('text/html; charset=utf-8')['content-security-policy'];
+  const destinations=policy.split(';').find(v=>v.trim().startsWith('form-action')).trim().split(/\s+/).slice(1);
+  assert.deepEqual(destinations,["'self'",'https://auth.whooplens.tech',
+    'https://whoop-lens.cloudflareaccess.com','https://chatgpt.com',
+    'https://whooplens.tech/android/oauth/callback']);
+  assert.ok(!destinations.some(value=>value.includes('*')));
+});

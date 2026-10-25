@@ -38,3 +38,38 @@ export function logOAuthStage(env,stage){
     'authorization_completed'].includes(stage))return;
   console.log(JSON.stringify({event:'oauth_stage',stage}));
 }
+
+// Consent errors bypass the provider's token onError hook. Record fixed labels,
+// never request URLs, form fields, cookies, exception messages or client IDs.
+const AUTHORIZATION_STAGES=new Set([
+  'authorize_request','authorize_scope','consent_description','consent_session',
+  'consent_origin','consent_form','upstream_configuration','consent_approval',
+  'consent_selection','upstream_session','upstream_redirect',
+  'upstream_state_failed','upstream_identity_failed','authorization_completion_failed'
+]);
+const AUTHORIZATION_REASONS=new Set([
+  'request_rejected','scope_rejected','origin_rejected','form_rejected',
+  'client_missing','client_unavailable','redirect_rejected','transaction_unbound',
+  'transaction_mismatch','transaction_expired_or_replayed','dependency_unavailable',
+  'validation_rejected','identity_rejected'
+]);
+const SAFE_DESCRIPTIONS=new Map([
+  ['client_id is required','client_missing'],
+  ['Invalid client_id','client_unavailable'],
+  ['Invalid redirect URI','redirect_rejected'],
+  ['This authorization was not started in this browser; start again','transaction_unbound'],
+  ['This authorization belongs to a different browser session; start again','transaction_mismatch'],
+  ['This authorization expired or was already used; start again','transaction_expired_or_replayed']
+]);
+export function authorizationFailureEvent(stage,error,reason){
+  const safeStage=AUTHORIZATION_STAGES.has(stage)?stage:'other';
+  const safeReason=AUTHORIZATION_REASONS.has(reason)?reason:
+    SAFE_DESCRIPTIONS.get(error?.description) ||
+    (error?.name==='AuthorizationError'?'validation_rejected':
+      safeStage==='upstream_identity_failed'?'identity_rejected':'dependency_unavailable');
+  return {event:'oauth_authorization_failure',stage:safeStage,reason:safeReason};
+}
+export function logAuthorizationFailure(env,stage,error,reason){
+  if(env?.DIAGNOSTICS_CAPTURE_ENABLED!=='true')return;
+  console.warn(JSON.stringify(authorizationFailureEvent(stage,error,reason)));
+}

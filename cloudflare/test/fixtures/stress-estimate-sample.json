@@ -1,7 +1,7 @@
 {
   "metric": "stress_estimate",
-  "name": "WHOOP Lens experimental physiological stress estimate",
-  "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+  "name": "WhoopLens experimental physiological stress estimate",
+  "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
   "experimental": true,
   "version": "wl-stress-v1",
   "unit": "index",
@@ -134,7 +134,7 @@
     {
       "date": "2026-10-06",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 45,
       "band": "typical",
@@ -215,7 +215,7 @@
     {
       "date": "2026-10-07",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 53,
       "band": "typical",
@@ -296,7 +296,7 @@
     {
       "date": "2026-10-08",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 51,
       "band": "typical",
@@ -377,7 +377,7 @@
     {
       "date": "2026-10-09",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 47,
       "band": "typical",
@@ -458,7 +458,7 @@
     {
       "date": "2026-10-10",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 50,
       "band": "typical",
@@ -539,7 +539,7 @@
     {
       "date": "2026-10-11",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 100,
       "band": "high",
@@ -682,7 +682,7 @@
     {
       "date": "2026-10-12",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 100,
       "band": "high",
@@ -825,7 +825,7 @@
     {
       "date": "2026-10-13",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 100,
       "band": "high",
@@ -968,7 +968,7 @@
     {
       "date": "2026-10-14",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 100,
       "band": "high",
@@ -1111,7 +1111,7 @@
     {
       "date": "2026-10-15",
       "baseline_days": 30,
-      "label": "Experimental WHOOP Lens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
+      "label": "Experimental WhoopLens estimate. Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.",
       "sleep_data": "complete",
       "value": 100,
       "band": "high",
@@ -1271,7 +1271,7 @@
   },
   "latest_valid_is_requested_latest": true,
   "limitations": [
-    "This is the WHOOP Lens experimental physiological stress estimate, a derived daily index. It is not WHOOP's Stress Monitor and is not clinically validated.",
+    "This is the WhoopLens experimental physiological stress estimate, a derived daily index. It is not WHOOP's Stress Monitor and is not clinically validated.",
     "It compares each day with the same person's prior 30 days. 50 means typical for that person; higher values mean HRV, resting heart rate, sleep or respiratory rate moved in the direction usually linked with physiological load.",
     "WHOOP provides one value per day, with no intraday heart rate, so short events within a day are not visible.",
     "Training, illness, alcohol, travel and measurement noise can move the same inputs. The estimate does not identify a cause.",

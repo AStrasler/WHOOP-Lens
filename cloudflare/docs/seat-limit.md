@@ -1,4 +1,4 @@
-# WHOOP Lens seat cap
+# WhoopLens seat cap
 
 Controlled access only: no public registration and no automatic expansion. A seat is a WHOOP
 connection (`whoop_connections` row). Every connection counts, including the owner's.
@@ -12,7 +12,7 @@ How a member gets a seat:
    owner; it never creates an account or reserves a seat.
 2. The owner approves by linking their identity and activating `whoop_members.active` (manual, as today).
 3. The member connects WHOOP. `connect_whoop` / `/v1/whoop/connect` refuse with
-   "All N WHOOP Lens seats are in use..." (MCP tool error; REST 409 with `seat_limit`) when the cap is
+   "All N WhoopLens seats are in use..." (MCP tool error; REST 409 with `seat_limit`) when the cap is
    reached, before sending the member to WHOOP.
 4. The callback writes the connection only if the member already holds one or fewer than N exist.
    The check is inside the same INSERT, so concurrent callbacks cannot overshoot the cap (tested).

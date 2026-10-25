@@ -16,8 +16,8 @@ const definitions=[
     category:{type:'string',enum:categories},limit:{type:'integer',minimum:1,maximum:25},
     offset:{type:'integer',minimum:0,maximum:1000},include_planned:{type:'boolean'}}],
   ['connect_whoop','Create a short-lived WHOOP consent link for the signed-in account. Requires user completion.',{}],
-  ['disconnect_whoop','Delete only this account’s stored WHOOP credentials on WHOOP Lens. The WHOOP account itself is unchanged.',{}],
-  ['import_health_connect_file','Store a user-selected WHOOP Lens Health Connect v2 JSON file for the signed-in account. This is a file import, not a live Health Connect sync.',{
+  ['disconnect_whoop','Delete only this account’s stored WHOOP credentials on WhoopLens. The WHOOP account itself is unchanged.',{}],
+  ['import_health_connect_file','Store a user-selected WhoopLens Health Connect v2 JSON file for the signed-in account. This is a file import, not a live Health Connect sync.',{
     consent:{type:'string',enum:['store-health-connect-file']},
     file_json:{type:'string',minLength:2,maxLength:400000}}],
   ['withdraw_health_connect_import','Delete stored Health Connect records for the signed-in account, record consent withdrawal, and revoke phone ingest tokens.',{
@@ -95,7 +95,7 @@ export async function readExtraTool(db,userId,name,args,env=null){
 // Listed only when STRESS_ESTIMATE_ENABLED and AI_SUMMARY_ENABLED are both exactly "true". The Stress Monitor
 // entries from the manifest stay unsupported either way.
 export const STRESS_CAPABILITY=Object.freeze({
-  id:'experimental-stress-estimate',name:'WHOOP Lens experimental physiological stress estimate',category:'explore',
+  id:'experimental-stress-estimate',name:'WhoopLens experimental physiological stress estimate',category:'explore',
   delivery:'mcp_tool',tools:['get_recovery'],status:'available',
   description:"An experimental daily 0-100 index derived from the user's own HRV, resting heart rate, sleep and respiratory rate against that user's prior 30 days. Not WHOOP's Stress Monitor. Not clinically validated.",
   provides:'chart_data.stress_estimate on get_recovery summaries, with value, band, confidence, contributing measurements and limitations.',
@@ -168,7 +168,7 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
     global_limitations:[...manifest.global_limitations.filter(s=>!s.startsWith('Android Health Connect')),
       'Local record tools read stored records for the signed-in account.',
       'Health Connect phone ingest stays off until an ingest token is issued and the server flag is on. File import is a separate consent.',
-      ...(stressOn?["An experimental WHOOP Lens physiological stress estimate is enabled on this server. It is not WHOOP's Stress Monitor and not clinically validated; Stress Monitor zone data remains unsupported."]:[])],
+      ...(stressOn?["An experimental WhoopLens physiological stress estimate is enabled on this server. It is not WHOOP's Stress Monitor and not clinically validated; Stress Monitor zone data remains unsupported."]:[])],
     total:capabilities.length,next_offset:offset+limit<capabilities.length?offset+limit:null,
     capabilities:capabilities.slice(offset,offset+limit)};
 }

@@ -469,13 +469,26 @@ test('with the flag off the tools are not listed and cannot be called; guidance 
   }
 });
 
-test('member-facing report responses contain no internal detail or health data',async()=>{
+test('member-facing report responses contain no internal detail or health data',async t=>{
+  // A valid random reference can coincidentally contain the redacted health digits.
+  const randomValues=crypto.getRandomValues.bind(crypto);
+  t.mock.method(crypto,'getRandomValues',bytes=>{
+    if(bytes.length===8){
+      bytes.set([..."AB45CDEF"].map(c=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789".indexOf(c)));
+      return bytes;
+    }
+    return randomValues(bytes);
+  });
   const db=await fixture();try{
     await capture(ON,db,{category:'infrastructure',subsystem:'mcp',code:'db_error',outcome:'fail',requestId:newRequestId(),userId:AMYLIKE});
     const r=await callApproved(db,AMYLIKE,{category:'backend_failure',description:'My HRV of 45 vanished'});
-    const out=text(r);
+    const response=data(r);
+    assert.equal(response.reference,'WL-AB45CDEF');
+    assert.deepEqual(Object.keys(response).sort(),['duplicate','message','reference','status','submitted']);
+    // The generated public reference is not a health value. Everything else stays private.
+    const out=text(r).replaceAll(response.reference,'[report-reference]');
     assert.ok(!out.includes('45')&&!out.includes('db_error')&&!out.includes('req_')&&!out.includes(AMYLIKE));
-    assert.match(data(r).message,/^Report WL-[A-Z0-9]{8} was saved/);
+    assert.match(response.message,/^Report WL-[A-Z0-9]{8} was saved/);
   }finally{db.close();}
 });
 

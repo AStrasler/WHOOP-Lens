@@ -328,7 +328,7 @@ test("weekly digest defaults to the last complete week and does not send",async(
     assert.deepEqual(Object.keys(tool.inputSchema.properties),["week_ending"]);
     assert.equal(tool.inputSchema.additionalProperties,false);
     const readme=readFileSync(new URL("../../README.md",import.meta.url),"utf8");
-    assert.match(readme,/Every Monday 8 AM, call WHOOP Lens get_weekly_digest and chart it/);
+    assert.match(readme,/Every Monday 8 AM, call WhoopLens get_weekly_digest and chart it/);
   }finally{
     globalThis.fetch=originalFetch;
     db.close();

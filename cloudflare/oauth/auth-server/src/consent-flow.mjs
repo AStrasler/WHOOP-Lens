@@ -1,6 +1,6 @@
 import {consentPage,noStoreHeaders,unavailable} from '../../consent.mjs';
 import {createVerifier,checkUpstreamConfig,upstreamAuthorizationUrl,verifyUpstreamCode} from './upstream.mjs';
-import {logOAuthStage} from './oauth-diagnostics.mjs';
+import {logOAuthStage,logAuthorizationFailure} from './oauth-diagnostics.mjs';
 const SCOPES=new Set(['mcp:read','offline_access']);
 const ORIGIN='https://auth.whooplens.tech';
 const CALLBACK_PATH='/oauth/upstream/callback';
@@ -47,11 +47,16 @@ export function makeConsentFlow({
     if(new URL(request.url).origin!==ORIGIN)return oauthError(403);
     const oauth=getOAuth(env);
     if(request.method==='GET'){
+      let stage='authorize_request';
       try{
         const original=await oauth.parseAuthRequest(request);
-        if(!Array.isArray(original.scope)||!allowedSelection(original.scope,original.scope))
+        if(!Array.isArray(original.scope)||!allowedSelection(original.scope,original.scope)){
+          logAuthorizationFailure(env,'authorize_scope',null,'scope_rejected');
           return oauthError();
+        }
+        stage='consent_description';
         const description=await oauth.describeConsent(original);
+        stage='consent_session';
         const bind=await oauth.beginConsent(original);
         const headers=new Headers(bind.headers);
         for(const [key,value] of Object.entries(noStoreHeaders('text/html; charset=utf-8')))
@@ -61,16 +66,17 @@ export function makeConsentFlow({
         // keep strict Origin validation and one-time consent cookies intact.
         headers.set('referrer-policy','same-origin');
         return new Response(consentPage(description,bind.handle),{status:200,headers});
-      }catch{return oauthError();}
+      }catch(error){logAuthorizationFailure(env,stage,error);return oauthError();}
     }
     if(request.method!=='POST')return oauthError(405);
-    if(!checkBrowserPost(request))return oauthError(403);
+    if(!checkBrowserPost(request)){logAuthorizationFailure(env,'consent_origin',null,'origin_rejected');return oauthError(403);}
     let form;
-    try{form=await readForm(request);}catch{return oauthError();}
-    if(!form)return oauthError();
+    try{form=await readForm(request);}catch{logAuthorizationFailure(env,'consent_form',null,'form_rejected');return oauthError();}
+    if(!form){logAuthorizationFailure(env,'consent_form',null,'form_rejected');return oauthError();}
     const handle=form.get('handle'),decision=form.get('decision');
     if(typeof handle!=='string'||!/^[A-Za-z0-9_-]{24,256}$/.test(handle)||
-       !['approve','deny'].includes(decision))return oauthError();
+       !['approve','deny'].includes(decision)){logAuthorizationFailure(env,'consent_form',null,'form_rejected');return oauthError();}
+    let stage='consent_approval';
     try{
       if(decision==='deny'){
         if(form.has('scope'))return oauthError();
@@ -79,27 +85,31 @@ export function makeConsentFlow({
       }
       // Fail without consuming the consent handle if the upstream provider
       // hasn't been explicitly configured in a later approved stage.
+      stage='upstream_configuration';
       checkConfig(env);
       const selected=form.getAll('scope');
-      if(!allowedSelection(selected,['mcp:read','offline_access']))return oauthError();
+      if(!allowedSelection(selected,['mcp:read','offline_access'])){logAuthorizationFailure(env,'consent_selection',null,'scope_rejected');return oauthError();}
       // Consume without the provider's scope replacement: approveConsent({scope})
       // overwrites request.scope, which would erase whether offline_access was
       // offered and let a member add scopes the client never requested.
+      stage='consent_approval';
       const approved=await oauth.approveConsent(request,handle);
       const offered=approved.request?.scope;
-      if(!Array.isArray(offered)||!allowedSelection(selected,offered))return oauthError();
+      if(!Array.isArray(offered)||!allowedSelection(selected,offered)){logAuthorizationFailure(env,'consent_selection',null,'scope_rejected');return oauthError();}
       const offlineOffered=offered.includes('offline_access');
       const verifier=pkceVerifier();
+      stage='upstream_session';
       const upstream=await oauth.beginUpstream({...approved.request,scope:[...selected]},{
         data:{verifier,grantedScopes:selected,offlineOffered},headers:approved.headers
       });
+      stage='upstream_redirect';
       const location=await startUrl({state:upstream.state,verifier,env});
       const headers=new Headers(upstream.headers);
       headers.set('location',location);
       headers.set('cache-control','no-store');
       headers.set('referrer-policy','no-referrer');
       return new Response(null,{status:302,headers});
-    }catch{return oauthError();}
+    }catch(error){logAuthorizationFailure(env,stage,error);return oauthError();}
   }
 
   async function callback(request,env){
@@ -115,8 +125,10 @@ export function makeConsentFlow({
       key=>params.getAll(key).length>1)||
       !/^[A-Za-z0-9_-]{24,256}$/.test(params.get('state')||'')||
       params.has('code')===params.has('error')||
-      !(params.get('code')||params.get('error')))
+      !(params.get('code')||params.get('error'))){
+      logAuthorizationFailure(env,'upstream_state_failed',null,'request_rejected');
       return oauthError();
+    }
     let cleanup,stage='upstream_state_failed';
     try{
       const oauth=getOAuth(env);
@@ -162,7 +174,7 @@ export function makeConsentFlow({
       headers.set('referrer-policy','no-referrer');
       logOAuthStage(env,'authorization_completed');
       return new Response(null,{status:302,headers});
-    }catch{logOAuthStage(env,stage);return oauthError(401,cleanup);}
+    }catch(error){logOAuthStage(env,stage);logAuthorizationFailure(env,stage,error);return oauthError(401,cleanup);}
   }
   return {authorize,callback};
 }

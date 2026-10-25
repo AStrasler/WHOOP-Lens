@@ -34,7 +34,7 @@ the connection are verified and immediately before the request. Over budget, not
   updated by a single atomic UPSERT, so parallel requests cannot overspend.
 - Token refreshes (WHOOP's OAuth token endpoint) are not counted.
 - Over the limit:
-  - MCP: tool error "This account reached its WHOOP Lens request limit (N WHOOP requests per
+  - MCP: tool error "This account reached its WhoopLens request limit (N WHOOP requests per
     minute|day (UTC)). No WHOOP request was made. Wait about S seconds..."
   - REST: HTTP 429, `Retry-After: S`, `{"error":...,"rate_limit_scope":"member"}`.
   - `auto_page`: the records already fetched are returned with `complete:false`,

@@ -78,7 +78,7 @@ function renderPreview(result, fileName) {
 }
 
 if (window.top !== window.self) {
-  document.body.textContent = "Open WHOOP Lens directly in your browser.";
+  document.body.textContent = "Open WhoopLens directly in your browser.";
   throw new Error("Embedded frames are not permitted.");
 }
 $("login-form").addEventListener("submit", async event => {
@@ -89,7 +89,7 @@ $("login-form").addEventListener("submit", async event => {
   $("password").value = "";
   $("login-button").disabled = true;
   clearPreview();
-  setStatus("Checking your private WHOOP Lens access...");
+  setStatus("Checking your private WhoopLens access...");
   try {
     const user = await auth.signIn(email, password);
     if (attempt !== epoch) { await auth.signOut(); return; }
@@ -97,7 +97,7 @@ $("login-form").addEventListener("submit", async event => {
     if (attempt !== epoch) { await auth.signOut(); return; }
     if (connection.connected !== true) {
       await auth.signOut();
-      throw new Error("This account is not connected to WHOOP Lens. Request an invitation or connect WHOOP through Account setup.");
+      throw new Error("This account is not connected to WhoopLens. Request an invitation or connect WHOOP through Account setup.");
     }
     verified = true;
     $("account-label").textContent = user.email;
@@ -141,7 +141,7 @@ $("health-file").addEventListener("change", async event => {
     if (attempt !== epoch || !verified) return;
     if (status.connected !== true) {
       await signOut();
-      setStatus("WHOOP Lens access is no longer active. Sign in again.", true);
+      setStatus("WhoopLens access is no longer active. Sign in again.", true);
       return;
     }
     const raw = await file.text();

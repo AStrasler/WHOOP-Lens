@@ -19,7 +19,7 @@ const diagnosticSchema={type:'object',properties:{
 export const errorReportTools=Object.freeze([
   {name:'get_reportable_links',description:'Owner only. Return eligible linked WHOOP account handles for the authenticated owner’s own account. Never returns another member’s links.',
     inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},
-  {name:'report_error',description:'Report structured WHOOP Lens diagnostics for an eligible link_id belonging to this member. Accepts only fixed codes, stages, operations, status, time and an optional verified own request ID; no free text, URLs, tokens or health values. First call previews the exact diagnostics for the member. Only after approval, resend the identical payload with approved:true. No WHOOP connection state is changed.',
+  {name:'report_error',description:'Report structured WhoopLens diagnostics for an eligible link_id belonging to this member. Accepts only fixed codes, stages, operations, status, time and an optional verified own request ID; no free text, URLs, tokens or health values. First call previews the exact diagnostics for the member. Only after approval, resend the identical payload with approved:true. No WHOOP connection state is changed.',
     inputSchema:{type:'object',properties:{link_id:{type:'string',pattern:'^lnk_[0-9a-f]{64}$'},diagnostics:diagnosticSchema,
       approved:{type:'boolean',const:true}},required:['link_id','diagnostics'],additionalProperties:false},
     annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}}
@@ -76,7 +76,7 @@ export async function runErrorReportTool(name,args,{db,userId,env,requestId,now=
     d.code==='data_unavailable'?'unavailable_data':'temporary';
   const publicEvidence={source:'client_reported',link_id:link.link_id,provider:'whoop',diagnostics:d,
     verification:'Link eligibility and any request ID are verified; client-reported cause and status are not independently established.'};
-  const result=await reportIssue(db,userId,{category,description:'Structured WHOOP Lens diagnostic report',approved:parsed.approved},
+  const result=await reportIssue(db,userId,{category,description:'Structured WhoopLens diagnostic report',approved:parsed.approved},
     {requestId,env,now,structuredReport:{generation:link.generation,publicEvidence}});
   if(!result.submitted)return {...result,link_id:link.link_id,diagnostics:d,
     next_step:'Show the link provider and the exact structured diagnostics to the member. If they approve, call report_error with the identical link_id and diagnostics and approved:true. No report exists yet.'};

@@ -47,7 +47,7 @@ class PermissionsRationaleActivity : ComponentActivity() {
     }
 
     val subtitle = TextView(this).apply {
-      text = "How WHOOP Lens accesses and protects your health data"
+      text = "How WhoopLens accesses and protects your health data"
       textSize = 15f
       setTextColor(accent)
       setPadding(0, 0, 0, 20.dp())
@@ -62,7 +62,7 @@ class PermissionsRationaleActivity : ComponentActivity() {
     }
 
     val section1 = paragraph(
-      "WHOOP Lens Companion connects to Android Health Connect to read your fitness data on-demand. " +
+      "WhoopLens Companion connects to Android Health Connect to read your fitness data on-demand. " +
         "With your selected permissions, it previews daily step aggregates and counts of sleep, heart-rate and exercise records. " +
         "The source is Health Connect; Samsung Health sharing depends on your Samsung Health and Health Connect settings."
     )

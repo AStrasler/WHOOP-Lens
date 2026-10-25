@@ -159,7 +159,7 @@ test("landing page tells new users to run connect_whoop", () => {
 
 test("privacy statements disclose stored Samsung Health records", () => {
   for (const page of [privacy, read("../Privacy.md")]) {
-    assert.match(page, /Samsung Health records are stored for your account in the WHOOP Lens Cloudflare D1 database/);
+    assert.match(page, /Samsung Health records are stored for your account in the WhoopLens Cloudflare D1 database/);
   }
 });
 
@@ -178,7 +178,7 @@ test("capability and workspace guides do not present Supabase as the working pat
 });
 
 test("disconnect wording is qualified for ended memberships", () => {
-  assert.doesNotMatch(read("index.html"), /disconnect WHOOP from WHOOP Lens or revoke access in your WHOOP account settings at any time/);
+  assert.doesNotMatch(read("index.html"), /disconnect WHOOP from WhoopLens or revoke access in your WHOOP account settings at any time/);
   for (const page of [read("index.html"), privacy, read("../Privacy.md")]) assert.match(page, /membership has ended/);
 });
 

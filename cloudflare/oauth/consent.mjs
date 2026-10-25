@@ -5,7 +5,7 @@ export function escapeHtml(value){
   return String(value).replace(/[&<>"']/g,ch=>'&#'+ch.charCodeAt(0)+';');
 }
 const SCOPE_COPY={
-  'mcp:read':['mcp:read','Read your WHOOP Lens data through MCP'],
+  'mcp:read':['mcp:read','Read your WhoopLens data through MCP'],
   'offline_access':['offline_access','Stay connected without approving again each time']
 };
 export const CONSENT_CSS=`  :root {
@@ -209,10 +209,10 @@ export function consentPage(details,handle){
   return '<!doctype html><html lang="en"><head><meta charset="utf-8">'+
     '<meta name="viewport" content="width=device-width, initial-scale=1">'+
     '<meta name="color-scheme" content="dark">'+
-    '<title>Authorize WHOOP Lens</title><style>'+CONSENT_CSS+'</style></head><body><main>'+
+    '<title>Authorize WhoopLens</title><style>'+CONSENT_CSS+'</style></head><body><main>'+
     '<div class="mark" aria-hidden="true">'+MARK+'</div>'+
-    '<h1>Authorize <span>WHOOP Lens</span> access?</h1>'+
-    '<p class="lede"><strong>'+client+'</strong> is requesting access to your WHOOP Lens data.</p>'+
+    '<h1>Authorize <span>WhoopLens</span> access?</h1>'+
+    '<p class="lede"><strong>'+client+'</strong> is requesting access to your WhoopLens data.</p>'+
     '<div class="link" aria-hidden="true"><div class="node">'+clientMark(details.clientName)+'</div>'+
     '<div class="dots"><i></i><i></i><i></i></div><div class="node lens">'+LENS+'</div></div>'+
     '<div class="details">'+domainRow+
@@ -222,25 +222,27 @@ export function consentPage(details,handle){
     '<form method="post" action="/authorize">'+
     '<input type="hidden" name="handle" value="'+safeHandle+'">'+
     '<fieldset><legend>Permissions you approve</legend>'+scopeFields(details.scope)+'</fieldset>'+
-    '<div class="note">'+LOCK+'<span>You\'ll continue to the existing WHOOP Lens identity provider to sign in. This page never collects your password.</span></div>'+
+    '<div class="note">'+LOCK+'<span>You\'ll continue to the existing WhoopLens identity provider to sign in. This page never collects your password.</span></div>'+
     '<div class="actions"><button class="primary" type="submit" name="decision" value="approve">Continue to secure sign-in</button></div></form>'+
     '<form class="cancel" method="post" action="/authorize">'+
     '<input type="hidden" name="handle" value="'+safeHandle+'">'+
     '<button class="ghost" type="submit" name="decision" value="deny">Cancel</button></form>'+
-    '<footer>Only invited, active WHOOP Lens members can finish connecting.</footer>'+
+    '<footer>Only invited, active WhoopLens members can finish connecting.</footer>'+
     '</main></body></html>';
 }
 export function noStoreHeaders(contentType='text/plain; charset=utf-8'){
   // Chrome treats the whole redirect chain of a form POST as the form target.
   // After approval the browser must be able to follow the same-origin callback
-  // through to the Cloudflare Access login host. 'self' alone aborts that hop,
-  // drops the authorize query, and the next load is "Authorization unavailable".
+  // through Cloudflare Access and on to the approved client callback
+  // (ChatGPT or the Android App Link).
+  // A blocked final redirect leaves an already-consumed consent form visible;
+  // resubmitting it correctly fails with Authorization unavailable.
   const style=String(contentType).startsWith('text/html')?" style-src '"+CONSENT_STYLE_HASH+"';":'';
   return {'content-type':contentType,'cache-control':'no-store',
-    'content-security-policy':"default-src 'none';"+style+" form-action 'self' https://auth.whooplens.tech https://whoop-lens.cloudflareaccess.com https://chatgpt.com; frame-ancestors 'none'; base-uri 'none'",
+    'content-security-policy':"default-src 'none';"+style+" form-action 'self' https://auth.whooplens.tech https://whoop-lens.cloudflareaccess.com https://chatgpt.com https://whooplens.tech/android/oauth/callback; frame-ancestors 'none'; base-uri 'none'",
     'referrer-policy':'no-referrer','x-frame-options':'DENY',
     'x-content-type-options':'nosniff'};
 }
 export function unavailable(){
-  return new Response('WHOOP Lens authorization not available',{status:503,headers:noStoreHeaders()});
+  return new Response('WhoopLens authorization not available',{status:503,headers:noStoreHeaders()});
 }

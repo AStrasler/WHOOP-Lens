@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">WHOOP Lens Companion</string>
+    <string name="app_name">WhoopLens Companion</string>
     <string name="title_rationale">Health Connect &amp; Privacy</string>
     <string name="account_checking">Checking saved account…</string>
     <string name="account_signed_in">Signed in securely. Account access is checked by Cloudflare for every server request.</string>

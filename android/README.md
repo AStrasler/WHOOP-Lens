@@ -1,6 +1,6 @@
-# WHOOP Lens Android companion (optional, unreleased)
+# WhoopLens Android companion (optional, unreleased)
 
-> **Not required.** WHOOP Lens is now browser-first. This Android code is retained for an optional future Health Connect bridge. Users should not need to install an APK to access WHOOP Lens or review supported manual exports. See [browser workspace](../docs/WEB_WORKSPACE.md). Keep Android uploads and deletes disabled.
+> **Not required.** WhoopLens is now browser-first. This Android code is retained for an optional future Health Connect bridge. Users should not need to install an APK to access WhoopLens or review supported manual exports. See [browser workspace](../docs/WEB_WORKSPACE.md). Keep Android uploads and deletes disabled.
 
 **Status:** Debug APK compiled; not yet installed or tested on a phone. No production uploads, deletes, or migrations enabled.
 

@@ -1,18 +1,18 @@
-# WHOOP Lens: Supabase to Cloudflare migration
+# WhoopLens: Supabase to Cloudflare migration
 
 Status as of 2026-10-12: **Supabase stays live. The private MCP is also live on Cloudflare.**
 
 - Private server: `https://whooplens.tech/mcp` on Worker `whoop-lens`.
 - Authorization server: `https://auth.whooplens.tech` on Worker `whoop-lens-auth`.
-- Scope: `mcp:read`. Resource name: WHOOP Lens (private MCP). WHOOP API calls stay read-only. Account tools can disconnect stored WHOOP credentials and import a consented Health Connect file.
+- Scope: `mcp:read`. Resource name: WhoopLens (private MCP). WHOOP API calls stay read-only. Account tools can disconnect stored WHOOP credentials and import a consented Health Connect file.
 - `workers.dev` and preview URLs are disabled.
 - WHOOP OAuth on Cloudflare is on. The Worker has `WHOOP_CLIENT_ID` and `WHOOP_CLIENT_SECRET`. A connection is stored only after a separate WHOOP authorization, and the WHOOP app must allow `https://whooplens.tech/api/whoop/callback`.
 - D1 has one membership and zero WHOOP connections. Refresh tokens are not copied from Supabase.
-- AI summaries are implemented and left off. `AI_SUMMARY_ENABLED` is `"false"` on the whoop-lens and resource Workers. The auth Worker does not declare the AI, stress, or digest flags. They cover WHOOP measurement reads and stored Health Connect reads. Migration `migrations/0009_ai_usage.sql` stores daily neuron counters. Migration `migrations/0010_ai_account_snapshot.sql` caches the account-wide Workers AI neuron total from the GraphQL Analytics API. The read-only secret is `AI_ACCOUNT_ANALYTICS_TOKEN` (Account Analytics Read) and the account id setting is `AI_ANALYTICS_ACCOUNT_ID`. Neither is committed, and neither migration is applied here. A failed analytics read, or a fetch whose freshness watermark is older than 10 minutes (`ANALYTICS_STALE_MS`), keeps the template summary, including `chart_data` and deterministic `insights`. The last call time is not that watermark. Local reservations after the last counted call are counted. Migration `migrations/0012_ai_usage_event.sql` stores those reservation times, indexes `(day, at_ms)`, and is not applied here. Rows from earlier UTC days are deleted on the next budget read. A reservation whose event row cannot be written is undone. `STRESS_ESTIMATE_ENABLED` and `WEEKLY_DIGEST_ENABLED` are `"false"` on those same two Workers. The stress series is an empty placeholder and is not calculated. The weekly digest tool is pulled by the caller's ChatGPT scheduled task. It caches one digest per account per week in `migrations/0011_ai_weekly_digest.sql`, which is not applied here. When summaries are on, only a model digest is cached; a template fallback is left for a later pull. It does not send mail and it has no cron. A suggested task prompt is: Every Monday 8 AM, call WHOOP Lens get_weekly_digest and chart it. `get_ai_usage` shows that account's own quota, and the global total only to the developer user id.
+- AI summaries are implemented and left off. `AI_SUMMARY_ENABLED` is `"false"` on the whoop-lens and resource Workers. The auth Worker does not declare the AI, stress, or digest flags. They cover WHOOP measurement reads and stored Health Connect reads. Migration `migrations/0009_ai_usage.sql` stores daily neuron counters. Migration `migrations/0010_ai_account_snapshot.sql` caches the account-wide Workers AI neuron total from the GraphQL Analytics API. The read-only secret is `AI_ACCOUNT_ANALYTICS_TOKEN` (Account Analytics Read) and the account id setting is `AI_ANALYTICS_ACCOUNT_ID`. Neither is committed, and neither migration is applied here. A failed analytics read, or a fetch whose freshness watermark is older than 10 minutes (`ANALYTICS_STALE_MS`), keeps the template summary, including `chart_data` and deterministic `insights`. The last call time is not that watermark. Local reservations after the last counted call are counted. Migration `migrations/0012_ai_usage_event.sql` stores those reservation times, indexes `(day, at_ms)`, and is not applied here. Rows from earlier UTC days are deleted on the next budget read. A reservation whose event row cannot be written is undone. `STRESS_ESTIMATE_ENABLED` and `WEEKLY_DIGEST_ENABLED` are `"false"` on those same two Workers. The stress series is an empty placeholder and is not calculated. The weekly digest tool is pulled by the caller's ChatGPT scheduled task. It caches one digest per account per week in `migrations/0011_ai_weekly_digest.sql`, which is not applied here. When summaries are on, only a model digest is cached; a template fallback is left for a later pull. It does not send mail and it has no cron. A suggested task prompt is: Every Monday 8 AM, call WhoopLens get_weekly_digest and chart it. `get_ai_usage` shows that account's own quota, and the global total only to the developer user id.
 - GitHub Workers Builds on `main` do not auto-run `npx wrangler deploy`. Cloudflare preview builds are off, so a push does not run `npx wrangler preview`.
 - The sections below are the 2026-10-11 staging log. They describe that day's upload, not the current deployment.
 
-Cloudflare account: dedicated WHOOP Lens account.
+Cloudflare account: dedicated WhoopLens account.
 Cloudflare Worker name: `whoop-lens`.
 Custom domain: `whooplens.tech` for the resource Worker and `auth.whooplens.tech` for the issuer.
 Default workers.dev and preview URLs: disabled.
@@ -89,7 +89,7 @@ The database was created and the exact SQL in migrations/0001_initial.sql was ap
 
 An uploaded Worker version is inert until a Cloudflare deployment points traffic
 at it. The current deployment predates this staged version and is **not**
-evidence that Cloudflare is running WHOOP Lens. Public and preview routing are off
+evidence that Cloudflare is running WhoopLens. Public and preview routing are off
 at the Cloudflare API. DNS and WHOOP OAuth registrations remain unchanged.
 
 ## MCP protocol port (staging only, 2026-10-11)
@@ -193,7 +193,7 @@ empty staging database is not a claim of a free unlimited production backend.
 
 ## Worker's current behavior
 
-The NEW staged Worker version implements isolated read and future WHOOP OAuth routes but returns HTTP 503 while MIGRATION_API_ENABLED=false, and the two WHOOP flags are also false. This staged version is **uploaded but not deployed**. The existing Worker has a different, earlier deployment with no workers.dev or preview routing enabled. No authenticated WHOOP Lens Cloudflare endpoint is confirmed live.
+The NEW staged Worker version implements isolated read and future WHOOP OAuth routes but returns HTTP 503 while MIGRATION_API_ENABLED=false, and the two WHOOP flags are also false. This staged version is **uploaded but not deployed**. The existing Worker has a different, earlier deployment with no workers.dev or preview routing enabled. No authenticated WhoopLens Cloudflare endpoint is confirmed live.
 
 ## Rollback
 
@@ -240,7 +240,7 @@ above describing a transitional password form is superseded by this section.
 This remains **undelployed staging source**, with both OAuth gates disabled,
 public/preview URLs disabled, no new routes/domains, no registered upstream
 OAuth client, no Supabase production changes and no real data transfer.
-Supabase retains the active WHOOP Lens service.
+Supabase retains the active WhoopLens service.
 
 The exact future OAuth callback
 \`https://auth.whooplens.tech/oauth/upstream/callback\` must be registered in

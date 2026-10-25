@@ -17,7 +17,7 @@ import {SeatsFull} from './seat-limit.mjs';
 import {memberLimitMessage} from './member-rate-limit.mjs';
 import {capture,classifyToolError,newRequestId,validRequestId,toolSubsystem} from './diagnostics.mjs';
 import {issueToolsFor,issueArguments,reportIssue,reviewIssueReports,updateIssueReport,ReportNotSubmitted} from './issue-reports.mjs';
-// Private WHOOP Lens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
+// Private WhoopLens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
 // this module. Do not copy WHOOP refresh tokens from Supabase.
 const PROTOCOL_CURRENT="2026-07-28";
@@ -394,14 +394,14 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     // Never suggests substituting Health Connect or Samsung Health data.
     if(error?.message==="WHOOP API request failed"){
       const what=Object.hasOwn(WHOOP_DATA_LABELS,String(error.resource))?WHOOP_DATA_LABELS[error.resource]:"this WHOOP data";
-      if(error.status===401)return toolError(id,`WHOOP rejected this connection's authorization when reading ${what}. Retry once; if it keeps failing, reconnect WHOOP in WHOOP Lens. No WHOOP data was returned.`,modern);
+      if(error.status===401)return toolError(id,`WHOOP rejected this connection's authorization when reading ${what}. Retry once; if it keeps failing, reconnect WHOOP in WhoopLens. No WHOOP data was returned.`,modern);
       if(error.status===403)return toolError(id,`WHOOP denied access to ${what} for this connection. Reconnect WHOOP and approve every requested permission, then retry. No WHOOP data was returned.`,modern);
       if(error.status===404)return toolError(id,`WHOOP did not find ${what} for this request. No WHOOP data was returned.`,modern);
       if(error.network==="timeout")return toolError(id,`WHOOP did not respond in time when reading ${what}. Retry shortly. No WHOOP data was returned and nothing was changed.`,modern);
       if(error.status>=500||error.network)return toolError(id,`WHOOP is temporarily unavailable (reading ${what}). Retry shortly. No WHOOP data was returned and nothing was changed.`,modern);
     }
     if(/^WHOOP refresh|^Invalid WHOOP refresh/.test(error?.message||""))
-      return toolError(id,"WHOOP Lens could not renew this connection's WHOOP authorization. Retry shortly; if it keeps failing, reconnect WHOOP. No WHOOP data was returned.",modern);
+      return toolError(id,"WhoopLens could not renew this connection's WHOOP authorization. Retry shortly; if it keeps failing, reconnect WHOOP. No WHOOP data was returned.",modern);
     return toolError(id,"WHOOP data is unavailable for this connection.",modern);
   }
 }

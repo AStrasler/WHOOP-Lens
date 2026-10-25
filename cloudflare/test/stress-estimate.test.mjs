@@ -438,7 +438,7 @@ test("F2 weekly digest: boundary dates, no fabricated target dates, cached outpu
 
 // ---------- finding 1 + 6: prompt and filter ----------
 const plain={count:3,sources:[{source:"WHOOP",count:3}],metrics:{"score.recovery_score":{min:35,max:44,mean:40,median:40}}};
-const valid={...plain,stress_estimate:{name:"WHOOP Lens experimental physiological stress estimate",experimental:true,
+const valid={...plain,stress_estimate:{name:"WhoopLens experimental physiological stress estimate",experimental:true,
   estimate_date:"2026-10-15",requested_latest_date:"2026-10-15",is_latest_requested_date:true,value:72,band:"elevated",confidence:"moderate",baseline_days:30}};
 const mainPrompt=readFileSync(new URL("./fixtures/system-prompt-main.txt",import.meta.url),"utf8").replace(/\r?\n$/,"");
 const STRESS_WORDS=["stress","estimate","high","low","elevated","moderate","confidence","index","experimental","physiological","band","lens"];
@@ -468,7 +468,7 @@ test("F1 enabled with a valid estimate: factual sentence accepted, prompt gains 
   const on=systemPromptFor(valid);
   assert.match(on,/estimate_date/);assert.match(on,/never call it|Never call it/);
   assert.equal(on.replace(/If stats\.stress_estimate is present[^]*?or a diagnosis\. /,""),mainPrompt);
-  assert.equal(outputRejection("The WHOOP Lens experimental physiological stress estimate was 72 on 2026-10-15, in the elevated band with moderate confidence.",valid),null);
+  assert.equal(outputRejection("The WhoopLens experimental physiological stress estimate was 72 on 2026-10-15, in the elevated band with moderate confidence.",valid),null);
   // Neutral level words outside a stress claim stay usable; claim words must bind to the estimate.
   for(const w of ["high","low","elevated","moderate","confidence","band","experimental","physiological","lens"])
     assert.equal(outputRejection(`Recovery score was ${w}, ranging from 35 to 44.`,valid),null,w);
@@ -530,7 +530,7 @@ test("R2-1 wrong date and wrong level words are rejected",()=>{
 test("R2-1 a past estimate without its date is rejected; with its date it is accepted",()=>{
   assert.equal(outputRejection("The stress estimate was 72, in the elevated band.",r2past)?.rule,"stress_claim");
   assert.equal(outputRejection("The stress estimate was 72 on 2026-10-15.",r2past)?.rule,"stress_claim");
-  assert.equal(outputRejection("The WHOOP Lens experimental physiological stress estimate was 72 on 2026-10-14, in the elevated band with moderate confidence.",r2past),null);
+  assert.equal(outputRejection("The WhoopLens experimental physiological stress estimate was 72 on 2026-10-14, in the elevated band with moderate confidence.",r2past),null);
 });
 test("R2-1 a correctly attributed current estimate is accepted, with or without its date",()=>{
   assert.equal(outputRejection("The stress estimate was 72, in the elevated band with moderate confidence.",r2stats),null);
@@ -1151,7 +1151,7 @@ test("Codex15 independently calculated stress index is never attributed to WHOOP
   for(const claim of falseAttribution)
     assert.equal(outputRejection(claim,r3)?.rule,"stress_claim",claim);
   for(const claim of [
-    "The WHOOP Lens experimental physiological stress estimate was 72 on 2026-10-13, in the elevated band with moderate confidence.",
+    "The WhoopLens experimental physiological stress estimate was 72 on 2026-10-13, in the elevated band with moderate confidence.",
     "The stress estimate was 72 on 2026-10-13.",
     "The stress estimate was 72 on 2026-10-13. Recovery score median was 40."
   ])assert.equal(outputRejection(claim,r3),null,claim);

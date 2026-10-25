@@ -364,3 +364,119 @@ test('native public-client rotation recovery and grant revocation need no issuer
     assert.equal(await f.server.validateToken(RESOURCE, current.access_token, f.env), null);
   } finally { f.db.close(); }
 });
+
+
+// Exercise Android's actual DCR/PKCE contract against the pinned provider.
+// Identity is injected ONLY into this disposable test flow; Access verification
+// remains covered separately and is unchanged in the production Worker.
+function androidOAuthFixture(){
+  const kv=new MemoryKV();
+  const env={OAUTH_KV:kv,OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true'};
+  const oauth=server.getOAuthApi(env);
+  const flow=baseConsentFlow({getOAuth:()=>oauth,checkConfig:()=>{},
+    verifyIdentity:async()=>USER,
+    startUrl:async({state})=>ORIGIN+'/oauth/upstream/callback?'+new URLSearchParams({state,code:'access'})});
+  const redirect='https://whooplens.tech/android/oauth/callback';
+  async function register(){
+    const response=await AuthWorker.prototype.fetch.call({env,ctx:{}},new Request(ORIGIN+'/oauth/register',{
+      method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
+        client_name:'WhoopLens Android Companion',redirect_uris:[redirect],
+        grant_types:['authorization_code','refresh_token'],response_types:['code'],token_endpoint_auth_method:'none'})}));
+    assert.equal(response.status,201);
+    return (await response.json()).client_id;
+  }
+  async function begin(client){
+    const verifier=createVerifier();
+    const query=new URLSearchParams({client_id:client,redirect_uri:redirect,response_type:'code',
+      scope:'mcp:read offline_access',state:createVerifier(),resource:RESOURCE,
+      code_challenge:await createChallenge(verifier),code_challenge_method:'S256'});
+    const page=await flow.authorize(request('/authorize?'+query),env);
+    assert.equal(page.status,200);
+    const html=await page.text();
+    assert.match(html,/WhoopLens Android Companion/);
+    assert.match(html,/name="scope" value="offline_access"/);
+    return {client,verifier,query,handle:html.match(/name="handle" value="([^"]+)"/)[1],cookie:cookies(page)};
+  }
+  async function approve(a){
+    const form=new URLSearchParams({handle:a.handle,decision:'approve'});
+    form.append('scope','mcp:read');form.append('scope','offline_access');
+    return flow.authorize(request('/authorize','POST',form,a.cookie),env);
+  }
+  async function complete(a){
+    const approved=await approve(a);assert.equal(approved.status,302);
+    const callback=new URL(approved.headers.get('location'));
+    const response=await flow.callback(request(callback.pathname+callback.search,'GET',null,cookies(approved)),env);
+    assert.equal(response.status,302);
+    const destination=new URL(response.headers.get('location'));
+    assert.equal(destination.origin+destination.pathname,redirect);
+    assert.equal(destination.searchParams.get('state'),a.query.get('state'));
+    assert.equal(destination.searchParams.get('iss'),ORIGIN);
+    return destination.searchParams.get('code');
+  }
+  async function token(fields){return server.fetch(request('/oauth/token','POST',fields),env,{});}
+  return {kv,env,oauth,flow,register,begin,approve,complete,token};
+}
+
+test('fresh Android DCR reaches consent, bound callback, PKCE token exchange and rotating refresh',async()=>{
+  const f=androidOAuthFixture();
+  const a=await f.begin(await f.register());
+  const code=await f.complete(a);
+  const response=await f.token({grant_type:'authorization_code',client_id:a.client,
+    code,redirect_uri:a.query.get('redirect_uri'),code_verifier:a.verifier,resource:RESOURCE});
+  assert.equal(response.status,200);const initial=await response.json();
+  assert.ok(initial.access_token&&initial.refresh_token);
+  const refresh=await f.token({grant_type:'refresh_token',client_id:a.client,refresh_token:initial.refresh_token,resource:RESOURCE});
+  assert.equal(refresh.status,200);const rotated=await refresh.json();
+  assert.ok(rotated.access_token&&rotated.refresh_token);
+  assert.notEqual(rotated.refresh_token,initial.refresh_token);
+});
+
+test('repeated and concurrent Android registrations retain independent client and browser transactions',async()=>{
+  const f=androidOAuthFixture();const attempts=[];
+  for(let i=0;i<4;i++)attempts.push(await f.begin(await f.register()));
+  attempts.push(...await Promise.all(Array.from({length:4},async()=>f.begin(await f.register()))));
+  assert.equal(new Set(attempts.map(a=>a.client)).size,8);
+  assert.equal(new Set(attempts.map(a=>a.handle)).size,8);
+  for(const a of attempts)assert.ok(await f.complete(a));
+});
+
+test('Android rejects missing/expired registrations, nonmatching redirect, invalid resource and absent PKCE',async()=>{
+  const f=androidOAuthFixture();const a=await f.begin(await f.register());
+  for(const [key,value] of [['client_id','missing-client'],['redirect_uri','https://other.invalid/callback'],
+    ['resource','https://other.invalid/mcp'],['code_challenge_method','plain']]){
+    const q=new URLSearchParams(a.query);q.set(key,value);
+    assert.equal((await f.flow.authorize(request('/authorize?'+q),f.env)).status,400);
+  }
+  const q=new URLSearchParams(a.query);q.delete('code_challenge');q.delete('code_challenge_method');
+  assert.equal((await f.flow.authorize(request('/authorize?'+q),f.env)).status,400);
+  f.kv.now=91*86400;
+  assert.equal((await f.flow.authorize(request('/authorize?'+a.query),f.env)).status,400);
+});
+
+test('a blocked browser return cannot reuse consumed Android consent; expired consent also fails closed',async()=>{
+  const f=androidOAuthFixture();const a=await f.begin(await f.register());
+  assert.ok(await f.complete(a));
+  const replay=await f.approve(a);
+  assert.equal(replay.status,400);assert.equal(await replay.text(),'Authorization unavailable');
+  const b=await f.begin(await f.register());f.kv.now+=601;
+  assert.equal((await f.approve(b)).status,400);
+});
+
+test('authorization diagnostics distinguish KV reads, consent-session writes and validation without secrets',async t=>{
+  const f=androidOAuthFixture();const a=await f.begin(await f.register());
+  f.env.DIAGNOSTICS_CAPTURE_ENABLED='true';const lines=[];t.mock.method(console,'warn',v=>lines.push(v));
+  const originalGet=f.kv.get.bind(f.kv),originalPut=f.kv.put.bind(f.kv);
+  f.kv.get=async()=>{throw Error('synthetic-sensitive-request-cookie');};
+  assert.equal((await f.flow.authorize(request('/authorize?'+a.query),f.env)).status,400);
+  f.kv.get=originalGet;f.kv.put=async()=>{throw Error('synthetic-sensitive-request-cookie');};
+  assert.equal((await f.flow.authorize(request('/authorize?'+a.query),f.env)).status,400);
+  f.kv.put=originalPut;
+  const bad=new URLSearchParams(a.query);bad.set('redirect_uri','https://other.invalid/callback');
+  assert.equal((await f.flow.authorize(request('/authorize?'+bad),f.env)).status,400);
+  assert.deepEqual(lines.map(line=>JSON.parse(line)),[
+    {event:'oauth_authorization_failure',stage:'authorize_request',reason:'dependency_unavailable'},
+    {event:'oauth_authorization_failure',stage:'consent_session',reason:'dependency_unavailable'},
+    {event:'oauth_authorization_failure',stage:'authorize_request',reason:'redirect_rejected'}
+  ]);
+  assert.ok(!lines.join('').includes('synthetic-sensitive-request-cookie'));
+});

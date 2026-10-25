@@ -30,7 +30,7 @@ const MINUTE_MS=60_000,DAY_MS=86_400_000;
 
 export class MemberRateLimited extends Error{
   constructor(retryAfter,window,limit){
-    super("WHOOP Lens member request limit reached");
+    super("WhoopLens member request limit reached");
     this.status=429;this.memberLimit=true;this.retryAfter=retryAfter;this.window=window;this.limit=limit;
   }
 }
@@ -112,7 +112,7 @@ export async function reserveWhoopRequest(db,userId,env,{now=Date.now}={}){
 export function memberLimitMessage(error){
   const wait=Number.isSafeInteger(error?.retryAfter)?Math.max(1,error.retryAfter):60;
   const per=error?.window==="day"?"day (UTC)":"minute";
-  const head=`This account reached its WHOOP Lens request limit (${error?.limit??"the configured number of"} WHOOP requests per ${per}). `+
+  const head=`This account reached its WhoopLens request limit (${error?.limit??"the configured number of"} WHOOP requests per ${per}). `+
     `No WHOOP request was made. Wait about ${wait} seconds, then `;
   // History cursors live one hour from issue (history-pagination.mjs);
   // cursorOutlived: the next_token in this request expires before the wait ends.

@@ -11,12 +11,12 @@ import {memberLimits,memberLimitEnabled,missingTable} from './member-rate-limit.
 // Source hierarchy for every AI host on this server. Returned verbatim by
 // get_capabilities (source_hierarchy) and included in the host instructions.
 export const SOURCE_HIERARCHY=Object.freeze([
-  'WHOOP measurements are authoritative for the WHOOP data they represent (recovery, sleep, cycles, workouts, body measurements, profile). WHOOP Lens read tools label them source "whoop".',
+  'WHOOP measurements are authoritative for the WHOOP data they represent (recovery, sleep, cycles, workouts, body measurements, profile). WhoopLens read tools label them source "whoop".',
   'Health Connect, Samsung Health and other existing integrations are supplementary. Keep their source label on every value you cite, and never present them as WHOOP data.',
   'Add other external sources or medical records only when the user directs it. Never bring one in at your own discretion or as a substitute for WHOOP data.',
   'Ground every interpretation in measurements retrieved in this conversation, citing tool and date. Keep measured facts separate from hypotheses and label hypotheses as such.',
   'When WHOOP measurements are missing or stale (whoop_measurements.missing or stale is true, or the latest record is older than the period asked about), say so plainly. Never silently fill the gap from another source.',
-  'While WHOOP Lens is connected and in use, this hierarchy is required, not an optional recommendation. Only the user decides which additional sources to add; do not reorder or redefine it.',
+  'While WhoopLens is connected and in use, this hierarchy is required, not an optional recommendation. Only the user decides which additional sources to add; do not reorder or redefine it.',
   'User-entered WHOOP records (sleep, naps, activities or workouts the person entered manually, journal entries, symptoms and observations) are authoritative records of what the person reported. Do not dispute, dismiss or demand verification of them because they are not sensor-generated, and do not claim they were physiologically verified. Keep their original values, dates, descriptions and attribution; never silently correct, overwrite, reinterpret or discard them. Distinguish user-entered from sensor-generated only when the origin is explicit (an origin field, or the person says they entered it), without treating either as invalid; when whoop_measurements.entry_origin is unknown, keep it unknown and do not infer origin from fields such as nap or score_state (nap says a sleep was a nap, not who entered it). When records disagree, keep both and explain the difference without automatically favoring the sensor. Flag a technical inconsistency only with specific evidence; do not manufacture uncertainty.',
   'Source of truth: sensor measurements establish what WHOOP measured, manual entries establish what the person recorded, and user-provided context establishes what the person reports experiencing. Analyze all of them without disputing, rewriting or substituting any of them.'
 ]);
@@ -25,7 +25,7 @@ export const sourceHierarchyGuidance='Source hierarchy (required): '+SOURCE_HIER
 // feature is off instead of a generic "WHOOP data is unavailable" message.
 export class FeatureDisabled extends Error{
   constructor(feature){
-    super(`This feature (${feature}) is turned off on this WHOOP Lens server. Nothing was changed. `+
+    super(`This feature (${feature}) is turned off on this WhoopLens server. Nothing was changed. `+
       'get_capabilities lists which features are enabled, disabled or not configured.');
     this.name='FeatureDisabled';this.feature=feature;
   }
