@@ -7,7 +7,10 @@
 // Synthetic members, tokens and records only.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { rmSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { readFileSync, readdirSync } from "node:fs";
 import { sealWhoopToken } from "../src/token-crypto.mjs";
@@ -22,9 +25,9 @@ const FULL="offline read:profile read:body_measurement read:recovery read:sleep 
 const env={MIGRATION_API_ENABLED:"true",WHOOP_READS_ENABLED:"true",MCP_ENABLED:"true",DIAGNOSTICS_CAPTURE_ENABLED:"true",
   WHOOP_TOKEN_AES256_KEY:key,WHOOP_CLIENT_ID:"synthetic-client",WHOOP_CLIENT_SECRET:"synthetic-secret-123",WHOOP_LENS_DEVELOPER_USER_ID:M};
 const TOOLS=["get_recovery","get_sleep","get_cycles","get_workouts"];
-async function fixture({expiredFor=[M]}={}){
+async function fixture({expiredFor=[M],path=":memory:"}={}){
   resetCaptureThrottle();
-  const s=new DatabaseSync(":memory:");const dir=new URL("../migrations/",import.meta.url);
+  const s=new DatabaseSync(path);const dir=new URL("../migrations/",import.meta.url);
   for(const f of readdirSync(dir).filter(f=>f.endsWith(".sql")).sort())s.exec(readFileSync(new URL(f,dir),"utf8"));
   for(const [id,role] of [[M,"developer"],[OTHER,"public"]]){
     s.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
@@ -188,7 +191,8 @@ test("key-rotation re-encryption never rewrites a row that is due for refresh (c
   }finally{db.close();}
 });
 // Virtual clock for a follower isolate: each 500 ms poll advances it.
-function virtualClock(){let offset=0;return {now:()=>Date.now()+offset,sleep:async ms=>{offset+=ms;await new Promise(r=>setTimeout(r,2));},advanced:()=>offset};}
+// Fixed base: real timer overhead never leaks into the injected clock.
+function virtualClock(){const base=Date.now();let offset=0;return {now:()=>base+offset,sleep:async ms=>{offset+=ms;await new Promise(r=>setTimeout(r,2));},advanced:()=>offset};}
 const routerWith=(w,api,deps)=>createStagingRouter({verifyIdentity:async()=>M,
   whoopRequest:(d,u,r,e,o)=>api(d,u,r,e,o,{fetcher:w.fetch,...deps})});
 test("a follower in another isolate outwaits a slow holder (over 4.5 s, under the 12 s fetch limit): one refresh, both succeed",async()=>{
@@ -329,5 +333,54 @@ test("a failed stale-lease takeover is not repeated as retryable: the next 400 i
     assert.ok(codes(db).includes("whoop_refresh_rejected"),"bounded: the second 400 is a rejected connection");
     assert.equal(w.log.refresh,2);
     assert.deepEqual(row(db).r,before.r,"stored credentials are never deleted");
+  }finally{db.close();}
+});
+
+// Mandatory burst scenarios: exactly one token request per member and burst.
+test("ten simultaneous expired-token reads per member, two members: one refresh each, rotations persisted, members isolated",async()=>{
+  const db=await fixture({expiredFor:[M,OTHER]}),w=rotatingWhoop({delay:30});
+  try{
+    const before={m:row(db,M),o:row(db,OTHER)};
+    const reads=[];
+    for(let i=0;i<10;i++){reads.push(call(router(w,callWhoop,M),db,TOOLS[i%4]));reads.push(call(router(w,callWhoop,OTHER),db,TOOLS[i%4]));}
+    const results=await Promise.all(reads);
+    assert.deepEqual(results.map(failed),Array(20).fill(false));
+    assert.equal(w.log.refresh,2,"one token request per member");
+    assert.notEqual(row(db,M).r,before.m.r,"member M's rotated refresh token is stored");
+    assert.notEqual(row(db,OTHER).r,before.o.r,"the other member's rotation is stored separately");
+    assert.equal(w.log.api.length,20);assert.ok(w.log.api.every(x=>x.ok),"every read used a live rotated token");
+    assert.deepEqual(codes(db),[]);
+  }finally{db.close();}
+});
+// Separate module instances (separate in-flight maps, like isolates), each with
+// its own connection to one file-backed SQLite database: only the D1 lease can
+// coordinate them. Single process, so this is not a production observation.
+test("cross-instance on a shared file-backed SQLite database: ten reads over three instances and connections make one refresh",async()=>{
+  const path=join(tmpdir(),"wl-refresh-"+randomUUID()+".db");
+  const base=await fixture({path}),w=rotatingWhoop({delay:40});
+  const conns=[base];
+  for(let i=0;i<2;i++){const c=new DatabaseSync(path);c.exec("PRAGMA busy_timeout=2000");conns.push({sqlite:c,...d1Database(c),close(){c.close();}});}
+  try{
+    const mods=[{callWhoop},await import("../src/whoop-api.mjs?file-isolate=1"),await import("../src/whoop-api.mjs?file-isolate=2")];
+    const before=row(base);
+    const results=await Promise.all(Array.from({length:10},(_,i)=>call(router(w,mods[i%3].callWhoop),conns[i%3],TOOLS[i%4])));
+    assert.deepEqual(results.map(failed),Array(10).fill(false));
+    assert.equal(w.log.refresh,1,"exactly one token request across instances");
+    assert.notEqual(row(conns[2]).r,before.r,"the rotation is visible through another connection");
+    assert.doesNotMatch(String(row(conns[1]).updated_at),/^lease:/);
+    assert.ok(w.log.api.every(x=>x.ok));
+  }finally{for(const c of conns)c.close();rmSync(path,{force:true});rmSync(path+"-wal",{force:true});rmSync(path+"-shm",{force:true});}
+});
+test("a stale holder write never overwrites a newer rotation stored by another instance",async()=>{
+  const db=await fixture(),w=rotatingWhoop({delay:1});
+  try{
+    // Another instance stores a newer rotation while this refresh is in flight.
+    const newer=await sealWhoopToken("r-newer",{userId:M,purpose:"refresh",key});
+    const inner=w.fetch;
+    w.fetch=async(raw,opts)=>{const res=await inner(raw,opts);
+      if(new URL(raw).pathname==="/oauth/oauth2/token")db.sqlite.prepare("UPDATE whoop_connections SET encrypted_refresh_token=? WHERE user_id=?").run(newer,M);
+      return res;};
+    await call(router(w),db,"get_recovery");
+    assert.equal(row(db).r,newer,"the compare-and-set write lost and left the newer token in place");
   }finally{db.close();}
 });
