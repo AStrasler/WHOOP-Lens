@@ -321,6 +321,20 @@ Preconditions: identity verified independently (challenge to an independently es
 | #99 | RB-021 refresh-success log (draft) | d94121a | completed, clean | green | Worker release | Prior version | One log line | Merge + release |
 
 
+## Seventh pass (Oct 25, about 2:35 PM CT): status and stopping rules
+
+**Rules.** *Monitoring*: repair tested, Codex reviewed its final commit, findings addressed, no further dev action; waits on owner release or live observation. *Verified Resolved*: completion criteria met in production or by definition. *Outstanding*: needs owner action, member action or evidence. Verified work is not reopened without evidence of regression. No new defect was found this pass beyond the #97 P2 (fixed).
+
+| Status | Items |
+|---|---|
+| Verified Resolved / closed | RB-005 (expected classification), RB-007 (explained by RB-001/002), RB-010, RB-011 (environment differences), RB-013 (tooling gap, CI covers Android), RB-019 (assessed, no change), RB-020 (workflow documented) |
+| Monitoring | RB-001 (live; refreshes observed, see below), RB-014 (#92), RB-012 apex (#94), RB-004/RB-006 (#95), RB-016 (#96 code; schedule separate), RB-017 (#98 Option A), RB-021 (#99), RB-018 (#97 b968067, Codex clean) |
+| Outstanding | RB-002 (m3 must reconnect; draft message prepared, not sent), RB-003 (m1: no action needed unless they report a problem), RB-008 (owner device run), RB-009 (needs a second member's consent), RB-012 deletion channel (#93: owner must confirm the mailbox), RB-015 (owner: keep or disable GitHub Pages) |
+
+Release requests: `docs/release-queue.md`.
+
+**RB-001 at 2:35 PM CT (read-only D1).** Evidence: m2 `updated_at` still 18:33:01Z, token expired 2:33 PM CT; no `whoop_refresh_*` or 401 events since the 10:34 AM deploy (only 15 `hc_delivery_stored` successes, last 2:23 PM CT). Inference: no WHOOP read has happened since expiry, so no refresh was attempted yet; this is not a failure. Totals: 3 observed refreshes (11:31, 12:32, 1:33 PM), 0 failures. m1/m3 unchanged and untouched.
+
 ## Review log
 
 | Date (CT) | Item | Head | Request | Codex response |
@@ -345,3 +359,6 @@ Preconditions: identity verified independently (challenge to an independently es
 | Oct 25, 12:53 PM | RB-017 (#98) | 6334e63 | @codex review | completed 12:56 PM: no major issues |
 | Oct 25, 12:46 PM | backlog (this PR) | 7afa6eb | @codex review | superseded by the sixth-pass head before completing |
 | Oct 25, 1:04 PM | RB-021 (#99) | d94121a | @codex review | completed 1:05 PM: no major issues |
+| Oct 25, 1:35 PM | backlog (this PR) | 93fa6a8 | @codex review | completed 1:36 PM: no major issues |
+| Oct 25, 1:30 PM | RB-018 (#97) | 037b2ad | fresh @codex review | completed: 1 P2 (health-only mode removed sign-in mappings); fixed in b968067 |
+| Oct 25, 1:44 PM | RB-018 (#97) | b968067 | @codex review | completed 1:46 PM: no major issues |
