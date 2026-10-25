@@ -25,7 +25,7 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 
 | ID | Severity | Item | Status | Codex | Owner approval needed |
 |---|---|---|---|---|---|
-| RB-001 | High | WHOOP refresh-token reuse under concurrent reads (PR #87) | Merged and deployed. 11:25 AM check: 0 refresh events of any kind since deploy; no refresh has run on the new code yet. **Not validated** | completed, no major issues (6d57a83, c09ef87) | None now. Release already done by owner. |
+| RB-001 | High | WHOOP refresh-token reuse under concurrent reads (PR #87) | Merged and deployed 10:34 AM CT. Natural refreshes seen for m2 at 11:31 AM and 12:32 PM CT (D1 `updated_at`/`expires_at` advanced by 1 h). No `whoop_refresh_*` failures or 401s since deploy. Only 2 samples, 1 member. **Not declared resolved** | completed, no major issues (6d57a83, c09ef87) | None now; keep monitoring |
 | RB-002 | High | m3's WHOOP connection is unusable after the Oct 24 reuse incident | Still broken; no safe server-side recovery found. Related message fix under RB-014 | see RB-014 | Member reconnect (not forced); owner decides on outreach |
 | RB-003 | Medium | m1's WHOOP access token expired since Oct 18; member inactive on WHOOP reads | Not a defect by itself; refresh state unknown until the next read. Reconnect message inaccuracy fixed under RB-014 | see RB-014 | Outreach decision (owner) |
 | RB-004 | Low | AI summary `summary_fallback_filter` events | Cause open; diagnostic fix on `fix/diagnostic-reason-codes` (0f08223), PR pending | backlog P2 accepted; fix: not yet requested | Merge/deploy (owner) |
@@ -39,11 +39,12 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 | RB-012 | Medium | Apex root, Previews config, external privacy/terms links, GitHub Pages, deletion promise | Deletion fix on `docs/private-deletion-requests` (dc71393); apex fix on `fix/apex-site-redirect` (8b6ece4); PRs pending. External links unverified | not yet requested (both) | Mailbox confirmation, merge, site and worker release, external settings |
 | RB-013 | Low | Android test suite (38 tests) not reproducible on the Grok box (no JDK/Gradle) | Tooling gap | n/a | None |
 | RB-014 | Medium | Rejected WHOOP refresh told members to "Retry shortly" although it's non-retryable | PR #92 (48d8349): CI 9/9 success, Codex completed with no findings. **Ready for release approval** | completed: no major issues (48d8349, 11:11 AM) | Merge + controlled release (owner) |
-| RB-016 | Low | Retention deletions (30-day codes, 180-day reports) run only on member activity; no scheduled cleanup | Wording on PR #93; scheduled cleanup PR #96 (e426abb), draft | #96 requested 12:05 PM | Owner: approve release + separate cron trigger |
-| RB-017 | Medium | WHOOP disconnect deletes tokens locally but never revokes at WHOOP, and does not tell the member to remove the app in WHOOP | Confirmed in code; not fixed | n/a | Owner: decide on upstream revoke vs guidance text |
-| RB-018 | Low | Former members have no deletion path; process undocumented | Runbook PR #97 (d6db735), draft | #97 requested 12:07 PM | Owner: confirm private channel; approve runbook |
+| RB-016 | Low | Retention deletions (30-day codes, 180-day reports) run only on member activity; no scheduled cleanup | PR #96 (f915111), draft. Production schedules: `[]` (read 12:44 PM CT). Exact schedule change below, **not applied** | e426abb completed clean; f915111 requested 12:45 PM | Owner: approve #96 release, then the separate schedule PUT |
+| RB-017 | Medium | WHOOP disconnect deletes tokens locally but never revokes at WHOOP, and does not tell the member to remove the app in WHOOP | WHOOP documents `DELETE /developer/v2/user/access`. PR #98 (60fe118), draft: best-effort revoke behind `WHOOP_PROVIDER_REVOKE_ENABLED` (off), local deletion always proceeds, member instructions | requested 12:45 PM | Owner: approve PR, then whether to enable the flag |
+| RB-018 | Low | Former members have no deletion path; process undocumented | Runbook PR #97 (037b2ad), draft. Fifth-pass check: runbook covers all 24 member-keyed tables in migrations 0001–0019, plus `OAUTH_KV` grants. No R2 bucket is bound | 037b2ad requested 12:15 PM; result pending | Owner: confirm private mailbox; approve runbook |
 | RB-019 | Low | Notion network failures and real 503s share one code (`notion_unavailable`) | Assessed: not worth splitting now | n/a | None |
-| RB-020 | Process | Several agents push to the same branches under the owner identity; provenance not recoverable from commits | Coordination rule below | n/a | Owner: confirm rule |
+| RB-020 | Process | Several agents push to the same branches under the owner identity; provenance not recoverable from commits | Workflow documented in `CONTRIBUTING.md` (fifth pass) | n/a | Owner: confirm workflow |
+| RB-021 | Low | A successful WHOOP refresh writes no diagnostic event, so refreshes can only be inferred from `whoop_connections.updated_at` | Confirmed: m2 rotated at 12:32 PM CT with no event | n/a | None now; consider a success counter later |
 | RB-015 | Low | GitHub Pages duplicates the www site | Documented; recommendation below | n/a | Owner: keep or disable Pages |
 
 ---
@@ -226,6 +227,48 @@ Evidence: every commit since 11:00 AM on #91/#93/#94/#95 is authored and committ
 
 **Refresh monitoring (RB-001).** By 12:00 PM CT there was no new refresh-failure or 401 event since the 10:34 AM deploy. The only events since are 7 `hc_delivery_stored` successes. m2's next expiry is 12:31 PM CT.
 
+## Fifth pass (Oct 25, about 12:45 PM CT)
+
+### RB-001 refresh observations (read-only D1 metadata)
+| Sample (CT) | Member | Evidence | Outcome |
+|---|---|---|---|
+| 11:31 AM | m2 | `updated_at` 16:31:15Z, expiry +1 h | Successful refresh |
+| 12:32 PM | m2 | `updated_at` 17:32:11Z, expiry 18:32Z | Successful refresh |
+| ongoing | m1, m3 | Unchanged since Oct 18 / Oct 24 | No reads, so no refresh attempted; m3 left untouched |
+
+No `whoop_refresh_*` or 401 events since the 10:34 AM CT deploy; the only events are `hc_delivery_stored` successes. Two samples from one member don't show the fix is permanent.
+
+### RB-016: scheduled retention, verification and the exact schedule change
+- **Independent of members:** `scheduled()` calls `runRetention(env.DB)`, which has no user context.
+- **Scope:** writes go only to `diagnostic_events` (`last_at` older than 30 days), `issue_reports` (status `resolved` and `updated_at` older than 180 days) and `issue_report_approvals` (expired). Tests on f915111 prove that 1000-day-old rows in whoop_recovery, whoop_sleep, health_connect_records, samsung_health_records, medical_context, flare_journal, flare_consent, health_import_consent, whoop_connections and notion_accounts survive.
+- **Failure handling:** at most 20 rounds of 50/20/50 deletes. Any D1 error stops and returns `ok:false`. The log line is `{event:'retention',ok,deleted}`, with no ids.
+- **Config:** neither wrangler.jsonc declares `triggers`. `release-worker-content.mjs` PUTs only `/content` and checks `/settings` and `/deployments`, so it neither adds nor removes cron schedules. Plain `wrangler deploy` (forbidden) would sync `triggers.crons` and clear existing schedules if none are declared. Production schedules are `[]` today.
+- **Change, for separate owner approval and only after #96 is released:**
+  1. `GET /accounts/<acct>/workers/scripts/whoop-lens/schedules` must return `[]`.
+  2. `PUT /accounts/<acct>/workers/scripts/whoop-lens/schedules` with body `[{"cron":"17 9 * * *"}]`. That is 09:17 UTC daily (4:17 AM CDT; 3:17 AM CST after DST ends Nov 1).
+  3. Verify: GET returns that one cron. After the next run, Workers Logs shows `{"event":"retention","ok":true,...}`, and D1 counts of diagnostics older than 30 days and resolved reports older than 180 days are 0.
+  4. Roll back with the same PUT and body `[]`. GET must return `[]`. The code needs no change; the handler simply stops being invoked.
+
+### RB-017: WHOOP revoke
+WHOOP documents `DELETE https://api.prod.whoop.com/developer/v2/user/access` (operationId `revokeUserOAuthAccess`; 204, 400, 401, 429, 500). It needs a valid access token.
+
+| Option | Effect | Risk |
+|---|---|---|
+| Provider revoke | Access actually ends at WHOOP, and webhooks stop | Needs an unexpired token; an extra network call |
+| Local deletion + instructions | No network dependency | Access stays live at WHOOP until the member removes it |
+| Fallback when WHOOP is unavailable | Local deletion proceeds; sanitized reason; manual instructions | None beyond the manual step |
+
+Recommendation: PR #98. Try the best-effort revoke first, always delete locally, return a sanitized reason code, and show manual instructions whenever revocation isn't confirmed. It doesn't refresh during a disconnect, so with an expired token it falls back to the instructions. It's off by default via `WHOOP_PROVIDER_REVOKE_ENABLED`.
+
+### RB-018: deletion coverage check
+I enumerated the member-keyed tables from migrations 0001–0019: identity_links, whoop_members, access_identity_links, whoop_connections, whoop_oauth_states, whoop_credential_revocations, whoop_connection_generations, whoop_member_request_budget, whoop_recovery, whoop_sleep, whoop_waitlist, health_connect_*, health_import_consent, samsung_health_records, medical_context, flare_*, issue_reports, issue_report_approvals, diagnostic_events (`user_key`), notion_* and ai_* (`user:<id>` scope). Every one appears in the runbook's delete block.
+- Tables with no member key: ai_account_snapshot, ai_usage_event, oauth_login_attempts, seat_request_limits.
+- seat_request_delivery holds email hashes that expire in ≤24 h.
+- `OAUTH_KV` is the only KV namespace, and the runbook covers it. No R2 bucket is bound.
+
+### Observations (not defects)
+- One expired `notion_oauth_states` row (expired Oct 24 00:57 UTC) remains. It's unusable, because callbacks require `expires_at>now`, and the member's next `connect_notion` deletes it. Expired seat-request, WHOOP-state, preview and login-limit rows: 0.
+
 ## Review log
 
 | Date (CT) | Item | Head | Request | Codex response |
@@ -236,9 +279,14 @@ Evidence: every commit since 11:00 AM on #91/#93/#94/#95 is authored and committ
 | Oct 25, 11:00 AM | backlog (this PR) | 4eb5ed2 | @codex review (Aaron) | completed 11:02 AM: 1 P2 (RB-004 classification). Accepted; RB-004 reopened |
 | Oct 25, 11:09 AM | RB-014 (#92) | 48d8349 | @codex review | completed 11:11 AM: no major issues |
 | Oct 25, 11:27 AM | RB-012 deletion (#93) | dc71393 | @codex review | still showed running at 11:45 AM; superseded by e8bd3f4 |
-| Oct 25, 11:46 AM | RB-012 deletion (#93) | e8bd3f4 | @codex review (parent) | pending |
+| Oct 25, 11:46 AM | RB-012 deletion (#93) | e8bd3f4 | @codex review (parent) | completed: no major issues |
 | Oct 25, 11:42 AM | RB-012 apex (#94) | 485eb96 | @codex review | completed: no major issues |
 | Oct 25, 11:42 AM | RB-004/RB-006 (#95) | abaefa7 | @codex review | completed: no major issues |
 | Oct 25, 11:42 AM | backlog (this PR) | 1f5947d | @codex review | completed: no major issues |
-| Oct 25, 12:05 PM | RB-016 (#96) | e426abb | @codex review | pending |
-| Oct 25, 12:07 PM | RB-018 (#97) | d6db735 | @codex review | pending |
+| Oct 25, 12:05 PM | RB-016 (#96) | e426abb | @codex review | completed: no major issues |
+| Oct 25, 12:07 PM | RB-018 (#97) | d6db735 | @codex review | completed: P1 (identity) + P2 (test seeding); fixed in 037b2ad |
+| Oct 25, 12:08 PM | backlog (this PR) | cd8e87b | @codex review | completed: 1 P2 (rollback); fixed in 97a51b4 |
+| Oct 25, 12:15 PM | backlog (this PR) | 97a51b4 | @codex review | completed 12:17 PM: no major issues |
+| Oct 25, 12:15 PM | RB-018 (#97) | 037b2ad | @codex review | pending |
+| Oct 25, 12:45 PM | RB-016 (#96) | f915111 | @codex review | pending (test-only change) |
+| Oct 25, 12:45 PM | RB-017 (#98) | 60fe118 | @codex review | pending |
