@@ -24,20 +24,68 @@ test('runbook keeps requests private and parents last',()=>{
   assert.ok(runbook.lastIndexOf('DELETE FROM')===runbook.indexOf('DELETE FROM identity_links'),'identity_links is deleted last');
 });
 
-test('runbook delete block runs cleanly with foreign keys on (synthetic member)',()=>{
+// Seed one row per member-keyed table for the target and for another member,
+// then run the runbook's delete block: every target row must go and every
+// other-member row must stay. CHECKs are relaxed only while seeding synthetic
+// filler values; NOT NULL, UNIQUE and foreign keys stay enforced.
+function migrated(){
   const db=new DatabaseSync(':memory:');
   db.exec('PRAGMA foreign_keys=ON');
   for(const f of readdirSync(DIR).filter(f=>f.endsWith('.sql')).sort())db.exec(readFileSync(new URL(f,DIR),'utf8'));
+  return db;
+}
+const tables=db=>db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite%'").all().map(r=>r.name);
+const cols=(db,t)=>db.prepare(`PRAGMA table_info(${t})`).all();
+const owner=(db,t)=>{const c=cols(db,t).map(x=>x.name);return c.includes('user_id')?'user_id':c.includes('user_key')?'user_key':(t.startsWith('ai_')&&c.includes('scope'))?'scope':null;};
+const ownerValue=(col,u)=>col==='scope'?'user:'+u:u;
+function seed(db,u,n){
+  const pending=tables(db).filter(t=>owner(db,t)&&!['identity_links','whoop_members'].includes(t));
+  for(let pass=0;pending.length&&pass<10;pass++){
+    for(const t of [...pending]){
+      const deps=db.prepare(`PRAGMA foreign_key_list(${t})`).all().map(f=>f.table).filter(x=>x!==t);
+      if(deps.some(d=>pending.includes(d)))continue;
+      const col=owner(db,t),names=[],vals=[];
+      for(const c of cols(db,t)){
+        if(c.name===col){names.push(c.name);vals.push(ownerValue(col,u));continue;}
+        if(c.name==='user_id'){names.push(c.name);vals.push(u);continue;}
+        if(c.pk&&/INT/i.test(c.type))continue;
+        if(!c.notnull&&!c.pk)continue;
+        if(c.dflt_value!==null&&!c.pk)continue;
+        names.push(c.name);vals.push(/INT|REAL|NUM/i.test(c.type)?n:`${t}-${c.name}-${n}`);
+      }
+      db.prepare(`INSERT INTO ${t}(${names.join(',')}) VALUES(${names.map(()=>'?').join(',')})`).run(...vals);
+      pending.splice(pending.indexOf(t),1);
+    }
+  }
+  assert.deepEqual(pending,[],'every member-keyed table seeded');
+}
+const countFor=(db,t,u)=>{const c=owner(db,t);return db.prepare(`SELECT COUNT(*) n FROM ${t} WHERE ${c}=?`).get(ownerValue(c,u)).n;};
+
+test('runbook delete block removes every member-keyed row for the target only (foreign keys on)',()=>{
+  const db=migrated();
   const U='0b0b0b0b-0000-4000-8000-00000000000b',OTHER='0c0c0c0c-0000-4000-8000-00000000000c';
   for(const id of [U,OTHER]){
     db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
     db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,0)').run(id);
   }
+  db.exec('PRAGMA ignore_check_constraints=ON');
+  seed(db,U,1);seed(db,OTHER,2);
+  db.exec('PRAGMA ignore_check_constraints=OFF');
+  const keyed=tables(db).filter(t=>owner(db,t));
+  for(const t of keyed)assert.equal(countFor(db,t,U),1,'seeded '+t);
   const block=runbook.split('## 4.')[1].match(/```sql\n([\s\S]*?)```/)[1].replaceAll(':U',U);
   db.exec('BEGIN');db.exec(block);db.exec('COMMIT');
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM identity_links WHERE user_id=?').get(U).n,0);
-  assert.equal(db.prepare('SELECT COUNT(*) n FROM identity_links WHERE user_id=?').get(OTHER).n,1,'other members untouched');
+  for(const t of keyed){
+    assert.equal(countFor(db,t,U),0,'target rows deleted from '+t);
+    assert.equal(countFor(db,t,OTHER),1,'other member kept in '+t);
+  }
   const counts=runbook.split('## 3.')[1].match(/```sql\n([\s\S]*?)```/)[1].replaceAll(':U',U);
   assert.ok(db.prepare(counts).all().every(r=>Object.values(r)[1]===0));
   db.close();
+});
+
+test('identity verification never rests on a From address alone',()=>{
+  assert.match(runbook,/matching From address is never\s+enough/);
+  assert.match(runbook,/one-time code/);
+  assert.doesNotMatch(runbook,/request comes\s+from the email address used for the seat request/);
 });

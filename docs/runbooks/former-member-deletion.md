@@ -16,10 +16,21 @@ email, or any health data into a public place.
    page (currently pending owner confirmation of the mailbox). If it arrives
    publicly, do not act on it there: reply privately or ask the person to use
    the private channel, without confirming whether they were a member.
-2. Verify identity before deleting anything. Acceptable proof: the request comes
-   from the email address used for the seat request, or the requester completes
-   a fresh sign-in at `auth.whooplens.tech` with the same identity provider
-   account. Do not accept a user id, screenshot or name alone.
+2. Verify identity before deleting anything. A matching From address is never
+   enough on its own: sender addresses can be spoofed, and the seat-request email
+   was unverified form input. Use one of:
+   - **Authenticated sign-in (preferred):** the requester completes a fresh
+     sign-in at `auth.whooplens.tech` with the same identity-provider account,
+     and the owner confirms that the resulting identity maps to the same
+     `user_id` in `identity_links` / `access_identity_links`.
+   - **Challenge to an independently established address:** the owner sends a
+     random one-time code (at least 8 characters, valid 24 hours) to the
+     address the identity provider verified for that account (not to the
+     address the request came from, unless they are the same verified address).
+     The requester must send the code back on the private channel.
+   Do not accept a user id, screenshot, name or forwarded email as proof. If
+   verification fails, reply without confirming whether the person was ever a
+   member.
 3. Resolve the WhoopLens `user_id` privately (owner console / D1 lookup by the
    verified identity in `identity_links` / `access_identity_links`). Record it
    only in a private note. Confirm `whoop_members.active = 0`; if the member is
