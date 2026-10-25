@@ -4,6 +4,7 @@ import { createStagingRouter } from "../../../src/router.mjs";
 import { WEBHOOK_PATH } from "../../../src/health-connect-webhook.mjs";
 import {healthConnectHttp} from '../../../src/health-import.mjs';
 import {NOTION_CALLBACK,NOTION_START} from '../../../src/notion-oauth.mjs';
+import {runRetention} from '../../../src/diagnostics.mjs';
 
 // Private MCP resource server for https://whooplens.tech/mcp.
 // Cloudflare is the live MCP resource server. Do not copy legacy WHOOP refresh tokens.
@@ -39,6 +40,14 @@ const mcpResource=new OAuthResourceServer({
 });
 
 export default {
+  // Cron trigger (if configured): enforce diagnostic and report retention even
+  // when no member is active. Deletes only rows already past retention.
+  scheduled(controller,env,ctx){
+    if(!env?.DB)return;
+    ctx.waitUntil(runRetention(env.DB,{now:controller?.scheduledTime??Date.now()}).then(r=>{
+      try{console.log(JSON.stringify({event:'retention',ok:r.ok,deleted:r.deleted}));}catch{/* log only */}
+    }));
+  },
   fetch(request,env,ctx){
     // The WHOOP callback is authenticated by its expiring, atomically consumed
     // state. The Health Connect webhook authenticates its own per-user bearer.
