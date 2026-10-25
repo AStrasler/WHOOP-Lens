@@ -32,7 +32,7 @@ const SYSTEM_PROMPT=[
 ].join(" ");
 // Added only when stats.stress_estimate is present (STRESS_ESTIMATE_ENABLED and a
 // valid estimate). Without it the prompt is byte-identical to main.
-const STRESS_PROMPT_LINE="If stats.stress_estimate is present, call it the WHOOP Lens experimental physiological stress estimate, state its value, band and confidence with its estimate_date, and if is_latest_requested_date is false say that requested_latest_date has no estimate. Never call it WHOOP's Stress Monitor, stress-zone time, or a diagnosis.";
+const STRESS_PROMPT_LINE="If stats.stress_estimate is present, call it the WhoopLens experimental physiological stress estimate, state its value, band and confidence with its estimate_date, and if is_latest_requested_date is false say that requested_latest_date has no estimate. Never call it WHOOP's Stress Monitor, stress-zone time, or a diagnosis.";
 const STRESS_RULE_ANCHOR="Do not advise, diagnose,";
 export function systemPromptFor(stats){
   if(!stats?.stress_estimate)return SYSTEM_PROMPT;
@@ -73,7 +73,7 @@ const DESCRIPTIVE=new Set(("a an the of and or from to on in at for with by "+
   "percent percentage degrees celsius beats minute minutes milliseconds ms within").split(" "));
 // Accepted only when stats.stress_estimate is present; with the flag off the
 // vocabulary is identical to main.
-const STRESS_WORDS=new Set("experimental physiological stress estimate lens band elevated low high confidence moderate index unavailable insufficient".split(" "));
+const STRESS_WORDS=new Set("experimental physiological stress estimate lens whooplens band elevated low high confidence moderate index unavailable insufficient".split(" "));
 const METRIC_WORDS=new Set(("recovery hrv heart rate resting sleep strain steps respiratory "+
   "spo spo2 skin temperature performance score bpm").split(" "));
 // Context may switch only for a named other measurement, not for loose words
@@ -892,7 +892,7 @@ const STRESS_LEVEL_TEST=/\b(?:low|typical|elevated|high|moderate)\b/i;
 // units, or assigns that number to a categorical stress field. Fail closed;
 // truthful quantitative stress prose is intentionally narrow.
 const STRESS_NEGATION=/\b(?:no|not|never|isn't|wasn't|weren't|aren't|doesn't|didn't|without|neither|no longer)\b/i;
-// The index is computed by WHOOP Lens from WHOOP-sourced signals; it is
+// The index is computed by WhoopLens from WHOOP-sourced signals; it is
 // not an estimate calculated or published by WHOOP itself.
 const UNSUPPORTED_STRESS_SOURCE=/\b(?:WHOOP(?:'s)?\s+(?:(?:experimental|daily|physiological|derived|calculated|estimated|numeric|personalized)\s+){0,5}stress(?:\s+(?:estimate|index))?|stress\s+(?:estimate|index)\s+(?:(?:is|was)\s+)?(?:from|by|according\s+to|provided\s+by|reported\s+by)\s+WHOOP)\b/i;
 // The stats supply one selected date's value, not a mean, range, or trend.
@@ -1249,7 +1249,7 @@ function groundedSuffix(facts){
   if(facts.coverage.incomplete)parts.push('The returned data is incomplete; missing dates do not establish that no measurements were recorded.');
   const e=facts.stats.stress_estimate;
   if(e){
-    parts.push(`WHOOP Lens experimental physiological stress estimate: ${e.value} (index) on ${e.estimate_date}, ${e.band} band, ${e.confidence} confidence. Not WHOOP’s Stress Monitor.`);
+    parts.push(`WhoopLens experimental physiological stress estimate: ${e.value} (index) on ${e.estimate_date}, ${e.band} band, ${e.confidence} confidence. Not WHOOP’s Stress Monitor.`);
     if(!e.is_latest_requested_date)parts.push(`No estimate is available for ${e.requested_latest_date}.`);
   }
   return parts.length?' '+parts.join(' '):'';

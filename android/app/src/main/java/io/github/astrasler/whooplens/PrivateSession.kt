@@ -80,7 +80,7 @@ internal class PrivateSession(
     val endpoint = trustedEndpoint(metadata.getString("token_endpoint"))
     val revoke = metadata.optString("revocation_endpoint").takeIf { it.isNotBlank() }?.let { trustedEndpoint(it) }
     val client = exchange(registration, "POST", "application/json", JSONObject()
-      .put("client_name", "WHOOP Lens Android Companion").put("redirect_uris", JSONArray().put(REDIRECT))
+      .put("client_name", "WhoopLens Android Companion").put("redirect_uris", JSONArray().put(REDIRECT))
       .put("grant_types", JSONArray().put("authorization_code").put("refresh_token"))
       .put("response_types", JSONArray().put("code")).put("token_endpoint_auth_method", "none").toString())
     val id = client.getString("client_id").takeIf { it.length in 1..512 } ?: error("Invalid OAuth registration")

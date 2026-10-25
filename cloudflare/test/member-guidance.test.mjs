@@ -275,7 +275,7 @@ test('a listed tool whose feature is off says so instead of a generic WHOOP erro
       const result=await call(db,KIMLIKE,name,args,off);
       assert.equal(result.isError,true,name);
       const text=result.content[0].text;
-      assert.match(text,new RegExp(`This feature \\(${feature}\\) is turned off on this WHOOP Lens server\\. Nothing was changed\\.`),name);
+      assert.match(text,new RegExp(`This feature \\(${feature}\\) is turned off on this WhoopLens server\\. Nothing was changed\\.`),name);
       assert.doesNotMatch(text,/WHOOP data is unavailable/);
     }
     assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_ingest_tokens').get().n,0);

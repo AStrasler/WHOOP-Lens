@@ -1,4 +1,4 @@
-# WHOOP Lens: Cloudflare OAuth 2.1 staging architecture
+# WhoopLens: Cloudflare OAuth 2.1 staging architecture
 
 **2026-10-11 status: SOURCE BUILDS, RESOURCE PROVISIONED, NOT ACTIVATED.**
 Supabase remains the production authentication and MCP service. No users or
@@ -6,7 +6,7 @@ tokens were migrated; no GitHub branch was merged and no new app was deployed.
 
 ## Fixed intended endpoints (not yet routed)
 
-- WHOOP Lens resource and token audience: https://whooplens.tech/mcp
+- WhoopLens resource and token audience: https://whooplens.tech/mcp
 - Independent OAuth 2.1 issuer: https://auth.whooplens.tech
 - OAuth authorization endpoint: /authorize
 - OAuth token and revocation endpoint: /oauth/token
@@ -132,7 +132,7 @@ or additional paid services:
 - Supabase password authentication temporarily creates a Supabase session.
   We now call Supabase Auth's local logout endpoint to revoke the refresh
   session, including when an account is no longer an invited active member.
-  Logout failure denies the WHOOP Lens authorization. Supabase access JWTs
+  Logout failure denies the WhoopLens authorization. Supabase access JWTs
   may remain valid until expiry, even after logout; they are never persisted
   or returned from this flow.
 - Synthetic regression tests cover cross-site and unexpected-host POSTs,

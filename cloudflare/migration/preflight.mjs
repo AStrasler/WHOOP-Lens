@@ -1,4 +1,4 @@
-// WHOOP Lens zero-write migration preflight. No user identity or health values
+// WhoopLens zero-write migration preflight. No user identity or health values
 // are included in findings; migration must never proceed on a failed audit.
 // This does NOT authorize data transfer, Cloudflare deployment or DNS changes.
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

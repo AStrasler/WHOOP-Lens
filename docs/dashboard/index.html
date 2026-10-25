@@ -7,8 +7,8 @@
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#090a0b">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://evoiwauqplbcecumiwqn.supabase.co; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; worker-src 'none'">
-<title>Private Workspace · WHOOP Lens</title>
-<meta name="description" content="Invite-only WHOOP Lens web workspace for connecting an account and locally reviewing health data.">
+<title>Private Workspace · WhoopLens</title>
+<meta name="description" content="Invite-only WhoopLens web workspace for connecting an account and locally reviewing health data.">
 <link rel="icon" type="image/jpeg" href="/WHOOP-Lens/logo.jpg">
 <link rel="stylesheet" href="/WHOOP-Lens/dashboard.css">
 <script type="module" src="/WHOOP-Lens/dashboard.mjs"></script>
@@ -16,20 +16,20 @@
 <body>
 <div class="shell">
 <header class="topbar">
-  <div class="brand"><img src="/WHOOP-Lens/logo.jpg" alt="" height="42" width="42"><div><strong>WHOOP Lens</strong><span>Private workspace · browser edition</span></div></div>
+  <div class="brand"><img src="/WHOOP-Lens/logo.jpg" alt="" height="42" width="42"><div><strong>WhoopLens</strong><span>Private workspace · browser edition</span></div></div>
   <div class="header-links"><a href="/WHOOP-Lens/">Account setup</a><a href="/WHOOP-Lens/privacy/">Privacy</a></div>
 </header>
 <main>
   <section class="hero">
     <p class="eyebrow">INVITE-ONLY ACCESS</p>
     <h1>Your health data.<br><em>Your decisions.</em></h1>
-    <p>Connect with your own WHOOP Lens account, then review supported health-data exports right in your browser. No installed companion required.</p>
+    <p>Connect with your own WhoopLens account, then review supported health-data exports right in your browser. No installed companion required.</p>
     <p class="notice"><strong>Web limitation:</strong> Browsers cannot directly read Android Health Connect. Choose a supported JSON export manually; your file stays on this device while you preview it.</p>
   </section>
   <div id="status" class="status" role="status" aria-live="polite">Sign in to your invited account to begin.</div>
   <section id="login-panel" class="panel">
     <h2>Sign in to your account</h2>
-    <p>Only accounts approved and connected by the WHOOP Lens owner can enter. There is no public registration.</p>
+    <p>Only accounts approved and connected by the WhoopLens owner can enter. There is no public registration.</p>
     <form id="login-form">
       <label for="email">Email address</label>
       <input id="email" type="email" autocomplete="username" maxlength="254" required>
@@ -48,7 +48,7 @@
       <section class="panel">
         <p class="eyebrow">01 · REVIEW</p>
         <h2>Import preview</h2>
-        <p>Choose a WHOOP Lens Health Connect v2 JSON file or FHIR R4 Bundle. This preview is local and read-only.</p>
+        <p>Choose a WhoopLens Health Connect v2 JSON file or FHIR R4 Bundle. This preview is local and read-only.</p>
         <label for="health-file">Select a JSON file (maximum 500 KB)</label>
         <input id="health-file" type="file" accept=".json,application/json">
         <p class="muted">Only deliberately selected files are read. Unsupported formats are rejected. No file or medical record is automatically transferred.</p>
@@ -71,7 +71,7 @@
     </section>
   </div>
 </main>
-<footer>WHOOP Lens is independent and is not affiliated with WHOOP. <a href="/WHOOP-Lens/terms/">Terms</a> · <a href="/WHOOP-Lens/support/">Support</a></footer>
+<footer>WhoopLens is independent and is not affiliated with WHOOP. <a href="/WHOOP-Lens/terms/">Terms</a> · <a href="/WHOOP-Lens/support/">Support</a></footer>
 </div>
 <noscript>Please enable JavaScript to use this private workspace.</noscript>
 </body>

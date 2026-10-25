@@ -1,4 +1,4 @@
-# WHOOP Lens release candidate — October 24, 2026
+# WhoopLens release candidate — October 24, 2026
 
 The release candidate is on `codex/release-candidate`. This checklist originally recorded the local preparation stage. Publication and isolated preview builds are now authorized; both documented preview settings were corrected on October 24. Production deployments, merges, closures, credential rotation and live health-data changes remain unauthorized.
 

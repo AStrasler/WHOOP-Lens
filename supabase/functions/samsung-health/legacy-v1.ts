@@ -25,7 +25,7 @@ Deno.serve(async req => {
     if (authError || !user || !uuid.test(user.id)) return respond({error:"Invalid session"},401);
     const {data:connection,error:connectionError} = await db.from("whoop_connections").select("user_id").eq("user_id",user.id).maybeSingle();
     if (connectionError) return respond({error:"Connection check failed"},500);
-    if (!connection) return respond({error:"WHOOP Lens access required"},403);
+    if (!connection) return respond({error:"WhoopLens access required"},403);
     const route = new URL(req.url);
     if (req.method === "GET") {
       const metric = route.searchParams.get("metric");

@@ -43,7 +43,7 @@ const call=(db,fetcher,name,args={limit:5},member=M)=>createStagingRouter({verif
 const rows=db=>db.sqlite.prepare("SELECT * FROM diagnostic_events").all();
 
 const cases=[
-  ["401",()=>new Response(SECRET_BODY,{status:401}),"auth","whoop_unauthorized",/^WHOOP rejected this connection's authorization when reading (recovery|sleep|workout|cycle) data\. Retry once; if it keeps failing, reconnect WHOOP in WHOOP Lens\./],
+  ["401",()=>new Response(SECRET_BODY,{status:401}),"auth","whoop_unauthorized",/^WHOOP rejected this connection's authorization when reading (recovery|sleep|workout|cycle) data\. Retry once; if it keeps failing, reconnect WHOOP in WhoopLens\./],
   ["403",()=>new Response(SECRET_BODY,{status:403}),"auth","whoop_forbidden",/^WHOOP denied access to (recovery|sleep|workout|cycle) data for this connection\./],
   ["404",()=>new Response(SECRET_BODY,{status:404}),"whoop_api","whoop_not_found",/^WHOOP did not find (recovery|sleep|workout|cycle) data for this request\./],
   ["502",()=>new Response(SECRET_BODY,{status:502}),"whoop_api","whoop_upstream_error",/^WHOOP is temporarily unavailable \(reading (recovery|sleep|workout|cycle) data\)\./],
@@ -104,7 +104,7 @@ test("refresh failure has its own message and code",async()=>{
     db.sqlite.prepare("UPDATE whoop_connections SET expires_at=? WHERE user_id=?").run(new Date(Date.now()-60e3).toISOString(),M);
     const fetcher=async raw=>new URL(raw).pathname.includes("/oauth/")?new Response(SECRET_BODY,{status:400}):Response.json({});
     const r=await call(db,fetcher,"get_recovery");
-    assert.match(r.result.content[0].text,/^WHOOP Lens could not renew this connection's WHOOP authorization\./);
+    assert.match(r.result.content[0].text,/^WhoopLens could not renew this connection's WHOOP authorization\./);
     assert.ok(rows(db).some(x=>x.code==="whoop_refresh_failed"));
   }finally{db.close();}
 });
@@ -121,7 +121,7 @@ for(const [label,tokenEndpoint] of [
       let api=0;
       const fetcher=async raw=>{if(new URL(raw).pathname.includes("/oauth/"))return tokenEndpoint();api++;return Response.json({});};
       const r=await call(db,fetcher,"get_recovery");
-      assert.match(r.result.content[0].text,/^WHOOP Lens could not renew this connection's WHOOP authorization\./);
+      assert.match(r.result.content[0].text,/^WhoopLens could not renew this connection's WHOOP authorization\./);
       assert.deepEqual(rows(db).map(x=>x.code),["whoop_refresh_failed"]);
       assert.equal(api,0,"no WHOOP API call without a token");
       assert.deepEqual(db.sqlite.prepare("SELECT encrypted_access_token,encrypted_refresh_token,expires_at FROM whoop_connections WHERE user_id=?").get(M),before);

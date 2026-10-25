@@ -8,8 +8,8 @@ secret binding was installed; its value was neither logged nor saved in the
 repository. Notion stayed disabled until the activation described below.
 
 The owner chose `whoop-lens@outlook.com` for the development account, completed
-Notion verification, and a free `WHOOP Lens’s Space` workspace was created.
-The owner created the `WHOOP Lens` OAuth app, with installation scope `Any
+Notion verification, and a free `WhoopLens’s Space` workspace was created.
+The owner created the `WhoopLens` OAuth app, with installation scope `Any
 workspace` and the exact callback below. Read/update capabilities are on;
 insert, comments and user-information access are off. App ID:
 `402d872b-594c-81f0-ab6b-0037bcd6e40c`.
@@ -41,7 +41,7 @@ members, not a shared Notion token, workspace, database, or individual log.
 
 ## Owner setup
 
-Create one WHOOP Lens public OAuth connection in the Notion Developer portal.
+Create one WhoopLens public OAuth connection in the Notion Developer portal.
 Choose the installation scope appropriate for the intended members. Enable
 read-content and update-content capabilities; this implementation updates
 existing pages and does not create pages, alter schemas or append content.

@@ -1,10 +1,10 @@
-# WHOOP Lens capabilities and limitations
+# WhoopLens capabilities and limitations
 
-WHOOP Lens serves this catalog through the `get_capabilities` MCP tool. The deployed catalog is the runtime source of truth. A GitHub branch may be ahead of the currently deployed version.
+WhoopLens serves this catalog through the `get_capabilities` MCP tool. The deployed catalog is the runtime source of truth. A GitHub branch may be ahead of the currently deployed version.
 
 The connector is `https://whooplens.tech/mcp`. After you sign in and run `connect_whoop`, WHOOP measurement tools return your own WHOOP data. The older Supabase connector is retired.
 
-## Ask WHOOP Lens
+## Ask WhoopLens
 
 Try: "What can you do?", "What patterns could I explore?", "What are your limitations?"
 
@@ -104,11 +104,11 @@ Samsung Health uploads
 
 Discover capabilities
 
-**Needs:** Signed-in WHOOP Lens account
+**Needs:** Signed-in WhoopLens account
 
 **Limits:** A feature list does not imply this user has records. Measurements do not establish medical diagnoses or causality.
 
-**Try:** What can WHOOP Lens do?
+**Try:** What can WhoopLens do?
 
 ### Explore possible cross-metric patterns (available)
 

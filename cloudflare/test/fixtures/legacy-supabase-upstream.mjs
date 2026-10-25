@@ -1,4 +1,4 @@
-// WHOOP Lens OAuth upstream adapter (staging only).
+// WhoopLens OAuth upstream adapter (staging only).
 // Supabase performs sign-in and consent on the EXISTING authorization UI.
 // Cloudflare does not collect, process or store the user's password.
 import { activeMembership } from '../../src/storage.mjs';

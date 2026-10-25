@@ -6,25 +6,25 @@
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#000000">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; object-src 'none'">
-<title>Refresh · WHOOP Lens</title>
-<meta name="description" content="How an existing WHOOP Lens user checks a server update without reconnecting WHOOP.">
+<title>Refresh · WhoopLens</title>
+<meta name="description" content="How an existing WhoopLens user checks a server update without reconnecting WHOOP.">
 <link rel="icon" href="/WHOOP-Lens/logo.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="/WHOOP-Lens/logo.jpg">
 <link rel="stylesheet" href="/WHOOP-Lens/style.css">
 </head>
 <body>
 <main class="doc">
-<aside class="independence-notice" role="note" aria-label="Independent project notice"><strong>PRIVATE, INDEPENDENT PROJECT</strong><p>WHOOP Lens is a private, independently developed, invitation-only project. It is not owned, operated, sponsored, endorsed by, or affiliated with WHOOP. WHOOP data access uses the official developer API with each user's authorization.</p></aside>
+<aside class="independence-notice" role="note" aria-label="Independent project notice"><strong>PRIVATE, INDEPENDENT PROJECT</strong><p>WhoopLens is a private, independently developed, invitation-only project. It is not owned, operated, sponsored, endorsed by, or affiliated with WHOOP. WHOOP data access uses the official developer API with each user's authorization.</p></aside>
 
 <header>
 <div class="brand">
 <img class="mark" src="/WHOOP-Lens/logo.jpg" width="72" height="72" alt="">
-<span class="wordmark">WHOOP Lens</span>
+<span class="wordmark">WhoopLens</span>
 </div>
-<h1>Already using WHOOP Lens?</h1>
+<h1>Already using WhoopLens?</h1>
 </header>
 <p>If recovery, sleep, and profile questions still return your own dated WHOOP data, leave that WHOOP connection in place. Start a new ChatGPT conversation and ask:</p>
-<p>What can WHOOP Lens do now? Show the capability directory, and say whether Stress Monitor history is available.</p>
+<p>What can WhoopLens do now? Show the capability directory, and say whether Stress Monitor history is available.</p>
 <p>A current answer names recovery, sleep, cycles, and workouts, and says that WHOOP Stress Monitor zone history is not available from the official API. It does not convert strain, heart rate, or HRV into high-stress hours. Charts appear only when that ChatGPT app can draw them.</p>
 <h2>If the chat looks unchanged</h2>
 <ol>
@@ -41,7 +41,7 @@
 <li>The reply estimates stress hours from strain or heart rate: ask for <code>get_capabilities</code> and the Stress Monitor limitation.</li>
 <li>ChatGPT is connected, but WHOOP reads fail: ask ChatGPT to run <code>connect_whoop</code>, open the WHOOP authorization link it returns, and approve on WHOOP's page.</li>
 <li>All seats are in use: a new WHOOP connection cannot be stored. An existing connection can always reconnect.</li>
-<li>Your WHOOP Lens membership is not active: sign-in is refused, and reconnecting WHOOP does not re-enable it.</li>
+<li>Your WhoopLens membership is not active: sign-in is refused, and reconnecting WHOOP does not re-enable it.</li>
 </ul>
 <h2>Two different sign-ins</h2>
 <p>The ChatGPT connection uses a Cloudflare Access email one-time PIN at https://auth.whooplens.tech and the consent page there. Connecting WHOOP is a separate WHOOP authorization started with <code>connect_whoop</code>. Reconnect only the part that failed.</p>
