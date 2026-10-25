@@ -105,6 +105,8 @@ async function storedRotation(db,id,previous,key,now){
 //    fresh marker (under LEASE_SECONDS old) blocks; ordinary timestamps never
 //    do, and the next stored rotation or reconnect rewrites updated_at. A
 //    marker left by a failed attempt shows when the last refresh was tried.
+//    A stale-lease takeover rejected with no stored rotation leaves
+//    "takeover-failed:" + claim time (never blocks a claim, never a takeover).
 //    No schema change; no other code reads this column.
 const inflightRefresh=new Map();
 // 120 s, not 30 s: once WHOOP has rotated the token, a holder whose D1 write
@@ -142,13 +144,34 @@ export function refreshRejected(status){
 export async function whoopAccessToken(db, userId, env, deps={}){
   const id=ownerId(userId);
   const shared=inflightRefresh.get(id);
-  if(shared)return shared;
+  if(shared)return sharedWithDeadline(db,id,env,shared,deps);
   const run=accessTokenOnce(db,id,env,deps);
-  inflightRefresh.set(id,run);
+  const entry={run,startedAt:(deps.now||Date.now)()};
+  inflightRefresh.set(id,entry);
   // Only a refreshing call stays registered long; a valid-token read resolves
   // immediately. Remove the entry whichever way it settles.
-  run.then(()=>{},()=>{}).finally(()=>{if(inflightRefresh.get(id)===run)inflightRefresh.delete(id);});
+  run.then(()=>{},()=>{}).finally(()=>{if(inflightRefresh.get(id)===entry)inflightRefresh.delete(id);});
   return run;
+}
+// Callers sharing this isolate's in-flight refresh are bounded like
+// cross-isolate followers: at HOLDER_DEADLINE_MS after the holder started they
+// use a stored rotation if one landed, else fail retryably. The holder keeps
+// running and keeps its lease; no second refresh is started.
+async function sharedWithDeadline(db,id,env,{run,startedAt},{now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
+  let settled=false;
+  const done=run.finally(()=>{settled=true;});
+  const deadline=(async()=>{
+    // Wakes every 500 ms (no D1 reads) and stops as soon as the refresh settles.
+    while(!settled&&now()<startedAt+HOLDER_DEADLINE_MS){
+      await sleep(500);await new Promise(r=>setTimeout(r,0));
+    }
+    if(settled)return done;
+    const row=await db.prepare("SELECT encrypted_access_token,expires_at FROM whoop_connections WHERE user_id=?1 LIMIT 1").bind(id).first();
+    const expiry=Date.parse(row?.expires_at);
+    if(row&&Number.isFinite(expiry)&&expiry>now()+60_000)return openToken(row.encrypted_access_token,id,"access",config(env));
+    throw Error("WHOOP refresh failed");
+  })();
+  return Promise.race([done,deadline]);
 }
 async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
   const id=ownerId(userId),key=config(env);
@@ -209,7 +232,10 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
       const rejected=response.status===400||response.status===401;
       const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep,rejected&&tookOver?10:4);
       if(winner)return winner;
-      if(rejected&&tookOver)throw Error("WHOOP refresh failed");
+      // Bounded: this recovery window is given once. The failure path records
+      // the failed takeover instead of restoring the stale marker, so the next
+      // attempt is not a takeover and classifies a 400/401 as rejected.
+      if(rejected&&tookOver){const e=Error("WHOOP refresh failed");e.failedTakeover=true;throw e;}
       // A rate-limited refresh is reported as such (the stored tokens are kept).
       if(response.status===429)throw rateLimited(response,"WHOOP refresh failed");
       // 400/401 from the token endpoint: WHOOP refused the stored refresh token
@@ -261,7 +287,7 @@ async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,slee
   try{return await rotate();}
   catch(error){
     try{await db.prepare("UPDATE whoop_connections SET updated_at=?3 WHERE user_id=?1 AND updated_at=?2")
-      .bind(id,'lease:'+claimedAt,row.updated_at).run();}catch{/* the marker expires on its own */}
+      .bind(id,'lease:'+claimedAt,error?.failedTakeover?'takeover-failed:'+claimedAt:row.updated_at).run();}catch{/* the marker expires on its own */}
     throw error;
   }
 }

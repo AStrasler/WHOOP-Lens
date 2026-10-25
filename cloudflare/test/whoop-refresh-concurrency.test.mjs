@@ -288,3 +288,46 @@ test("L2 beyond the lease (stall over 120 s): a takeover's rejection re-reads st
   assert.ok(!o.lateCodes.includes("whoop_refresh_rejected"),"classified as a retryable refresh failure");
   assert.ok(o.lateCodes.includes("whoop_refresh_failed"));
 });
+test("same isolate: a caller sharing a stalled refresh gives up at the holder deadline, retryably, without a second refresh",async()=>{
+  const mod=await import("../src/whoop-api.mjs?isolate=8");
+  let release;const stall=new Promise(r=>{release=r;});let stalled=false;
+  const db=await fixture(),w=rotatingWhoop({delay:1}),clock=virtualClock();
+  const holderDb={...db,prepare(sql){const st=db.prepare(sql);
+    if(!/SET encrypted_access_token=\?1,encrypted_refresh_token=\?2,expires_at=\?3/.test(sql))return st;
+    return {bind(...v){st.bind(...v);return this;},async run(){stalled=true;await stall;return st.run();},first:(...a)=>st.first(...a),all:(...a)=>st.all(...a)};}};
+  try{
+    const holder=call(routerWith(w,mod.callWhoop,clock),holderDb,"get_recovery");
+    while(!stalled)await new Promise(r=>setTimeout(r,2));
+    let settled=false;
+    const sharer=call(routerWith(w,mod.callWhoop,clock),db,"get_sleep").finally(()=>{settled=true;});
+    for(let i=0;i<500&&!settled;i++)await new Promise(r=>setTimeout(r,2));
+    assert.equal(settled,true,"the sharing caller is bounded like a cross-isolate follower");
+    assert.equal(failed(await sharer),true);
+    assert.deepEqual(codes(db),["whoop_refresh_failed"],"retryable, never rejected");
+    assert.ok(clock.advanced()>=15000&&clock.advanced()<120000);
+    assert.equal(w.log.refresh,1,"no second refresh");
+    assert.match(String(row(db).updated_at),/^lease:/,"the holder keeps its lease");
+    release();
+    assert.equal(failed(await holder),false,"the holder still stores its rotation");
+    assert.equal(failed(await call(routerWith(w,mod.callWhoop,clock),db,"get_cycles")),false);
+    assert.equal(w.log.refresh,1);
+  }finally{release();db.close();}
+});
+test("a failed stale-lease takeover is not repeated as retryable: the next 400 is whoop_refresh_rejected",async()=>{
+  const db=await fixture(),clock=virtualClock();
+  const w=rotatingWhoop({tokenEndpoint:()=>new Response('{"error":"invalid_grant"}',{status:400})});
+  try{
+    db.sqlite.prepare("UPDATE whoop_connections SET updated_at='lease:'||strftime('%Y-%m-%dT%H:%M:%fZ','now','-200 seconds') WHERE user_id=?").run(M);
+    const before=row(db),route=routerWith(w,callWhoop,clock);
+    const first=await call(route,db,"get_recovery");
+    assert.equal(failed(first),true);
+    assert.deepEqual(codes(db),["whoop_refresh_failed"],"the first takeover keeps its recovery window");
+    assert.notEqual(row(db).updated_at,before.updated_at,"the stale marker is not restored");
+    assert.doesNotMatch(String(row(db).updated_at),/^lease:/,"no lease blocks the next attempt");
+    const second=await call(route,db,"get_recovery");
+    assert.equal(failed(second),true);
+    assert.ok(codes(db).includes("whoop_refresh_rejected"),"bounded: the second 400 is a rejected connection");
+    assert.equal(w.log.refresh,2);
+    assert.deepEqual(row(db).r,before.r,"stored credentials are never deleted");
+  }finally{db.close();}
+});
