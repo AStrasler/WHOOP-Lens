@@ -61,27 +61,57 @@ function seed(db,u,n){
 }
 const countFor=(db,t,u)=>{const c=owner(db,t);return db.prepare(`SELECT COUNT(*) n FROM ${t} WHERE ${c}=?`).get(ownerValue(c,u)).n;};
 
-test('runbook delete block removes every member-keyed row for the target only (foreign keys on)',()=>{
+const U='0b0b0b0b-0000-4000-8000-00000000000b',OTHER='0c0c0c0c-0000-4000-8000-00000000000c';
+const ACCOUNT=['identity_links','whoop_members','access_identity_links','whoop_waitlist','whoop_member_request_budget'];
+const block=name=>runbook.split(name)[1].match(/```sql\n([\s\S]*?)```/)[1].replaceAll(':U',U);
+function seeded(active){
   const db=migrated();
-  const U='0b0b0b0b-0000-4000-8000-00000000000b',OTHER='0c0c0c0c-0000-4000-8000-00000000000c';
   for(const id of [U,OTHER]){
     db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
-    db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,0)').run(id);
+    db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?,?)').run(id,active);
   }
   db.exec('PRAGMA ignore_check_constraints=ON');
   seed(db,U,1);seed(db,OTHER,2);
   db.exec('PRAGMA ignore_check_constraints=OFF');
+  db.prepare('UPDATE access_identity_links SET enabled=?').run(active);
   const keyed=tables(db).filter(t=>owner(db,t));
   for(const t of keyed)assert.equal(countFor(db,t,U),1,'seeded '+t);
-  const block=runbook.split('## 4.')[1].match(/```sql\n([\s\S]*?)```/)[1].replaceAll(':U',U);
-  db.exec('BEGIN');db.exec(block);db.exec('COMMIT');
+  return {db,keyed};
+}
+// Same queries the auth worker (upstream.mjs) and resource worker (storage.mjs ACTIVE_MEMBER_SQL) use.
+const canSignIn=(db,u)=>!!db.prepare('SELECT user_id FROM access_identity_links WHERE user_id=?1 AND enabled=1').get(u)&&
+  !!db.prepare("SELECT m.user_id FROM whoop_members m INNER JOIN identity_links i ON i.user_id=m.user_id WHERE m.user_id=?1 AND m.active=1 AND i.identity_provider='cloudflare_access' AND length(i.provider_subject)>0").get(u);
+
+test('health-data-only mode removes member data but keeps sign-in mappings (foreign keys on)',()=>{
+  const {db,keyed}=seeded(1);
+  assert.ok(canSignIn(db,U));
+  db.exec('BEGIN');db.exec(block('### 4a.'));db.exec('COMMIT');
+  for(const t of keyed){
+    assert.equal(countFor(db,t,U),ACCOUNT.includes(t)?1:0,(ACCOUNT.includes(t)?'kept ':'deleted ')+t);
+    assert.equal(countFor(db,t,OTHER),1,'other member kept in '+t);
+  }
+  assert.ok(canSignIn(db,U),'member can still sign in');
+  assert.ok(canSignIn(db,OTHER));
+  const counts=block('## 3.');
+  assert.ok(db.prepare(counts).all().every(r=>Object.values(r)[1]===0));
+  db.close();
+});
+
+test('full account deletion removes every member-keyed row for the target only (foreign keys on)',()=>{
+  const {db,keyed}=seeded(0);
+  db.exec('BEGIN');db.exec(block('### 4a.'));db.exec(block('### 4b.'));db.exec('COMMIT');
   for(const t of keyed){
     assert.equal(countFor(db,t,U),0,'target rows deleted from '+t);
     assert.equal(countFor(db,t,OTHER),1,'other member kept in '+t);
   }
-  const counts=runbook.split('## 3.')[1].match(/```sql\n([\s\S]*?)```/)[1].replaceAll(':U',U);
-  assert.ok(db.prepare(counts).all().every(r=>Object.values(r)[1]===0));
+  assert.ok(db.prepare(block('## 3.')).all().every(r=>Object.values(r)[1]===0));
   db.close();
+});
+
+test('health-data-only block never touches account or sign-in tables',()=>{
+  const a=block('### 4a.');
+  for(const t of ACCOUNT)assert.doesNotMatch(a,new RegExp(`DELETE FROM ${t} `),t);
+  assert.match(runbook,/never default to full deletion/);
 });
 
 test('identity verification never rests on a From address alone',()=>{

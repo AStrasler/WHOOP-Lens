@@ -33,8 +33,10 @@ email, or any health data into a public place.
    member.
 3. Resolve the WhoopLens `user_id` privately (owner console / D1 lookup by the
    verified identity in `identity_links` / `access_identity_links`). Record it
-   only in a private note. Confirm `whoop_members.active = 0`; if the member is
-   still active, point them to the in-app tools instead.
+   only in a private note. Record which mode the verified requester asked for
+   (section 4): **health-data-only** (the account stays usable) or **full
+   account deletion**. If unclear, ask; never default to full deletion. For an
+   active member, point them to the in-app tools first.
 
 ## 2. Revoke external access first
 
@@ -46,10 +48,12 @@ email, or any health data into a public place.
    settings. WhoopLens never deletes Notion pages.
 3. **Health Connect phone ingest:** deleting `health_connect_ingest_tokens`
    (step 4) stops the webhook accepting their phone's uploads.
-4. **MCP OAuth grants (auth worker, `OAUTH_KV`):** list the user's grants with
+4. **MCP OAuth grants (auth worker, `OAUTH_KV`), full account deletion only:** list the user's grants with
    the provider's `listUserGrants(userId)` and revoke each with
    `revokeGrant(grantId, userId)` from an owner-run script, or delete the KV keys
    prefixed `grant:<user_id>:` and `token:<user_id>:`. Count first, then delete.
+   In health-data-only mode keep the grants: they hold no health data and the
+   member's assistant connection must keep working.
 
 ## 3. Dry run (counts only)
 
@@ -74,8 +78,17 @@ Keep only the counts in the private note.
 
 ## 4. Delete (owner approval per request)
 
-One D1 transaction, children before parents (most tables reference
-`identity_links` without `ON DELETE CASCADE`):
+Two modes. Each is one D1 transaction, children before parents (most tables
+reference `identity_links` without `ON DELETE CASCADE`).
+
+### 4a. Health-data-only (account stays usable)
+
+Removes WHOOP, Health Connect, Samsung, medical context, journal, Notion,
+issue-report, diagnostic and AI data. It **keeps** the rows sign-in needs:
+`access_identity_links` (the auth worker maps the Access subject to the user
+here, `enabled=1`), `identity_links` and `whoop_members` (active-membership
+check), plus `whoop_waitlist`, `whoop_member_request_budget` and the
+`OAUTH_KV` grants. The member can sign in again and reconnect WHOOP.
 
 ```sql
 DELETE FROM notion_update_previews WHERE user_id=':U';
@@ -85,7 +98,6 @@ DELETE FROM whoop_oauth_states WHERE user_id=':U';
 DELETE FROM whoop_connections WHERE user_id=':U';
 DELETE FROM whoop_credential_revocations WHERE user_id=':U';
 DELETE FROM whoop_connection_generations WHERE user_id=':U';
-DELETE FROM whoop_member_request_budget WHERE user_id=':U';
 DELETE FROM whoop_recovery WHERE user_id=':U';
 DELETE FROM whoop_sleep WHERE user_id=':U';
 DELETE FROM health_connect_ingest_tokens WHERE user_id=':U';
@@ -100,18 +112,27 @@ DELETE FROM issue_reports WHERE user_id=':U';
 DELETE FROM diagnostic_events WHERE user_key=':U';
 DELETE FROM ai_weekly_digest WHERE scope='user::U' OR scope LIKE 'user::U:%';
 DELETE FROM ai_usage WHERE scope='user::U';
+```
+
+### 4b. Full account deletion
+
+Run the 4a block, then this block, then remove the `OAUTH_KV` grants (step 2.4).
+Deleting `identity_links` and `whoop_members` frees the seat; the person must
+request a new seat to return.
+
+```sql
+DELETE FROM whoop_member_request_budget WHERE user_id=':U';
 DELETE FROM whoop_waitlist WHERE user_id=':U';
 DELETE FROM access_identity_links WHERE user_id=':U';
 DELETE FROM whoop_members WHERE user_id=':U';
 DELETE FROM identity_links WHERE user_id=':U';
 ```
 
-Deleting `identity_links` and `whoop_members` frees the seat and means the
-person must request a new seat to return. If they only want health data removed
-but may come back, stop before the last two statements.
-
-Re-run the step 3 counts; every count must be 0. `seat_request_delivery` holds
-only an email hash with a short expiry and is cleaned automatically.
+Re-run the step 3 counts; every count must be 0 in either mode. For 4b also
+confirm zero rows in `access_identity_links`, `whoop_members` and
+`identity_links` for the id. For 4a confirm those three still have their rows.
+`seat_request_delivery` holds only an email hash with a short expiry and is
+cleaned automatically.
 
 ## 5. Confirm privately
 
