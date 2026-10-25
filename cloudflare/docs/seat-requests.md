@@ -1,6 +1,6 @@
 # Private seat requests
 
-Deployed and enabled on October 16, 2026. The request form is a public contact route at `https://auth.whooplens.tech/request-seat`; the MCP, WHOOP records and OAuth callback remain private. WHOOP Lens has three seats in total, the owner's included (`WHOOP_LENS_SEAT_LIMIT`, default 3, on the resource Worker). Submitting never enrolls a user, links an identity or reserves a seat.
+Deployed and enabled on October 16, 2026. The request form is a public contact route at `https://auth.whooplens.tech/request-seat`; the MCP, WHOOP records and OAuth callback remain private. WhoopLens has three seats in total, the owner's included (`WHOOP_LENS_SEAT_LIMIT`, default 3, on the resource Worker). Submitting never enrolls a user, links an identity or reserves a seat.
 
 The form asks for name, desired email and an optional short message, with explicit permission to contact the applicant. The auth Worker sends a plain-text email only to `whoop-lens@outlook.com` from `seat-requests@whooplens.tech`. Applicant content is untrusted and cannot choose the recipient or subject. Reply-To is the validated applicant address. The sender domain must be configured for Cloudflare email service and the destination verified.
 
@@ -35,7 +35,7 @@ Validation: 346 synthetic tests passed; all three PR CI workflows passed; auth W
 5. Add an auth-Worker `send_email` binding named `SEAT_REQUEST_MAILER`, restricted with `destination_address: whoop-lens@outlook.com`. Preserve every existing binding, OAuth KV namespace, D1 binding, Access audience and issuer setting.
 6. Deploy the tested auth Worker and set `SEAT_REQUEST_ENABLED=true` only after mail/Turnstile configuration is ready. Keep workers.dev and previews disabled. The resource Worker requires no change.
 7. Test a consented synthetic applicant submission and verify receipt in the owner mailbox. Confirm no membership/seat mutation, and verify allowed-user sign-in still works.
-8. On the existing **WHOOP Lens browser identity** Access application for `auth.whooplens.tech/oauth/upstream/callback`, set `custom_deny_url` to `https://auth.whooplens.tech/request-seat`. This is the identity-rule denial redirect. Preserve the application domain, audience and policies exactly. Do not create an Access bypass policy or redirect API authentication failures. Leave non-identity denial behavior unchanged.
+8. On the existing **WhoopLens browser identity** Access application for `auth.whooplens.tech/oauth/upstream/callback`, set `custom_deny_url` to `https://auth.whooplens.tech/request-seat`. This is the identity-rule denial redirect. Preserve the application domain, audience and policies exactly. Do not create an Access bypass policy or redirect API authentication failures. Leave non-identity denial behavior unchanged.
 9. Verify a denied browser sign-in reaches the form without forwarding OAuth state or credentials. A locally disabled/missing D1 member who passes Cloudflare Access still receives the existing OAuth failure; it is not silently enrolled.
 
 For a new environment, keep activation off until its prerequisites are configured. Production is enabled with the remaining live acceptance checks recorded above. Rollback removes the custom denial redirect first and disables the feature flag; it does not alter access policies or delete health data.

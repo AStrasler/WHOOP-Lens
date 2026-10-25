@@ -32,7 +32,7 @@ member report was submitted as a deployment test.
 - Post-release protected-resource metadata returned 200; unauthenticated MCP
   retained its expected 401 Bearer challenge.
 - A real authenticated `get_capabilities` succeeded through the connected
-  WHOOP Lens MCP app after its connector authentication completed.
+  WhoopLens MCP app after its connector authentication completed.
 - The disabled Notion start route returned 503. No Notion migration was
   applied, no Notion app credentials were installed, and Notion remains off.
 
@@ -53,5 +53,5 @@ The bundle includes optional Notion code staged behind a disabled flag.
 Per-member OAuth setup and the remaining external prerequisites are documented
 in [notion.md](notion.md). There is no shared member database or Notion token.
 
-Clients cache tool inventories; refresh WHOOP Lens's tool list to discover the
+Clients cache tool inventories; refresh WhoopLens's tool list to discover the
 new tools. Removing the connection or disconnecting WHOOP is unnecessary.

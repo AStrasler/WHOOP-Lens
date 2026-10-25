@@ -1,4 +1,4 @@
-# WHOOP Lens experimental physiological stress estimate (wl-stress-v1)
+# WhoopLens experimental physiological stress estimate (wl-stress-v1)
 
 **Status:** experimental and off by default. It is on only when `STRESS_ESTIMATE_ENABLED` and `AI_SUMMARY_ENABLED` are both exactly `"true"`,
 because the estimate is only returned inside an AI summary (`get_recovery` with `summary=true`, and the weekly digest). Not WHOOP's Stress Monitor. Not clinically validated. Not a diagnosis.
