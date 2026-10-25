@@ -4,12 +4,12 @@ Local repairs are implemented. Final checks: **553/553 Node tests and 17/17 Andr
 
 ## Preservation and starting state
 
-Workspace: `C:\Users\Aaron\OneDrive\Documents\ChatGPT\WhoopLens`.
+Workspace: `C:\Users\Aaron\OneDrive\Documents\ChatGPT\Whoop Lens`.
 Branch and HEAD remained `fix/mcp-oauth-reliability`, `10abf69909c0bc36697416e93616d60e7b3b633b`. Remote: `https://github.com/AStrasler/WHOOP-Lens.git`.
 
 There was substantial pre-existing uncommitted work. Modified at entry: Android build configuration, manifest, MainActivity, ManualSync, PrivateSession; consent HTML; site headers, builder, and tests. Untracked at entry: companion launcher/rationale/resources/tests, Gradle wrapper and distribution ZIP, private backups, connect page/styles, consent styles, two site utility scripts, and the MCP instructions text file. These were not discarded or staged.
 
-**Preservation limitation:** a full recursive copy was made before source edits, but its sandbox temporary directory became inaccessible after the command completed. A durable full-tree copy was subsequently made at `backups/repair-preservation-20261024/`. Files touched by these repairs were reconstructed there to the inspected pre-edit source using HEAD and the source read at the start. Its `PRESERVATION-NOTE.txt` explains that it is not a byte-for-byte pre-edit filesystem image; new repair files and generated outputs may remain. The older sibling `WhoopLens Review Snapshots/` and all original backups were retained. The older snapshot predates the newer deletion safeguards. No claim is made that the initial exact filesystem snapshot remains recoverable.
+**Preservation limitation:** a full recursive copy was made before source edits, but its sandbox temporary directory became inaccessible after the command completed. A durable full-tree copy was subsequently made at `backups/repair-preservation-20261024/`. Files touched by these repairs were reconstructed there to the inspected pre-edit source using HEAD and the source read at the start. Its `PRESERVATION-NOTE.txt` explains that it is not a byte-for-byte pre-edit filesystem image; new repair files and generated outputs may remain. The older sibling `Whoop Lens Review Snapshots/` and all original backups were retained. The older snapshot predates the newer deletion safeguards. No claim is made that the initial exact filesystem snapshot remains recoverable.
 
 `repair-results/repair-only.patch` compares the reconstructed pre-edit sources to the repaired sources. It is a review aid, not a replacement for the preservation caveat.
 

@@ -4,11 +4,11 @@ The release candidate is on `codex/release-candidate`. This checklist originally
 
 Readback confirmed that the existing production deployment command is `npx wrangler deploy`, not the more explicit command shown in the original preparation notes below. The existing command was preserved. Only preview root/build/preview-command fields were patched; production branch, filters, credentials and caching were retained. Recorded before/after evidence is in ignored `repair-results/publication/build-settings-before-after.json`.
 
-The original checkout remains at `C:\Users\Aaron\OneDrive\Documents\ChatGPT\WhoopLens`. All **244** source files in the start-of-turn preservation manifest still match their SHA-256 hashes. The durable previous backup and current repairs exist. Essential legacy files are present; the supplied Supabase database/storage archives were not opened, restored, or needed. A read-only D1 membership aggregate returned three active members, all with Cloudflare identities and enabled Access mappings, and reported zero rows written. No health measurements were queried.
+The original checkout remains at `C:\Users\Aaron\OneDrive\Documents\ChatGPT\Whoop Lens`. All **244** source files in the start-of-turn preservation manifest still match their SHA-256 hashes. The durable previous backup and current repairs exist. Essential legacy files are present; the supplied Supabase database/storage archives were not opened, restored, or needed. A read-only D1 membership aggregate returned three active members, all with Cloudflare identities and enabled Access mappings, and reported zero rows written. No health measurements were queried.
 
 The isolated candidate checkout is:
 
-`C:\Users\Aaron\OneDrive\Documents\ChatGPT\WhoopLens\backups\release-candidate`
+`C:\Users\Aaron\OneDrive\Documents\ChatGPT\Whoop Lens\backups\release-candidate`
 
 The subsequent review of every open PR and the complete companion is recorded in [PR and Android review](pr-and-android-review-20261024.md).
 
@@ -65,7 +65,7 @@ Prepare/review these commands from the candidate root (dry runs do not deploy):
 ```powershell
 $env:WRANGLER_LOG_PATH = Join-Path (Get-Location) 'repair-results\release-wrangler.log'
 $env:WRANGLER_SEND_METRICS = 'false'
-& .\cloudflare\node_modules\.bin\wrangler.cmd deploy --dry-run --config cloudflare/oauth/resource/wrangler.jsonc --outdir 'C:\Users\Aaron\OneDrive\Documents\ChatGPT\WhoopLens\backups\release-candidate\repair-results\resource-bundle'
+& .\cloudflare\node_modules\.bin\wrangler.cmd deploy --dry-run --config cloudflare/oauth/resource/wrangler.jsonc --outdir 'C:\Users\Aaron\OneDrive\Documents\ChatGPT\Whoop Lens\backups\release-candidate\repair-results\resource-bundle'
 node cloudflare/scripts/release-worker-content.mjs --worker whoop-lens --snapshot repair-results/live-worker-settings.json --bundle repair-results/resource-bundle/index.js --offline
 ```
 
