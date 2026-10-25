@@ -400,6 +400,10 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       if(error.network==="timeout")return toolError(id,`WHOOP did not respond in time when reading ${what}. Retry shortly. No WHOOP data was returned and nothing was changed.`,modern);
       if(error.status>=500||error.network)return toolError(id,`WHOOP is temporarily unavailable (reading ${what}). Retry shortly. No WHOOP data was returned and nothing was changed.`,modern);
     }
+    // A rejected refresh token (400/401 from WHOOP's token endpoint, after any
+    // concurrent rotation was checked) does not recover by retrying.
+    if(error?.message==="WHOOP refresh rejected")
+      return toolError(id,"WhoopLens could not renew this connection's WHOOP authorization. WHOOP no longer accepts the saved authorization, so retrying will not help; reconnect WHOOP in WhoopLens to continue. No WHOOP data was returned.",modern);
     if(/^WHOOP refresh|^Invalid WHOOP refresh/.test(error?.message||""))
       return toolError(id,"WhoopLens could not renew this connection's WHOOP authorization. Retry shortly; if it keeps failing, reconnect WHOOP. No WHOOP data was returned.",modern);
     return toolError(id,"WHOOP data is unavailable for this connection.",modern);
