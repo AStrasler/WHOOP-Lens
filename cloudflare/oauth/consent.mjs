@@ -233,11 +233,13 @@ export function consentPage(details,handle){
 export function noStoreHeaders(contentType='text/plain; charset=utf-8'){
   // Chrome treats the whole redirect chain of a form POST as the form target.
   // After approval the browser must be able to follow the same-origin callback
-  // through to the Cloudflare Access login host. 'self' alone aborts that hop,
-  // drops the authorize query, and the next load is "Authorization unavailable".
+  // through Cloudflare Access and on to the approved client callback
+  // (ChatGPT or the Android App Link).
+  // A blocked final redirect leaves an already-consumed consent form visible;
+  // resubmitting it correctly fails with Authorization unavailable.
   const style=String(contentType).startsWith('text/html')?" style-src '"+CONSENT_STYLE_HASH+"';":'';
   return {'content-type':contentType,'cache-control':'no-store',
-    'content-security-policy':"default-src 'none';"+style+" form-action 'self' https://auth.whooplens.tech https://whoop-lens.cloudflareaccess.com https://chatgpt.com; frame-ancestors 'none'; base-uri 'none'",
+    'content-security-policy':"default-src 'none';"+style+" form-action 'self' https://auth.whooplens.tech https://whoop-lens.cloudflareaccess.com https://chatgpt.com https://whooplens.tech/android/oauth/callback; frame-ancestors 'none'; base-uri 'none'",
     'referrer-policy':'no-referrer','x-frame-options':'DENY',
     'x-content-type-options':'nosniff'};
 }
