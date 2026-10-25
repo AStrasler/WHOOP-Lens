@@ -152,6 +152,7 @@ export function classifyToolError(error,name){
   if(message==='Consent required')return c('consent','consent_missing',false,'missing_consent');
   if(message==='Not authorized'||message==='Membership required')return c('authorization','membership_inactive',false,'incomplete_setup');
   if(message==='WHOOP connection required'||message==='digest')return c('setup','whoop_not_connected_or_no_data',false,'unavailable_data');
+  if(message==='WHOOP refresh rejected')return c('auth','whoop_refresh_rejected',false,'incomplete_setup');
   if(/^WHOOP refresh|^Invalid WHOOP refresh/.test(message))return c('auth','whoop_refresh_failed',true,'temporary');
   if(message==='WHOOP OAuth not configured'||message==='Token key unavailable'||/not configured/.test(message))
     return c('setup','server_not_configured',false,'backend_failure');

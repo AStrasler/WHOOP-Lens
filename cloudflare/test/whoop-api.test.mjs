@@ -197,39 +197,34 @@ test("parallel expired-token requests share one rotation instead of failing",asy
   const d=dbFixture();
   try{
     await connect(d,A,{expiry:now-1000});
-    // Either caller may reach WHOOP first (crypto and D1 timing vary under
-    // load). Whichever arrives first wins the rotation; the other is rejected
-    // by WHOOP and must pick up the winner's stored tokens. The gate is
-    // released by whichever caller loses, so the outcome does not depend on
-    // arrival order. The slow variant forces the first caller to arrive last.
+    // Regression (2026-10-24 production burst): parallel tool calls at expiry
+    // each sent the same refresh token to WHOOP. Now exactly one call reaches
+    // the token endpoint, in this isolate (shared in-flight refresh) and
+    // across isolates (D1 lease, see whoop-refresh-concurrency.test.mjs).
+    // The slow variant delays the first caller's D1 reads.
     for(const slowFirst of [false,true]){
       d.sqlite.prepare("DELETE FROM whoop_connections").run();
       await connect(d,A,{expiry:now-1000});
-      let uses=0,release,first,second;
-      const gate=new Promise(r=>{release=r;});
+      let uses=0;
       const fetcher=async(url,options)=>{
         assert.equal(url,"https://api.prod.whoop.com/oauth/oauth2/token");
-        const token=new URLSearchParams(options.body).get("refresh_token");
+        assert.equal(new URLSearchParams(options.body).get("refresh_token"),"test-refresh-"+A);
         uses++;
-        if(uses===1){await gate;return response({access_token:"rotated-access",refresh_token:"rotated-refresh",expires_in:3600});}
-        // The second use of the same rotated-away refresh token is rejected by WHOOP.
-        assert.equal(token,"test-refresh-"+A);
-        return new Response("{}",{status:400});
+        await new Promise(r=>setTimeout(r,20));
+        return response({access_token:"rotated-access",refresh_token:"rotated-refresh",expires_in:3600});
       };
-      // The loser releases the winner, then waits until the winner has stored its rotation.
-      const sleep=async()=>{release();await Promise.race([first,second].map(p=>p.catch(()=>{})));};
       const slow=slowFirst?{...d,prepare(sql){const st=d.prepare(sql);return {...st,bind(...a){const b=st.bind(...a);
         return {...b,first:async()=>{await new Promise(r=>setTimeout(r,30));return b.first();},run:()=>b.run(),all:()=>b.all()};}};}}:d;
-      first=whoopAccessToken(slow,A,env,{now:()=>now,fetcher,sleep});
-      second=whoopAccessToken(d,A,env,{now:()=>now,fetcher,sleep});
+      const first=whoopAccessToken(slow,A,env,{now:()=>now,fetcher,sleep:async()=>{}});
+      const second=whoopAccessToken(d,A,env,{now:()=>now,fetcher,sleep:async()=>{}});
       assert.deepEqual(await Promise.all([first,second]),["rotated-access","rotated-access"],"slowFirst="+slowFirst);
-      assert.equal(uses,2);
+      assert.equal(uses,1,"the refresh token is sent to WHOOP once");
     }
     // A genuine failure with nothing refreshed elsewhere still fails.
     const d2=dbFixture();try{
       await connect(d2,A,{expiry:now-1000});
       await assert.rejects(whoopAccessToken(d2,A,env,{now:()=>now,
-        fetcher:async()=>new Response("{}",{status:400}),sleep:async()=>{}}),/refresh failed/);
+        fetcher:async()=>new Response("{}",{status:400}),sleep:async()=>{}}),/refresh rejected/);
     }finally{d2.close();}
   }finally{d.close();}
 });
