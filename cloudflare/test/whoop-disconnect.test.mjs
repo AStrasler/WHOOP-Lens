@@ -33,9 +33,9 @@ const now=()=>NOW;
 test('revokes at WHOOP with the caller token, then deletes locally; other member untouched',async()=>{
   const db=await fixture();try{
     const calls=[];
-    const r=await disconnectWhoop(db,A,ON,{now,fetcher:async(url,init)=>{calls.push({url,method:init.method,auth:init.headers.authorization,conns:conns(db,A)});return new Response(null,{status:204});}});
+    const r=await disconnectWhoop(db,A,ON,{now,fetcher:async(url,init)=>{calls.push({url,method:init.method,redirect:init.redirect,auth:init.headers.authorization,conns:conns(db,A)});return new Response(null,{status:204});}});
     assert.equal(calls.length,1);
-    assert.equal(calls[0].url,WHOOP_REVOKE_URL);assert.equal(calls[0].method,'DELETE');
+    assert.equal(calls[0].url,WHOOP_REVOKE_URL);assert.equal(calls[0].method,'DELETE');assert.equal(calls[0].redirect,'manual');
     assert.equal(calls[0].auth,'Bearer synthetic-access-aaaa');
     assert.equal(calls[0].conns,1,'provider revoke happens before local deletion');
     assert.deepEqual(r,{disconnected:true,removed:true,whoop_access_revoked:true,whoop_revoke_reason:'whoop_revoked',message:REVOKED_MESSAGE});
@@ -49,6 +49,7 @@ for(const [label,fetcher,reason] of [
   ['429',async()=>new Response(null,{status:429}),'whoop_revoke_rate_limited'],
   ['500',async()=>new Response('upstream secret text',{status:500}),'whoop_revoke_unavailable'],
   ['400',async()=>new Response(null,{status:400}),'whoop_revoke_rejected'],
+  ['302 redirect',async(url,init)=>{assert.equal(init.redirect,'manual');return new Response(null,{status:302,headers:{location:'https://elsewhere.example/'}});},'whoop_revoke_rejected'],
 ]){
   test(`WHOOP ${label}: local deletion still proceeds, sanitized reason, manual instructions`,async()=>{
     const db=await fixture();try{

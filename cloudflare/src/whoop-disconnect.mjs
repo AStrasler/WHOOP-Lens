@@ -29,9 +29,11 @@ export async function revokeAtWhoop(db,userId,env,{fetcher=fetch,now=()=>Date.no
   try{token=(await openWithKeyring(row.encrypted_access_token,{userId,purpose:'access',keys:tokenKeyring(env)})).token;}
   catch{return {revoked:false,reason:'whoop_revoke_token_unavailable'};}
   let response;
-  try{response=await fetcher(WHOOP_REVOKE_URL,{method:'DELETE',headers:{authorization:`Bearer ${token}`},signal:AbortSignal.timeout(REVOKE_TIMEOUT_MS)});}
+  try{response=await fetcher(WHOOP_REVOKE_URL,{method:'DELETE',headers:{authorization:`Bearer ${token}`},redirect:'manual',signal:AbortSignal.timeout(REVOKE_TIMEOUT_MS)});}
   catch{return {revoked:false,reason:'whoop_revoke_network'};}
   const s=response?.status;
+  // A redirect is never followed: the bearer token goes only to the documented URL.
+  if(s>=300&&s<400)return {revoked:false,reason:'whoop_revoke_rejected'};
   if(s===204||s===200)return {revoked:true,reason:'whoop_revoked'};
   if(s===401)return {revoked:false,reason:'whoop_revoke_unauthorized'};
   if(s===429)return {revoked:false,reason:'whoop_revoke_rate_limited'};
