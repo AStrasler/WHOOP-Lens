@@ -105,7 +105,10 @@ test("refresh failure has its own message and code",async()=>{
     const fetcher=async raw=>new URL(raw).pathname.includes("/oauth/")?new Response(SECRET_BODY,{status:400}):Response.json({});
     const r=await call(db,fetcher,"get_recovery");
     assert.match(r.result.content[0].text,/^WHOOP Lens could not renew this connection's WHOOP authorization\./);
-    assert.ok(rows(db).some(x=>x.code==="whoop_refresh_failed"));
+    // A 400 from the token endpoint is WHOOP refusing the stored refresh
+    // token: same member message, but not labelled a temporary failure.
+    assert.ok(rows(db).some(x=>x.code==="whoop_refresh_rejected"));
+    assert.equal(rows(db).some(x=>x.code==="whoop_refresh_failed"),false);
   }finally{db.close();}
 });
 for(const [label,tokenEndpoint] of [

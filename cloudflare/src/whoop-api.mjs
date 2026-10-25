@@ -74,9 +74,10 @@ async function boundedJson(response){
   if(text.length>2_000_000)throw Error("WHOOP response too large");
   return JSON.parse(text);
 }
-async function concurrentlyRefreshed(db,id,previous,key,now,sleep){
-  // Bounded wait (about 1.5 s) for the winning request to store its rotation.
-  for(let attempt=0;attempt<4;attempt++){
+async function concurrentlyRefreshed(db,id,previous,key,now,sleep,attempts=4){
+  // Bounded wait (about 1.5 s, or 4.5 s behind a lease) for the winning
+  // request to store its rotation.
+  for(let attempt=0;attempt<attempts;attempt++){
     if(attempt)await sleep(500);
     const token=await storedRotation(db,id,previous,key,now);
     if(token)return token;
@@ -92,11 +93,45 @@ async function storedRotation(db,id,previous,key,now){
   if(!Number.isFinite(expiry)||expiry<=now()+60_000)return null;
   return openToken(row.encrypted_access_token,id,"access",key);
 }
-export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
+// Refresh serialization. WHOOP rotates refresh tokens, so two refreshes that
+// send the same stored refresh token cannot both succeed; a lost race discards
+// one rotation and (observed in production on 2026-10-24) the connection's
+// stored tokens were then rejected by WHOOP. Two layers, both per member:
+// 1. In this isolate, concurrent callers share one in-flight refresh.
+// 2. Across isolates, a short D1 lease lets only one caller contact WHOOP;
+//    the others wait for the stored rotation. The lease is a marker in
+//    whoop_connections.updated_at ("lease:" + claim time), set by a
+//    compare-and-set on the row that still holds the old refresh token. Only a
+//    fresh marker (under LEASE_SECONDS old) blocks; ordinary timestamps never
+//    do, and the next stored rotation or reconnect rewrites updated_at. A
+//    marker left by a failed attempt shows when the last refresh was tried.
+//    No schema change; no other code reads this column.
+const inflightRefresh=new Map();
+const LEASE_SECONDS=30;
+const claimLeaseSql="UPDATE whoop_connections SET updated_at='lease:'||?3 "+
+  "WHERE user_id=?1 AND encrypted_refresh_token=?2 AND NOT ("+
+  "substr(updated_at,1,6)='lease:' AND julianday(substr(updated_at,7)) IS NOT NULL AND "+
+  "julianday(substr(updated_at,7))>julianday(?3)-"+LEASE_SECONDS+"/86400.0 AND "+
+  "julianday(substr(updated_at,7))<=julianday(?3)+"+LEASE_SECONDS+"/86400.0)";
+export function refreshRejected(status){
+  const error=Error("WHOOP refresh rejected");error.status=status;error.refreshRejected=true;return error;
+}
+export async function whoopAccessToken(db, userId, env, deps={}){
+  const id=ownerId(userId);
+  const shared=inflightRefresh.get(id);
+  if(shared)return shared;
+  const run=accessTokenOnce(db,id,env,deps);
+  inflightRefresh.set(id,run);
+  // Only a refreshing call stays registered long; a valid-token read resolves
+  // immediately. Remove the entry whichever way it settles.
+  run.then(()=>{},()=>{}).finally(()=>{if(inflightRefresh.get(id)===run)inflightRefresh.delete(id);});
+  return run;
+}
+async function accessTokenOnce(db, userId, env, {fetcher=fetch,now=Date.now,sleep=ms=>new Promise(r=>setTimeout(r,ms))}={}){
   const id=ownerId(userId),key=config(env);
   if(!await activeMembership(db,id))throw Error("Membership required");
   const row=await db.prepare(
-    "SELECT encrypted_access_token,encrypted_refresh_token,expires_at,scope FROM whoop_connections WHERE user_id=?1 LIMIT 1"
+    "SELECT encrypted_access_token,encrypted_refresh_token,expires_at,scope,updated_at FROM whoop_connections WHERE user_id=?1 LIMIT 1"
   ).bind(id).first();
   if(!row)throw Error("WHOOP connection required");
   const currentExpiry=Date.parse(row.expires_at);
@@ -107,67 +142,91 @@ export async function whoopAccessToken(db, userId, env, {fetcher=fetch,now=Date.
   }
   clientConfig(env);
   const refresh=await openToken(row.encrypted_refresh_token,id,"refresh",key);
-  const form=new URLSearchParams({
-    grant_type:"refresh_token",refresh_token:refresh,
-    client_id:env.WHOOP_CLIENT_ID,client_secret:env.WHOOP_CLIENT_SECRET,
-    // WHOOP recommends requesting offline when refreshing as well as on the
-    // initial grant (developer.whoop.com/docs/developing/support, refresh
-    // tutorial payload). Read scopes are not re-sent: WHOOP's refresh payload
-    // only documents offline, and the response scope is stored as returned.
-    scope:"offline"
-  });
-  const response=await fetcher(TOKEN_ENDPOINT,{
-    method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},
-    body:form,redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
-  });
-  if(!response.ok){
-    // WHOOP rotates refresh tokens: a parallel request that already used this
-    // one makes ours fail. Use the access token that request stored, if any.
-    const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep);
-    if(winner)return winner;
-    // A rate-limited refresh is reported as such (the stored tokens are kept).
-    if(response.status===429)throw rateLimited(response,"WHOOP refresh failed");
-    throw Error("WHOOP refresh failed");
-  }
-  const tokens=await boundedJson(response);
-  if(typeof tokens?.access_token!=="string"||tokens.access_token.length<1||
-     !Number.isFinite(Number(tokens.expires_in))||Number(tokens.expires_in)<60 ||
-     Number(tokens.expires_in)>31_536_000 ||
-     (tokens.refresh_token!=null&&typeof tokens.refresh_token!=="string"))
-    throw Error("Invalid WHOOP refresh response");
-  const nextRefresh=tokens.refresh_token||refresh;
-  const nextAccessEnvelope=await sealWithKeyring(tokens.access_token,{userId:id,purpose:"access",keys:key});
-  const nextRefreshEnvelope=await sealWithKeyring(nextRefresh,{userId:id,purpose:"refresh",keys:key});
-  const expiresAt=new Date(now()+Number(tokens.expires_in)*1000).toISOString();
-  // Optimistic update: do not overwrite a connection already refreshed elsewhere.
-  const scope=typeof tokens.scope==="string"?tokens.scope:(row.scope||"");
-  const write=expected=>db.prepare(
-    "UPDATE whoop_connections SET encrypted_access_token=?1,encrypted_refresh_token=?2,"+
-    "expires_at=?3,scope=?4,encryption_key_version=?7,updated_at=CURRENT_TIMESTAMP "+
-    "WHERE user_id=?5 AND encrypted_refresh_token=?6"
-  ).bind(nextAccessEnvelope,nextRefreshEnvelope,expiresAt,scope,id,expected,
-         key.current==="k2"?"k2":"v1").run();
-  let result=await write(row.encrypted_refresh_token);
-  if(!result.success||result.meta?.changes!==1){
-    // The ciphertext may have changed only because the row was re-encrypted
-    // (same refresh token, new key). Then our rotation is still the newest:
-    // retry against the current ciphertext so the new refresh token is kept.
-    const current=await db.prepare(
-      "SELECT encrypted_refresh_token FROM whoop_connections WHERE user_id=?1 LIMIT 1"
-    ).bind(id).first();
-    if(current?.encrypted_refresh_token&&current.encrypted_refresh_token!==row.encrypted_refresh_token){
-      let same=false;
-      try{same=await openToken(current.encrypted_refresh_token,id,"refresh",key)===refresh;}catch{same=false;}
-      if(same)result=await write(current.encrypted_refresh_token);
-    }
-  }
-  if(!result.success||result.meta?.changes!==1){
-    const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep);
+  // Cross-isolate lease: if another request already claimed this refresh
+  // token, wait for its stored rotation instead of reusing the token.
+  const claimedAt=new Date(now()).toISOString();
+  const lease=await db.prepare(claimLeaseSql).bind(id,row.encrypted_refresh_token,claimedAt).run();
+  if(!lease?.success||lease.meta?.changes!==1){
+    const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep,10);
     if(winner)return winner;
     throw Error("WHOOP refresh raced or failed");
   }
-  if(key.current==="k2"){try{await migrateAllTokens(db,env,{now});}catch{/* logged when it runs */}}
-  return tokens.access_token;
+  // Any outcome that did not store a rotation restores the previous
+  // updated_at (only if our marker is still there), so a 429, outage or
+  // rejected token leaves the row exactly as it was and never blocks the
+  // next attempt for the lease period.
+  const rotate=async()=>{
+    const form=new URLSearchParams({
+      grant_type:"refresh_token",refresh_token:refresh,
+      client_id:env.WHOOP_CLIENT_ID,client_secret:env.WHOOP_CLIENT_SECRET,
+      // WHOOP recommends requesting offline when refreshing as well as on the
+      // initial grant (developer.whoop.com/docs/developing/support, refresh
+      // tutorial payload). Read scopes are not re-sent: WHOOP's refresh payload
+      // only documents offline, and the response scope is stored as returned.
+      scope:"offline"
+    });
+    const response=await fetcher(TOKEN_ENDPOINT,{
+      method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},
+      body:form,redirect:"manual",cache:"no-store",credentials:"omit",signal:timeout()
+    });
+    if(!response.ok){
+      // WHOOP rotates refresh tokens: a parallel request that already used this
+      // one makes ours fail. Use the access token that request stored, if any.
+      const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep);
+      if(winner)return winner;
+      // A rate-limited refresh is reported as such (the stored tokens are kept).
+      if(response.status===429)throw rateLimited(response,"WHOOP refresh failed");
+      // 400/401 from the token endpoint: WHOOP refused the stored refresh token
+      // (invalid_grant) or the client. Not a transient outage; tokens are kept.
+      if(response.status===400||response.status===401)throw refreshRejected(response.status);
+      throw Error("WHOOP refresh failed");
+    }
+    const tokens=await boundedJson(response);
+    if(typeof tokens?.access_token!=="string"||tokens.access_token.length<1||
+       !Number.isFinite(Number(tokens.expires_in))||Number(tokens.expires_in)<60 ||
+       Number(tokens.expires_in)>31_536_000 ||
+       (tokens.refresh_token!=null&&typeof tokens.refresh_token!=="string"))
+      throw Error("Invalid WHOOP refresh response");
+    const nextRefresh=tokens.refresh_token||refresh;
+    const nextAccessEnvelope=await sealWithKeyring(tokens.access_token,{userId:id,purpose:"access",keys:key});
+    const nextRefreshEnvelope=await sealWithKeyring(nextRefresh,{userId:id,purpose:"refresh",keys:key});
+    const expiresAt=new Date(now()+Number(tokens.expires_in)*1000).toISOString();
+    // Optimistic update: do not overwrite a connection already refreshed elsewhere.
+    const scope=typeof tokens.scope==="string"?tokens.scope:(row.scope||"");
+    const write=expected=>db.prepare(
+      "UPDATE whoop_connections SET encrypted_access_token=?1,encrypted_refresh_token=?2,"+
+      "expires_at=?3,scope=?4,encryption_key_version=?7,updated_at=CURRENT_TIMESTAMP "+
+      "WHERE user_id=?5 AND encrypted_refresh_token=?6"
+    ).bind(nextAccessEnvelope,nextRefreshEnvelope,expiresAt,scope,id,expected,
+           key.current==="k2"?"k2":"v1").run();
+    let result=await write(row.encrypted_refresh_token);
+    if(!result.success||result.meta?.changes!==1){
+      // The ciphertext may have changed only because the row was re-encrypted
+      // (same refresh token, new key). Then our rotation is still the newest:
+      // retry against the current ciphertext so the new refresh token is kept.
+      const current=await db.prepare(
+        "SELECT encrypted_refresh_token FROM whoop_connections WHERE user_id=?1 LIMIT 1"
+      ).bind(id).first();
+      if(current?.encrypted_refresh_token&&current.encrypted_refresh_token!==row.encrypted_refresh_token){
+        let same=false;
+        try{same=await openToken(current.encrypted_refresh_token,id,"refresh",key)===refresh;}catch{same=false;}
+        if(same)result=await write(current.encrypted_refresh_token);
+      }
+    }
+    if(!result.success||result.meta?.changes!==1){
+      const winner=await concurrentlyRefreshed(db,id,row,key,now,sleep);
+      if(winner)return winner;
+      throw Error("WHOOP refresh raced or failed");
+    }
+    if(key.current==="k2"){try{await migrateAllTokens(db,env,{now});}catch{/* logged when it runs */}}
+    return tokens.access_token;
+  };
+  try{return await rotate();}
+  catch(error){
+    try{await db.prepare("UPDATE whoop_connections SET updated_at=?3 WHERE user_id=?1 AND updated_at=?2")
+      .bind(id,'lease:'+claimedAt,row.updated_at).run();}catch{/* the marker expires on its own */}
+    throw error;
+  }
 }
 export async function callWhoop(db,userId,resource,env,opts={},deps={}){
   const spec=Object.hasOwn(resources,resource)?resources[resource]:null;
