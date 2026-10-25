@@ -54,7 +54,7 @@ export function parseLocalImport(text, now = Date.now()) {
 
   if (data.schema_version !== 2 || data.source !== "health_connect" ||
       !Array.isArray(data.records) || data.records.length > 100) {
-    throw new Error("Expected a WHOOP Lens Health Connect v2 JSON export (up to 100 records), or a FHIR R4 Bundle.");
+    throw new Error("Expected a WhoopLens Health Connect v2 JSON export (up to 100 records), or a FHIR R4 Bundle.");
   }
   timestamp(data.exported_at, now);
   const seen = new Set();
@@ -104,7 +104,7 @@ export function parseLocalImport(text, now = Date.now()) {
     };
   });
   return {
-    kind: "health_connect_preview", source: "WHOOP Lens Health Connect v2 JSON",
+    kind: "health_connect_preview", source: "WhoopLens Health Connect v2 JSON",
     records, exported_at: data.exported_at, canUpload: false
   };
 }
