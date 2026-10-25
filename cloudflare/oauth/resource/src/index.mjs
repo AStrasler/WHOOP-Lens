@@ -45,11 +45,11 @@ export default {
     // The WHOOP callback is authenticated by its expiring, atomically consumed
     // state. The Health Connect webhook authenticates its own per-user bearer.
     // All other paths retain MCP OAuth protection.
-    const path=new URL(request.url).pathname;
+    const requestUrl=new URL(request.url),path=requestUrl.pathname;
     // The apex only serves the MCP resource. Public site pages live on www, so
     // the bare root and the site paths redirect there. Nothing else changes.
     if((request.method==='GET'||request.method==='HEAD')&&Object.hasOwn(SITE_REDIRECTS,path))
-      return new Response(null,{status:301,headers:{location:'https://www.whooplens.tech'+SITE_REDIRECTS[path],'cache-control':'public, max-age=3600'}});
+      return new Response(null,{status:301,headers:{location:'https://www.whooplens.tech'+SITE_REDIRECTS[path]+requestUrl.search,'cache-control':'public, max-age=3600'}});
     // Android App Links: only the debug signing certificate is registered here.
     // Release builds must add their own signing certificate fingerprint.
     if(path==='/.well-known/assetlinks.json' && request.method==='GET')

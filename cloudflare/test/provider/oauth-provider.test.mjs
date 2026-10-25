@@ -38,9 +38,12 @@ test('apex root and site paths 301 to www; MCP, OAuth and API paths are unchange
     for (const method of ['GET', 'HEAD']) {
       const r = await resource.fetch(new Request('https://whooplens.tech' + path + '?x=1', {method}), {}, {});
       assert.equal(r.status, 301, method + ' ' + path);
-      assert.equal(r.headers.get('location'), 'https://www.whooplens.tech' + target);
+      assert.equal(r.headers.get('location'), 'https://www.whooplens.tech' + target + '?x=1', 'query string preserved');
+      assert.equal(new URL(r.headers.get('location')).hostname, 'www.whooplens.tech', 'target is never the apex, so no loop');
     }
   }
+  const bare = await resource.fetch(new Request('https://whooplens.tech/privacy'), {}, {});
+  assert.equal(bare.headers.get('location'), 'https://www.whooplens.tech/privacy/', 'no stray ? without a query');
   const env = {OAUTH_RESOURCE_ENABLED: 'false'};
   for (const path of ['/mcp', '/.well-known/oauth-protected-resource/mcp', '/api/whoop/callback', '/v1/health-connect', '/v1/status', '/privacy/extra', '/PRIVACY']) {
     const r = await resource.fetch(new Request('https://whooplens.tech' + path), env, {});
