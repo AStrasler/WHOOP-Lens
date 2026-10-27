@@ -159,6 +159,7 @@ class MainActivity : ComponentActivity() {
         handler.removeCallbacks(bleTick)
         handler.removeCallbacks(periodic)
         handler.removeCallbacks(sessionTick)
+        handler.removeCallbacks(noticeTick)
         super.onPause()
     }
 
@@ -538,9 +539,26 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
+    private val noticeTick = Runnable {
+        if (foreground && !isDestroyed) render()
+    }
+
+    /** Redraws at the next notice expiry so a cached banner does not outlive its window. */
+    private fun scheduleNoticeExpiry() {
+        handler.removeCallbacks(noticeTick)
+        if (!foreground || account == null) return
+        val now = System.currentTimeMillis()
+        val at = ServiceAnnouncements.nextExpiryEpochMs(visibleNotices(now), now) ?: return
+        handler.postDelayed(noticeTick, (at - now + 1L).coerceAtLeast(1L))
+    }
+
+    private fun visibleNotices(now: Long = System.currentTimeMillis()) =
+        ServiceAnnouncements.current(notices, account, now).notices
+
     private fun render() {
         applyScreenCapturePrivacy(this)
         if (!::frame.isInitialized) return
+        scheduleNoticeExpiry()
         bleScreen = null
         if (
             page != "Direct BLE" &&
@@ -710,8 +728,7 @@ class MainActivity : ComponentActivity() {
             .let { it + defaultCards.filterNot(it::contains) }
 
     private fun renderNoticeBanner(root: LinearLayout) {
-        val visible = ServiceAnnouncements.forAccount(notices, account).notices
-        val banner = ServiceAnnouncements.banner(visible.filter { it.id !in dismissedNotices }) ?: return
+        val banner = ServiceAnnouncements.banner(visibleNotices().filter { it.id !in dismissedNotices }) ?: return
         ui.card(root) { c ->
             ui.add(c, ui.text(banner.kind.replaceFirstChar { it.uppercase() }, 12f, LensColors.amber, true))
             ui.add(
@@ -729,7 +746,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun renderNoticeInbox(root: LinearLayout) {
-        val visible = ServiceAnnouncements.forAccount(notices, account).notices
+        val visible = visibleNotices()
         if (visible.isEmpty()) return
         ui.heading(root, "Service notices")
         visible.forEach { notice ->

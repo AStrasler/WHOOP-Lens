@@ -21,9 +21,10 @@ expiry. It does not include the audience list, other member ids, names, emails,
 or health data.
 
 The Android companion fetches that route on launch with the existing sign-in
-and shows a maintenance or outage banner plus an inbox on Home. Switching
-accounts drops the previous inbox. There is no push notification and no FCM
-setup. Push delivery, if it is ever wanted, is a separate decision and would
+and shows a maintenance or outage banner plus an inbox on Home. A notice whose
+expiry passes while the app is open is removed on the next draw, without
+waiting for another launch. Switching accounts drops the previous inbox. There
+is no push notification and no FCM setup. Push delivery, if it is ever wanted, is a separate decision and would
 add a service this project does not use today.
 
 The public website has no signed-in member session. The member surfaces are the
@@ -40,7 +41,11 @@ Only while the flag is on, and only for the owner id:
 - `GET /v1/announcements/manage` or `manage_service_announcements`
 
 `audience` is `all` or `members`. `members` takes up to 20 existing active
-member ids, not names or emails. Notice text is refused if it contains an
+member ids, not names or emails. That active-member check runs when recipients
+are added or changed. Expiring or cancelling still works after a targeted
+member becomes inactive. At most 50 draft, scheduled, or active notices can
+exist at once. Expired and cancelled notices stay in the record and do not
+count toward that cap. Notice text is refused if it contains an
 email, a member id, a link, a credential, an 8-digit run, or a health field
 such as heart rate or HRV.
 

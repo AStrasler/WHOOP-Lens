@@ -44,6 +44,26 @@ internal object ServiceAnnouncements {
         return inbox
     }
 
+    /** Notices that are still inside their window. A cached inbox is filtered again at draw time. */
+    fun current(inbox: NoticeInbox?, account: String?, nowEpochMs: Long): NoticeInbox {
+        val owned = forAccount(inbox, account)
+        val now = Instant.ofEpochMilli(nowEpochMs)
+        val visible = owned.notices.filter { openAt(it, now) }
+        return if (visible.size == owned.notices.size) owned else owned.copy(notices = visible)
+    }
+
+    /** Epoch millis of the soonest future expiry, so the screen can drop a notice without another fetch. */
+    fun nextExpiryEpochMs(notices: List<ServiceNotice>, nowEpochMs: Long): Long? {
+        val now = Instant.ofEpochMilli(nowEpochMs)
+        var soonest: Instant? = null
+        for (notice in notices) {
+            val expires = notice.expiresAt?.let(::parseTime) ?: continue
+            if (!expires.isAfter(now)) continue
+            if (soonest == null || expires.isBefore(soonest)) soonest = expires
+        }
+        return soonest?.toEpochMilli()
+    }
+
     fun parse(account: String, payload: String, nowEpochMs: Long): NoticeInbox {
         if (account.isEmpty()) return empty(account)
         val root =
@@ -88,6 +108,13 @@ internal object ServiceAnnouncements {
         val expires = if (expiresRaw.isNullOrEmpty()) null else parseTime(expiresRaw) ?: return null
         if (expires != null && !expires.isAfter(now)) return null
         return ServiceNotice(id, kind, title, body, startsAt, expiresRaw)
+    }
+
+    private fun openAt(notice: ServiceNotice, now: Instant): Boolean {
+        val starts = parseTime(notice.startsAt) ?: return false
+        if (starts.isAfter(now)) return false
+        val expires = notice.expiresAt?.let { parseTime(it) ?: return false }
+        return expires == null || expires.isAfter(now)
     }
 
     private fun parseTime(value: String): Instant? =

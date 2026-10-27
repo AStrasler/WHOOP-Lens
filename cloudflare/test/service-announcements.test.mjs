@@ -200,6 +200,42 @@ test('targeting, schedule, expiry and cancellation stay on the server',async()=>
   }finally{db.close();}
 });
 
+test('retired notices free the cap, and withdrawal still works after a target leaves',async()=>{
+  const db=database();
+  try{
+    const kept=await createAnnouncement(db,OWNER,notice({title:'Keep this window',body:'This one stays outstanding.'}),{env:ON,now:NOW});
+    const first=[];
+    for(let i=0;i<49;i++)first.push(await createAnnouncement(db,OWNER,notice({title:`Window ${i}`,body:'A maintenance window.'}),{env:ON,now:NOW}));
+    await assert.rejects(()=>createAnnouncement(db,OWNER,notice({title:'One too many',body:'This must wait.'}),{env:ON,now:NOW}),
+      error=>error instanceof AnnouncementRejected&&error.reason==='invalid');
+    for(const row of first)await updateAnnouncement(db,OWNER,{id:row.id,action:'expire'},{env:ON,now:NOW});
+    const second=[];
+    for(let i=0;i<49;i++)second.push(await createAnnouncement(db,OWNER,notice({title:`Later window ${i}`,body:'Another maintenance window.'}),{env:ON,now:NOW}));
+    for(const row of second)await updateAnnouncement(db,OWNER,{id:row.id,action:'cancel'},{env:ON,now:NOW});
+    const managed=await manageAnnouncements(db,OWNER,{env:ON});
+    assert.ok(managed.announcements.some(item=>item.id===kept.id&&item.status==='active'));
+    const again=await createAnnouncement(db,OWNER,notice({title:'After retirement',body:'Retired rows do not block this.'}),{env:ON,now:NOW});
+    assert.equal(again.status,'active');
+    const seat=await createAnnouncement(db,OWNER,notice({title:'For one seat',body:'Only one member should see this.',audience:'members',member_ids:[AMY]}),{env:ON,now:NOW});
+    const draft=await createAnnouncement(db,OWNER,notice({title:'Draft for one seat',body:'Not published yet.',audience:'members',member_ids:[AMY],status:'draft'}),{env:ON,now:NOW});
+    db.sqlite.prepare('UPDATE whoop_members SET active=0 WHERE user_id=?').run(AMY);
+    const expired=await updateAnnouncement(db,OWNER,{id:seat.id,action:'expire'},{env:ON,now:NOW});
+    assert.equal(expired.status,'expired');
+    const edited=await updateAnnouncement(db,OWNER,{id:draft.id,action:'save',title:'Draft still editable'},{env:ON,now:NOW});
+    assert.equal(edited.title,'Draft still editable');
+    const published=await updateAnnouncement(db,OWNER,{id:draft.id,action:'publish'},{env:ON,now:NOW});
+    assert.equal(published.status,'active');
+    const cancelled=await updateAnnouncement(db,OWNER,{id:draft.id,action:'cancel'},{env:ON,now:NOW});
+    assert.equal(cancelled.status,'cancelled');
+    await assert.rejects(()=>createAnnouncement(db,OWNER,notice({title:'Inactive seat',body:'This must not be stored.',audience:'members',member_ids:[AMY]}),{env:ON,now:NOW}),
+      error=>error instanceof AnnouncementRejected&&error.reason==='invalid');
+    await assert.rejects(()=>updateAnnouncement(db,OWNER,{id:kept.id,action:'save',audience:'members',member_ids:[AMY]},{env:ON,now:NOW}),
+      error=>error instanceof AnnouncementRejected&&error.reason==='invalid');
+    assert.equal((await listMemberAnnouncements(db,KIM,{env:ON,now:NOW})).announcements.some(item=>item.id===seat.id||item.id===draft.id),false);
+    assert.equal(notices(db),1+49+49+1+2);
+  }finally{db.close();}
+});
+
 test('malformed notices and private text are refused and not stored or echoed',async()=>{
   const db=database();
   try{

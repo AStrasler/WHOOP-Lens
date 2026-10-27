@@ -102,6 +102,15 @@ async function membersActive(db,ids){
   }
   return true;
 }
+function sameMembers(left,right){
+  if(left.length!==right.length)return false;
+  const a=left.slice().sort();
+  const b=right.slice().sort();
+  return a.every((id,index)=>id===b[index]);
+}
+function recipientsChanged(existing,next){
+  return existing.audience!==next.audience||!sameMembers(existing.member_ids,next.member_ids);
+}
 const TARGETS_SQL='SELECT user_id FROM service_announcement_targets WHERE announcement_id=?1 ORDER BY user_id';
 async function withTargets(db,row){
   const targets=(await db.prepare(TARGETS_SQL).bind(row.id).all())?.results??[];
@@ -214,7 +223,7 @@ export async function createAnnouncement(db,userId,input,{env,now=Date.now()}={}
   if(!parsed)throw new AnnouncementRejected('invalid');
   if(parsed.audience==='members'&&!await membersActive(db,parsed.member_ids))throw new AnnouncementRejected('invalid');
   let count;
-  try{count=await db.prepare('SELECT COUNT(*) AS n FROM service_announcements').first();}
+  try{count=await db.prepare(OUTSTANDING_COUNT_SQL).first();}
   catch{throw new AnnouncementRejected('unavailable');}
   if(Number(count?.n??0)>=MAX_MANAGE)throw new AnnouncementRejected('invalid');
   const nowIso=iso(now);
@@ -234,7 +243,10 @@ export async function updateAnnouncement(db,userId,input,{env,now=Date.now()}={}
   if(!existing)throw new AnnouncementRejected('not_found');
   const next=applyUpdate(existing,parsed,iso(now));
   if(!next)throw new AnnouncementRejected('invalid');
-  if(next.audience==='members'&&!await membersActive(db,next.member_ids))throw new AnnouncementRejected('invalid');
+  // Membership is checked when recipients are added or changed. Expire, cancel,
+  // and other edits still work after a targeted member becomes inactive.
+  if(next.audience==='members'&&recipientsChanged(existing,next)&&!await membersActive(db,next.member_ids))
+    throw new AnnouncementRejected('invalid');
   await writeRow(db,next);
   const stored=await readOne(db,next.id);
   if(!stored)throw new AnnouncementRejected('unavailable');
@@ -253,8 +265,10 @@ export async function listMemberAnnouncements(db,userId,{env,now=Date.now()}={})
       note:'Service notices only. No health data or account details.'};
   }catch{throw new AnnouncementRejected('unavailable');}
 }
+const OUTSTANDING_COUNT_SQL="SELECT COUNT(*) AS n FROM service_announcements WHERE status IN ('draft','scheduled','active')";
 const MANAGE_SQL='SELECT id,kind,title,body,audience,starts_at,expires_at,status,created_at,updated_at '+
-  'FROM service_announcements ORDER BY updated_at DESC, id LIMIT '+MAX_MANAGE;
+  'FROM service_announcements ORDER BY '+
+  "CASE WHEN status IN ('draft','scheduled','active') THEN 0 ELSE 1 END, updated_at DESC, id LIMIT "+MAX_MANAGE;
 export async function manageAnnouncements(db,userId,{env}={}){
   await guardOwner(db,userId,env);
   try{

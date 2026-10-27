@@ -75,6 +75,22 @@ class ServiceAnnouncementsTest {
     }
 
     @Test
+    fun cachedNoticeDropsWhenItsExpiryPassesWithoutAnotherFetch() {
+        val expires = "2026-10-27T16:00:00Z"
+        val inbox = ServiceAnnouncements.parse(account, payload(notice(expires = expires)), now)
+        val expiry = Instant.parse(expires).toEpochMilli()
+        assertEquals(listOf("maintenance"), ServiceAnnouncements.current(inbox, account, now).notices.map { it.kind })
+        assertEquals(expiry, ServiceAnnouncements.nextExpiryEpochMs(inbox.notices, now))
+        assertEquals(1, ServiceAnnouncements.current(inbox, account, expiry - 1).notices.size)
+        assertTrue(ServiceAnnouncements.current(inbox, account, expiry).notices.isEmpty())
+        assertNull(ServiceAnnouncements.nextExpiryEpochMs(inbox.notices, expiry))
+        val open = ServiceAnnouncements.parse(account, payload(notice(expires = null)), now)
+        assertEquals(1, ServiceAnnouncements.current(open, account, expiry).notices.size)
+        assertNull(ServiceAnnouncements.nextExpiryEpochMs(open.notices, now))
+        assertTrue(ServiceAnnouncements.current(inbox, other, now).notices.isEmpty())
+    }
+
+    @Test
     fun clientUsesTheSignedInAccountAndDiscardsErrorBodies() {
         val session = session(account)
         var seenUrl = ""
