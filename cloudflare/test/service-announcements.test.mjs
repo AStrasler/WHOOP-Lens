@@ -236,6 +236,42 @@ test('retired notices free the cap, and withdrawal still works after a target le
   }finally{db.close();}
 });
 
+test('reviving a retired notice obeys the outstanding cap and stays visible',async()=>{
+  const db=database();
+  try{
+    const cancelled=await createAnnouncement(db,OWNER,notice({title:'Cancelled window',body:'This was withdrawn.'}),{env:ON,now:NOW});
+    await updateAnnouncement(db,OWNER,{id:cancelled.id,action:'cancel'},{env:ON,now:NOW});
+    const expired=await createAnnouncement(db,OWNER,notice({title:'Expired window',body:'This window ended.'}),{env:ON,now:NOW});
+    await updateAnnouncement(db,OWNER,{id:expired.id,action:'expire'},{env:ON,now:NOW});
+    const live=[];
+    for(let i=0;i<50;i++)live.push(await createAnnouncement(db,OWNER,notice({title:`Live ${i}`,body:'An outstanding notice.'}),{env:ON,now:NOW}));
+    await assert.rejects(()=>updateAnnouncement(db,OWNER,{id:cancelled.id,action:'publish'},{env:ON,now:NOW}),
+      error=>error instanceof AnnouncementRejected&&error.reason==='invalid');
+    await assert.rejects(()=>updateAnnouncement(db,OWNER,{id:cancelled.id,action:'save',status:'scheduled',starts_at:FUTURE,expires_at:LATER},{env:ON,now:NOW}),
+      error=>error instanceof AnnouncementRejected&&error.reason==='invalid');
+    await assert.rejects(()=>updateAnnouncement(db,OWNER,{id:expired.id,action:'schedule',starts_at:FUTURE,expires_at:LATER},{env:ON,now:NOW}),
+      error=>error instanceof AnnouncementRejected&&error.reason==='invalid');
+    const edited=await updateAnnouncement(db,OWNER,{id:live[0].id,action:'save',title:'Still editable at the cap'},{env:ON,now:NOW});
+    assert.equal(edited.title,'Still editable at the cap');
+    const full=await manageAnnouncements(db,OWNER,{env:ON});
+    const outstanding=full.announcements.filter(item=>['draft','scheduled','active'].includes(item.status));
+    assert.equal(outstanding.length,50);
+    assert.equal(full.announcements.length,50);
+    for(const row of live)assert.ok(outstanding.some(item=>item.id===row.id));
+    const statusOf=id=>db.sqlite.prepare('SELECT status FROM service_announcements WHERE id=?').get(id).status;
+    assert.equal(statusOf(cancelled.id),'cancelled');
+    assert.equal(statusOf(expired.id),'expired');
+    await updateAnnouncement(db,OWNER,{id:live[0].id,action:'expire'},{env:ON,now:NOW});
+    const revived=await updateAnnouncement(db,OWNER,{id:cancelled.id,action:'publish'},{env:ON,now:NOW});
+    assert.equal(revived.status,'active');
+    const after=await manageAnnouncements(db,OWNER,{env:ON});
+    const stillOutstanding=after.announcements.filter(item=>['draft','scheduled','active'].includes(item.status));
+    assert.equal(stillOutstanding.length,50);
+    assert.ok(stillOutstanding.some(item=>item.id===revived.id));
+    assert.equal(statusOf(expired.id),'expired');
+  }finally{db.close();}
+});
+
 test('malformed notices and private text are refused and not stored or echoed',async()=>{
   const db=database();
   try{

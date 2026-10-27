@@ -45,7 +45,9 @@ member ids, not names or emails. That active-member check runs when recipients
 are added or changed. Expiring or cancelling still works after a targeted
 member becomes inactive. At most 50 draft, scheduled, or active notices can
 exist at once. Expired and cancelled notices stay in the record and do not
-count toward that cap. Notice text is refused if it contains an
+count toward that cap. Publishing or rescheduling one of those retired
+notices does, and is refused while the cap is full. The owner list includes
+every outstanding notice. Notice text is refused if it contains an
 email, a member id, a link, a credential, an 8-digit run, or a health field
 such as heart rate or HRV.
 

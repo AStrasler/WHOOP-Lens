@@ -222,10 +222,7 @@ export async function createAnnouncement(db,userId,input,{env,now=Date.now()}={}
   const parsed=parseCreate(input,now);
   if(!parsed)throw new AnnouncementRejected('invalid');
   if(parsed.audience==='members'&&!await membersActive(db,parsed.member_ids))throw new AnnouncementRejected('invalid');
-  let count;
-  try{count=await db.prepare(OUTSTANDING_COUNT_SQL).first();}
-  catch{throw new AnnouncementRejected('unavailable');}
-  if(Number(count?.n??0)>=MAX_MANAGE)throw new AnnouncementRejected('invalid');
+  if(await outstandingCount(db)>=MAX_MANAGE)throw new AnnouncementRejected('invalid');
   const nowIso=iso(now);
   const row={id:newId(),...parsed,created_at:nowIso,updated_at:nowIso};
   await writeRow(db,row);
@@ -247,6 +244,9 @@ export async function updateAnnouncement(db,userId,input,{env,now=Date.now()}={}
   // and other edits still work after a targeted member becomes inactive.
   if(next.audience==='members'&&recipientsChanged(existing,next)&&!await membersActive(db,next.member_ids))
     throw new AnnouncementRejected('invalid');
+  // A retired notice does not count toward the cap until it is published or rescheduled.
+  if(!isOutstanding(existing.status)&&isOutstanding(next.status)&&await outstandingCount(db)>=MAX_MANAGE)
+    throw new AnnouncementRejected('invalid');
   await writeRow(db,next);
   const stored=await readOne(db,next.id);
   if(!stored)throw new AnnouncementRejected('unavailable');
@@ -265,14 +265,23 @@ export async function listMemberAnnouncements(db,userId,{env,now=Date.now()}={})
       note:'Service notices only. No health data or account details.'};
   }catch{throw new AnnouncementRejected('unavailable');}
 }
+const OUTSTANDING=new Set(['draft','scheduled','active']);
+const isOutstanding=status=>OUTSTANDING.has(status);
+async function outstandingCount(db){
+  try{return Number((await db.prepare(OUTSTANDING_COUNT_SQL).first())?.n??0);}
+  catch{throw new AnnouncementRejected('unavailable');}
+}
+const MANAGE_COLUMNS='id,kind,title,body,audience,starts_at,expires_at,status,created_at,updated_at';
 const OUTSTANDING_COUNT_SQL="SELECT COUNT(*) AS n FROM service_announcements WHERE status IN ('draft','scheduled','active')";
-const MANAGE_SQL='SELECT id,kind,title,body,audience,starts_at,expires_at,status,created_at,updated_at '+
-  'FROM service_announcements ORDER BY '+
-  "CASE WHEN status IN ('draft','scheduled','active') THEN 0 ELSE 1 END, updated_at DESC, id LIMIT "+MAX_MANAGE;
+const OUTSTANDING_LIST_SQL='SELECT '+MANAGE_COLUMNS+" FROM service_announcements WHERE status IN ('draft','scheduled','active') ORDER BY updated_at DESC, id";
+const RETIRED_LIST_SQL='SELECT '+MANAGE_COLUMNS+" FROM service_announcements WHERE status IN ('expired','cancelled') ORDER BY updated_at DESC, id LIMIT ?1";
 export async function manageAnnouncements(db,userId,{env}={}){
   await guardOwner(db,userId,env);
   try{
-    const rows=(await db.prepare(MANAGE_SQL).all())?.results??[];
+    const outstanding=(await db.prepare(OUTSTANDING_LIST_SQL).all())?.results??[];
+    const room=Math.max(0,MAX_MANAGE-outstanding.length);
+    const retired=room?(await db.prepare(RETIRED_LIST_SQL).bind(room).all())?.results??[]:[];
+    const rows=[...outstanding,...retired];
     const announcements=[];
     for(const row of rows)announcements.push(ownerView(await withTargets(db,row)));
     return {announcements};
