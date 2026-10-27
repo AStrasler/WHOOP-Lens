@@ -142,6 +142,8 @@ test("privacy notice covers owner-visible diagnostics and issue reports", () => 
     assert.match(page, /deleted after 30 days/);
     assert.match(page, /180 days after their last update/);
     assert.match(page, /pseudonymous member reference/);
+    assert.equal((page.match(/cleanup runs on a daily schedule, so removal can lag by up to about a day/g) ?? []).length, 2);
+    assert.doesNotMatch(page, /during normal use/);
   }
   assert.match(read("../Privacy.md"), /except the owner-visible diagnostics and issue reports/);
   assert.match(read("../Privacy.md"), /Last updated: October 20, 2026/);
