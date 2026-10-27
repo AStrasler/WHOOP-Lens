@@ -23,7 +23,7 @@ Started on Oct 25, 2026 at 11:00 AM CT. Members are anonymised as m1, m2, ... by
 
 ## Summary
 
-**Current RB-016 retention state (Oct 27, 2026):** PR #96 introduced the Worker `scheduled()` handler and `runRetention()` cleanup. The live `whoop-lens` Worker has a daily Cloudflare cron trigger `17 9 * * *` (UTC); it no longer relies solely on member activity. The job removes diagnostic rows older than 30 days, resolved reports older than 180 days, and expired approvals. Request-time cleanup remains a fallback. **Configuration drift remains open in #104:** neither relevant Wrangler file declares the live cron schedule. Historical investigation entries below record the Oct 25 pre-schedule state and should not be read as current production settings.
+**Current RB-016 retention state (Oct 27, 2026):** The live `whoop-lens` Worker has a daily Cloudflare cron trigger `17 9 * * *` (UTC). `scheduled()` calls `runRetention()`, which deletes diagnostic rows older than 30 days, resolved reports older than 180 days, and expired approvals, including when no member is active. Request-time cleanup in `capture()` and in issue-report preview, submission, and owner review remains the fallback. Historical investigation entries below record the Oct 25 pre-schedule state and should not be read as current production settings.
 
 | ID | Severity | Item | Status | Codex | Owner approval needed |
 |---|---|---|---|---|---|
@@ -194,7 +194,7 @@ The Android suite can't run on the Grok box. Verification requirement: a CI job 
 
 **RB-001 evidence (metadata only).** m2's connection row was rewritten at 16:31:15Z (11:31 AM CT), with a new expiry one hour later (17:31:15Z). m2's connection generation is unchanged since Oct 20, so this was not a reconnect: it was a real refresh exchange on the #87 build (live since 15:34Z), and it succeeded. No refresh failure events have been logged since 15:34Z. This is one successful refresh, not proof under concurrency; keep monitoring. m1 and m3 rows are unchanged.
 
-**RB-016: retention is opportunistic.** Evidence: no Worker has a cron trigger. `diagnostics.mjs` runs `SWEEP` and `retentionStatements` (report and approval purges) only inside the capture path, once per new bucket row, or every interval while capture is off. With little traffic, rows can outlive 30 or 180 days. Today no diagnostic row is older than 30 days (the oldest is from Oct 19). At this Oct 25 snapshot, PR #93 described request-time cleanup. This was superseded by the subsequently configured daily retention schedule; see the current RB-016 status at the top of this document and #104 for source-config drift.
+**RB-016: retention is opportunistic.** Evidence: no Worker has a cron trigger. `diagnostics.mjs` runs `SWEEP` and `retentionStatements` (report and approval purges) only inside the capture path, once per new bucket row, or every interval while capture is off. With little traffic, rows can outlive 30 or 180 days. Today no diagnostic row is older than 30 days (the oldest is from Oct 19). At this Oct 25 snapshot, PR #93 described request-time cleanup. The daily schedule in the current RB-016 status superseded that description.
 
 **Former-member deletion is manual.** There is no tool for it. PR #93 now says the owner handles these requests by hand, with no fixed response time.
 
