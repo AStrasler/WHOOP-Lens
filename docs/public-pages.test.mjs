@@ -142,6 +142,8 @@ test("privacy notice covers owner-visible diagnostics and issue reports", () => 
     assert.match(page, /deleted after 30 days/);
     assert.match(page, /180 days after their last update/);
     assert.match(page, /pseudonymous member reference/);
+    assert.equal((page.match(/cleanup runs on a daily schedule, so removal can lag by up to about a day/g) ?? []).length, 2);
+    assert.doesNotMatch(page, /during normal use/);
   }
   assert.match(read("../Privacy.md"), /except the owner-visible diagnostics and issue reports/);
   assert.match(read("../Privacy.md"), /Last updated: October 20, 2026/);
@@ -187,4 +189,17 @@ test("landing page links the seat request form on auth.whooplens.tech", () => {
   assert.match(landing, /<a href="https:\/\/auth\.whooplens\.tech\/request-seat">/);
   assert.match(landing, /Do not include health information, passwords or tokens/);
   assert.doesNotMatch(landing, /<script|<form/);
+});
+
+test('privacy and support agree on a private deletion route', () => {
+  const privacy = readFileSync(new URL('./privacy/index.html', import.meta.url), 'utf8');
+  const support = readFileSync(new URL('./support/index.html', import.meta.url), 'utf8');
+  assert.match(privacy, /request that deletion privately by email to whoop-lens@outlook\.com/);
+  assert.doesNotMatch(privacy, /request that deletion through the support page\./);
+  assert.match(support, /Private requests and data deletion/);
+  assert.match(support, /mailto:whoop-lens@outlook\.com/);
+  assert.match(support, /GitHub issues are public/);
+  assert.match(support, /If your membership has ended/);
+  assert.match(support, /handles these requests by hand: deletion is not automatic/);
+  assert.doesNotMatch(support, /github\.com[^<]*delet/i, 'deletion is never routed to public issues');
 });
