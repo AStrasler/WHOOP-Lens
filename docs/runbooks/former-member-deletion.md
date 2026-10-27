@@ -71,7 +71,8 @@ UNION ALL SELECT 'samsung_health_records', COUNT(*) FROM samsung_health_records 
 UNION ALL SELECT 'medical_context', COUNT(*) FROM medical_context WHERE user_id=':U'
 UNION ALL SELECT 'flare_journal', COUNT(*) FROM flare_journal WHERE user_id=':U'
 UNION ALL SELECT 'ai_weekly_digest', COUNT(*) FROM ai_weekly_digest WHERE scope='user::U' OR scope LIKE 'user::U:%'
-UNION ALL SELECT 'diagnostic_events', COUNT(*) FROM diagnostic_events WHERE user_key=':U';
+UNION ALL SELECT 'diagnostic_events', COUNT(*) FROM diagnostic_events WHERE user_key=':U'
+UNION ALL SELECT 'service_announcement_targets', COUNT(*) FROM service_announcement_targets WHERE user_id=':U';
 ```
 
 Keep only the counts in the private note.
@@ -84,7 +85,9 @@ reference `identity_links` without `ON DELETE CASCADE`).
 ### 4a. Health-data-only (account stays usable)
 
 Removes WHOOP, Health Connect, Samsung, medical context, journal, Notion,
-issue-report, diagnostic and AI data. It **keeps** the rows sign-in needs:
+issue-report, diagnostic, AI data, and this member's service-announcement
+targets. The announcement text is service-wide and stays; only the target row
+for this member is removed. It **keeps** the rows sign-in needs:
 `access_identity_links` (the auth worker maps the Access subject to the user
 here, `enabled=1`), `identity_links` and `whoop_members` (active-membership
 check), plus `whoop_waitlist`, `whoop_member_request_budget` and the
@@ -109,6 +112,7 @@ DELETE FROM flare_journal WHERE user_id=':U';
 DELETE FROM flare_consent WHERE user_id=':U';
 DELETE FROM issue_report_approvals WHERE user_id=':U';
 DELETE FROM issue_reports WHERE user_id=':U';
+DELETE FROM service_announcement_targets WHERE user_id=':U';
 DELETE FROM diagnostic_events WHERE user_key=':U';
 DELETE FROM ai_weekly_digest WHERE scope='user::U' OR scope LIKE 'user::U:%';
 DELETE FROM ai_usage WHERE scope='user::U';
