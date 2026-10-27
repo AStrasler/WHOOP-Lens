@@ -5,8 +5,9 @@
   "compatibility_date": "2026-10-11",
   "workers_dev": false,
   "preview_urls": false,
-  // Existing live retention job: daily at 09:17 UTC. Keep this in sync with Cloudflare (issue #104).
-  // This is the live resource Worker config; the legacy staged config must not be used for production deploys.
+  // Live retention cron, 09:17 UTC (issue #104). A non-dry-run wrangler deploy of THIS file
+  // replaces whoop-lens schedules with this list. The legacy staged config and the auth
+  // Worker must not declare triggers. Do not pass --triggers or run `wrangler triggers deploy`.
   "triggers": { "crons": ["17 9 * * *"] },
   "observability": { "enabled": true },
   "vars": {
