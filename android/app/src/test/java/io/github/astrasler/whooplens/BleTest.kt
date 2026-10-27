@@ -1,5 +1,6 @@
 package io.github.astrasler.whooplens
 
+import java.io.File
 import javax.crypto.spec.SecretKeySpec
 import org.junit.Assert.*
 import org.junit.Test
@@ -67,18 +68,18 @@ class BleTest {
     @Test
     fun discoveryDistinguishesGenerationEvidenceWithoutInferringMg() {
         assertNull(BleCandidate.identify("other", "Nearby watch", setOf(HR_SERVICE)))
-        assertTrue(
-            BleCandidate.identify("a", null, setOf(WHOOP4_SERVICE))!!.family.startsWith("4.0")
+        assertEquals(LABEL_4_0, BleCandidate.identify("a", null, setOf(WHOOP4_SERVICE.uppercase()))!!.family)
+        val shared = BleCandidate.identify("b", "WHOOP MG", setOf(WHOOP5_SERVICE))!!
+        assertEquals(LABEL_SHARED, shared.family)
+        assertFalse(shared.family.contains("MG service"))
+        val named = BleCandidate.identify("c", "WHOOP 5.0\nName", emptySet())!!
+        assertEquals(LABEL_NAME_ONLY, named.family)
+        assertEquals("WHOOP 5.0Name", named.name)
+        assertEquals(
+            LABEL_AMBIGUOUS,
+            BleCandidate.identify("e", "WHOOP", setOf(WHOOP4_SERVICE, WHOOP5_SERVICE))!!.family,
         )
-        assertTrue(
-            BleCandidate.identify("b", "WHOOP", setOf(WHOOP5_SERVICE))!!
-                .family
-                .contains("unverified")
-        )
-        assertTrue(
-            BleCandidate.identify("c", "WHOOP\nName", emptySet())!!.family.contains("Unknown")
-        )
-        assertFalse(BleCandidate.identify("c", "WHOOP\nName", emptySet())!!.name.contains('\n'))
+        assertTrue(LABEL_4_0.length <= 100 && LABEL_SHARED.length <= 100)
     }
 
     private class Transport : BleTransport {
@@ -412,4 +413,163 @@ class BleTest {
         assertNull(f.cache.read("B"))
         assertNull(f.storage.read())
     }
+
+    @Test
+    fun gattInventoryDoesNotSplitTheSharedServiceFamily() {
+        val observed =
+            StrapObservation.fromGatt(
+                setOf(WHOOP5_SERVICE, HR_SERVICE, BATTERY_SERVICE, DEVICE_INFO_SERVICE),
+                setOf(WHOOP5_NOTIFY_7, WHOOP5_COMMAND_WRITE, HR_CHARACTERISTIC, BATTERY_LEVEL),
+            )
+        assertEquals(ProductCall.SHARED_5_0_OR_MG, observed.product)
+        assertEquals(LABEL_SHARED, observed.label)
+        assertEquals(true, observed.extraPuffinNotify)
+        assertEquals(true, observed.heartRateMeasurement)
+        assertTrue(observed.evidenceLine().contains("2A37=yes"))
+        assertTrue(observed.evidenceLine().contains("fd4b0007=yes"))
+        assertTrue(observed.evidenceLine().contains("custom=fd4b0002,fd4b0007"))
+        assertEquals(9, KNOWN_CUSTOM_CHARACTERISTICS.distinct().size)
+        assertFalse(observed.evidenceLine().contains("WHOOP 5.0"))
+        assertFalse(observed.evidenceLine().contains("WHOOP MG"))
+    }
+
+    @Test
+    fun deviceInformationTextDoesNotSelectEitherProduct() {
+        listOf("WHOOP 5.0", "WHOOP MG", "WHOOP AGT", "Maverick", "Goose").forEach { text ->
+            assertEquals(text, DeviceInformationText.printable(text.toByteArray(Charsets.US_ASCII)))
+            assertEquals(
+                LABEL_SHARED,
+                BleCandidate.identify("id", text, setOf(WHOOP5_SERVICE))!!.family,
+            )
+        }
+        assertNull(DeviceInformationText.printable(byteArrayOf(0)))
+        assertNull(DeviceInformationText.printable(ByteArray(41) { 'A'.code.toByte() }))
+    }
+
+    @Test
+    fun batteryLevelRejectsReservedAndMissingBytes() {
+        assertEquals(0, BatteryLevelMeasurement.decode(bytes(0))!!.percent)
+        assertEquals(100, BatteryLevelMeasurement.decode(bytes(100))!!.percent)
+        assertNull(BatteryLevelMeasurement.decode(bytes(101)))
+        assertNull(BatteryLevelMeasurement.decode(bytes(255)))
+        assertNull(BatteryLevelMeasurement.decode(byteArrayOf()))
+        assertNull(BatteryLevelMeasurement.decode(bytes(50, 0)))
+    }
+
+    @Test
+    fun checksumsMatchPublishedAlgorithmVectors() {
+        val digits = "123456789".toByteArray(Charsets.US_ASCII)
+        assertEquals(0xf4, StrapChecksum.crc8(digits))
+        assertEquals(0xcbf43926L, StrapChecksum.crc32(digits))
+        assertEquals(0x4b37, StrapChecksum.crc16Modbus(digits))
+    }
+
+    @Test
+    fun syntheticEnvelopesStayInsideTheirPublicFamilies() {
+        val four = hex("aa07006b300000823c2adb")
+        val shared = hex("aa01070001002535300100c30d31c2")
+        val harvard = StrapEnvelope.recognize(four)!!
+        assertEquals(EnvelopeFamily.WHOOP_4_0, harvard.family)
+        assertEquals(0x30, harvard.observedType)
+        assertEquals(0x00, harvard.observedCommand)
+        val puffin = StrapEnvelope.recognize(shared)!!
+        assertEquals(EnvelopeFamily.SHARED_5_0_OR_MG, puffin.family)
+        assertEquals(0x30, puffin.observedType)
+        assertEquals(0x00, puffin.observedCommand)
+        four[8] = (four[8].toInt() xor 1).toByte()
+        shared[10] = (shared[10].toInt() xor 1).toByte()
+        assertNull(StrapEnvelope.recognize(four))
+        assertNull(StrapEnvelope.recognize(shared))
+        assertNull(StrapEnvelope.recognize(byteArrayOf(0xaa.toByte())))
+        assertNull(StrapEnvelope.recognize(ByteArray(513) { 0xaa.toByte() }))
+    }
+
+    @Test
+    fun matrixKeepsFiveAndMgSeparateAndDoesNotClaimHardware() {
+        val topics = { generation: StrapGeneration ->
+            GenerationMatrix.cells.filter { it.generation == generation }.map { it.topic }
+        }
+        assertEquals(topics(StrapGeneration.WHOOP_5_0), topics(StrapGeneration.WHOOP_MG))
+        assertEquals(topics(StrapGeneration.WHOOP_4_0), topics(StrapGeneration.WHOOP_5_0))
+        assertEquals(3, StrapGeneration.entries.size)
+        val blocked =
+            setOf(
+                "proprietary command write",
+                "history ack or trim",
+                "clock write",
+                "firmware operation",
+            )
+        GenerationMatrix.cells.forEach { cell ->
+            assertFalse(cell.evidencePhrase().contains("hardware"))
+            if (cell.topic in blocked || cell.topic == "ECG" || cell.topic == "skin temperature") {
+                assertFalse(cell.marks.contains(EvidenceMark.COMPLETED_CODE))
+                assertTrue(
+                    cell.finding.contains("must not send") || cell.finding.contains("must not probe"),
+                )
+            }
+        }
+        val five =
+            GenerationMatrix.cells.first {
+                it.generation == StrapGeneration.WHOOP_5_0 &&
+                    it.topic == "service UUID identifies this product alone"
+            }
+        val mg =
+            GenerationMatrix.cells.first {
+                it.generation == StrapGeneration.WHOOP_MG &&
+                    it.topic == "service UUID identifies this product alone"
+            }
+        assertTrue(five.finding.contains("does not identify WHOOP 5.0"))
+        assertTrue(mg.finding.contains("does not identify WHOOP MG"))
+        val doc = repoFile("docs/ble/GENERATION_MATRIX.md")
+        val start = doc.indexOf("<!-- matrix-start -->")
+        val end = doc.indexOf("<!-- matrix-end -->")
+        assertTrue(start >= 0 && end > start)
+        assertEquals(
+            GenerationMatrix.markdownTable().trim(),
+            doc.substring(start, end).substringAfter("-->").trim(),
+        )
+        val procedure = repoFile("docs/ble/PHYSICAL_STRAP_TEST.md")
+        assertTrue(procedure.contains("## Sheet A — WHOOP 5.0"))
+        assertTrue(procedure.contains("## Sheet B — WHOOP MG"))
+        assertTrue(procedure.contains("This procedure has not been run"))
+        assertFalse(procedure.contains("hardware-tested: yes"))
+    }
+
+    @Test
+    fun safeguardsStayForegroundReadOnlyAndLocationFree() {
+        val manifest = repoFile("android/app/src/main/AndroidManifest.xml")
+        assertTrue(manifest.contains("android.permission.BLUETOOTH_SCAN"))
+        assertTrue(manifest.contains("android.permission.BLUETOOTH_CONNECT"))
+        assertTrue(manifest.contains("neverForLocation"))
+        listOf(
+                "ACCESS_FINE_LOCATION",
+                "ACCESS_COARSE_LOCATION",
+                "BLUETOOTH_ADVERTISE",
+                "BLUETOOTH_ADMIN",
+                "ACCESS_BACKGROUND_LOCATION",
+            )
+            .forEach { assertFalse(manifest.contains(it)) }
+        val transport =
+            repoFile(
+                "android/app/src/main/java/io/github/astrasler/whooplens/ble/AndroidBleTransport.kt"
+            )
+        assertEquals(1, Regex("""writeDescriptor\(""").findAll(transport).count())
+        assertFalse(transport.contains("writeCharacteristic"))
+        assertFalse(transport.contains("ENABLE_INDICATION_VALUE"))
+        val sources =
+            File(repoRoot(), "android/app/src/main")
+                .walk()
+                .filter { it.extension == "kt" }
+                .map { it.readText().lowercase() }
+                .joinToString("\n")
+        assertFalse(sources.contains("e671230191"))
+    }
+
+    private fun hex(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+    private fun repoRoot(): File =
+        generateSequence(File("").absoluteFile) { it.parentFile }
+            .first { File(it, "android/app/src/main/AndroidManifest.xml").isFile }
+
+    private fun repoFile(relative: String) = File(repoRoot(), relative).readText()
 }

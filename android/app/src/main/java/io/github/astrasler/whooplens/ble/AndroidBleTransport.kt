@@ -145,6 +145,7 @@ internal class AndroidBleTransport(private val context: Context) : BleTransport 
                             events.failed("GATT discovery failed.", true)
                             return@dispatch
                         }
+                        val evidence = gattEvidence(g)
                         val service = g.getService(UUID.fromString(HR_SERVICE))
                         val characteristic =
                             service?.getCharacteristic(UUID.fromString(HR_CHARACTERISTIC))
@@ -156,7 +157,7 @@ internal class AndroidBleTransport(private val context: Context) : BleTransport 
                                     BluetoothGattCharacteristic.PROPERTY_NOTIFY == 0
                         ) {
                             events.failed(
-                                "Standard HR notifications are not exposed. Enable supported HR broadcast on your strap if available. No unlock commands were sent.",
+                                "Standard HR notifications are not exposed. Enable supported HR broadcast on your strap if available. No unlock commands were sent. $evidence",
                                 false,
                             )
                             return@dispatch
@@ -184,7 +185,7 @@ internal class AndroidBleTransport(private val context: Context) : BleTransport 
                             return@dispatch
                         if (status == BluetoothGatt.GATT_SUCCESS)
                             events.subscribed(
-                                "Standard HR 180D / 2A37 · notify + CCCD confirmed · ${g.services.size} GATT services · device model/firmware unverified"
+                                "Standard HR 180D / 2A37 · notify + CCCD confirmed · ${g.services.size} GATT services · ${gattEvidence(g)}"
                             )
                         else
                             events.failed(
@@ -214,6 +215,15 @@ internal class AndroidBleTransport(private val context: Context) : BleTransport 
         } catch (_: Exception) {
             events.failed("Bluetooth connection unavailable.", true)
         }
+    }
+
+    private fun gattEvidence(g: BluetoothGatt): String {
+        val services = g.services.orEmpty()
+        return StrapObservation.fromGatt(
+                services.map { it.uuid.toString() }.toSet(),
+                services.flatMap { it.characteristics.orEmpty() }.map { it.uuid.toString() }.toSet(),
+            )
+            .evidenceLine()
     }
 
     override fun stop() {
