@@ -11,9 +11,10 @@ android {
     applicationId = "io.github.astrasler.whooplens"
     minSdk = 34
     targetSdk = 35
-    versionCode = 4
-    versionName = "0.2.2-dev"
-    testInstrumentationRunner = "io.github.astrasler.whooplens.DesignReviewInstrumentation"
+    versionCode = 5
+    versionName = "0.3.0-beta.1"
+    testInstrumentationRunner = providers.gradleProperty("lensTestRunner")
+      .getOrElse("io.github.astrasler.whooplens.DesignReviewInstrumentation")
   }
 
   signingConfigs {

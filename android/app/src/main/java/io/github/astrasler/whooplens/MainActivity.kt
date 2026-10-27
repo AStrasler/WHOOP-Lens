@@ -8,6 +8,7 @@ import android.view.*
 import android.widget.*
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
 import androidx.core.view.ViewCompat
 import androidx.health.connect.client.HealthConnectClient
@@ -39,6 +40,44 @@ class MainActivity : ComponentActivity() {
     private var message = ""
     private var drawer: View? = null
     private lateinit var frame: FrameLayout
+    private var bleScreen: BleScreenBinding? = null
+    private val ble by lazy {
+        BleSessionController(
+            AndroidBleTransport(this),
+            BleCache(androidBleStorage(this)),
+            { auth.accountKey() },
+            { blePermissions(this) },
+            BleTimer { delay, action ->
+                val task = Runnable { action() }
+                handler.postDelayed(task, delay)
+                ({ handler.removeCallbacks(task) })
+            },
+            System::currentTimeMillis,
+            SystemClock::elapsedRealtime,
+        ) {
+            if (foreground && page == "Direct BLE" && !isDestroyed)
+                bleScreen?.update(it, SystemClock.elapsedRealtime())
+        }
+    }
+    private var pendingBleScan = false
+    private val blePermissionsLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            pendingBleScan = page == "Direct BLE" && account != null
+            if (foreground && pendingBleScan) {
+                pendingBleScan = false
+                ble.scan()
+            }
+        }
+    private val bleTick =
+        object : Runnable {
+            override fun run() {
+                if (foreground && page == "Direct BLE") {
+                    ble.checkAccess()
+                    bleScreen?.update(ble.state, SystemClock.elapsedRealtime())
+                    handler.postDelayed(this, 5000)
+                }
+            }
+        }
     private val periodic =
         object : Runnable {
             override fun run() {
@@ -103,18 +142,26 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         applyScreenCapturePrivacy(this)
         foreground = true
+        if (pendingBleScan && page == "Direct BLE") {
+            pendingBleScan = false
+            ble.scan()
+        }
         resumeAccount()
         handler.postDelayed(periodic, 300000)
+        handler.postDelayed(bleTick, 5000)
     }
 
     override fun onPause() {
         foreground = false
+        ble.stop()
+        handler.removeCallbacks(bleTick)
         handler.removeCallbacks(periodic)
         handler.removeCallbacks(sessionTick)
         super.onPause()
     }
 
     override fun onDestroy() {
+        ble.stop()
         ++uiGeneration
         callbacks.cancel()
         handler.removeCallbacksAndMessages(null)
@@ -157,10 +204,12 @@ class MainActivity : ComponentActivity() {
                     account = current
                     snapshot = null
                     message = ""
+                    ble.selectAccount()
                 }
                 val old = prefs.getStringSet("last-permissions", emptySet()).orEmpty()
                 granted = permissions
                 if (current == null) {
+                    ble.forget()
                     DashboardRepository.clear(this)
                     BackgroundRefresh.cancel(this)
                     prefs
@@ -347,6 +396,7 @@ class MainActivity : ComponentActivity() {
             "Erases encrypted sign-in and cached previews on this phone. Asks the server to revoke this phone's grant when online. Health Connect permissions stay in Android settings.",
             "Sign out",
         ) {
+            ble.forget()
             ++uiGeneration
             callbacks.cancel()
             BackgroundRefresh.cancel(this)
@@ -465,6 +515,13 @@ class MainActivity : ComponentActivity() {
     private fun render() {
         applyScreenCapturePrivacy(this)
         if (!::frame.isInitialized) return
+        bleScreen = null
+        if (
+            page != "Direct BLE" &&
+                ble.state.phase in
+                    setOf(BlePhase.SCANNING, BlePhase.CONNECTING, BlePhase.LIVE, BlePhase.RETRYING)
+        )
+            ble.stop()
         drawer = null
         frame.removeAllViews()
         val scroll = ScrollView(this)
@@ -533,6 +590,27 @@ class MainActivity : ComponentActivity() {
             "Vitals" -> vitals(root)
             "Health Connect" -> health(root)
             "Arrange Home" -> customize(root)
+            "Direct BLE" ->
+                bleScreen =
+                    renderBleScreen(
+                        ui,
+                        root,
+                        ble.state,
+                        SystemClock.elapsedRealtime(),
+                        {
+                            if (blePermissions(this)) ble.scan()
+                            else
+                                blePermissionsLauncher.launch(
+                                    arrayOf(
+                                        android.Manifest.permission.BLUETOOTH_SCAN,
+                                        android.Manifest.permission.BLUETOOTH_CONNECT,
+                                    )
+                                )
+                        },
+                        { ble.connect(it) },
+                        { ble.stop() },
+                    )
+            "Open Source Licenses & Credits" -> renderOpenSourceCredits(ui, root)
             else -> settings(root)
         }
     }
@@ -1365,6 +1443,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun settings(root: LinearLayout) {
+        ui.button(root, "Direct BLE · experimental") {
+            ble.selectAccount()
+            page = "Direct BLE"
+            handler.removeCallbacks(bleTick)
+            handler.postDelayed(bleTick, 5000)
+            render()
+        }
+        ui.button(root, "Open Source Licenses & Credits") {
+            page = "Open Source Licenses & Credits"
+            render()
+        }
         ui.card(root) { c ->
             ui.heading(c, "Signed in · Cloudflare")
             ui.add(

@@ -1,0 +1,145 @@
+name: Android release (manual approval)
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Reviewed immutable 40-character source commit
+        required: true
+        type: string
+      release_tag:
+        description: android-vSEMVER, matching the selected source
+        required: true
+        type: string
+      channel:
+        type: choice
+        options: [experimental, stable]
+        default: experimental
+      publish:
+        description: Publish only after owner approval; otherwise validate unsigned build only
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      code: ${{ steps.meta.outputs.code }}
+      filename: ${{ steps.meta.outputs.filename }}
+      tag: ${{ steps.meta.outputs.tag }}
+      sha: ${{ steps.meta.outputs.sha }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Validate source, channel and monotonically increasing version code
+        id: meta
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          TAG: ${{ inputs.release_tag }}
+          CHANNEL: ${{ inputs.channel }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Include prereleases. Never infer versionCode from semantic version ordering.
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/releases.json"
+          python - <<'PY'
+          import json, os, re, sys
+          sys.path.insert(0, 'scripts')
+          from android_release import release_metadata
+          from pathlib import Path
+          import subprocess
+          sha=os.environ['SOURCE_SHA']
+          if subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()!=sha: raise SystemExit('Source mismatch')
+          minimum=4
+          releases=[r for page in json.loads(Path(os.environ['RUNNER_TEMP']+'/releases.json').read_text()) for r in page]
+          for r in releases:
+              if r['tag_name']==os.environ['TAG']: raise SystemExit('Release tag already exists')
+              if r['tag_name'].startswith('android-v'):
+                  match=re.search(r'Android versionCode: ([0-9]+)',r.get('body') or '')
+                  if not match: raise SystemExit('Existing Android release lacks versionCode; review before publishing')
+                  minimum=max(minimum,int(match[1]))
+          m=release_metadata(Path('android/app/build.gradle.kts').read_text(),sha,os.environ['TAG'],os.environ['CHANNEL'],minimum)
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              for k in ['version','code','filename','tag','sha']: f.write(f'{k}={m[k]}\n')
+          PY
+      - name: Tests, lint and unsigned release build (no signing secrets)
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s scripts -p 'test_android_release.py'
+          node --test docs/android-companion.test.mjs docs/android-ble.test.mjs
+          bash android/gradlew -p android testDebugUnitTest lintDebug assembleRelease --no-daemon
+          test -s android/app/build/outputs/apk/release/app-release-unsigned.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: android-unsigned-${{ inputs.source_sha }}
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 2
+
+  sign-and-publish:
+    if: ${{ inputs.publish }}
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # Configure required reviewers and four signing secrets before the first run.
+    environment: android-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: android-unsigned-${{ needs.validate.outputs.sha }}
+          path: unsigned
+      - name: Sign and verify established identity; publish one APK and checksum
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
+          KS_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          CODE: ${{ needs.validate.outputs.code }}
+          FILE: ${{ needs.validate.outputs.filename }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          SOURCE_SHA: ${{ needs.validate.outputs.sha }}
+          CHANNEL: ${{ inputs.channel }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_BASE64" && test -n "$KS_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          umask 077
+          key="$RUNNER_TEMP/android-release-key.jks"
+          trap 'rm -f -- "$key"' EXIT
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$key"
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          test -x "$tools/apksigner"
+          mkdir -p release
+          "$tools/apksigner" sign --ks "$key" --ks-pass env:KS_PASSWORD --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD --out "release/$FILE" unsigned/app-release-unsigned.apk
+          python scripts/android_release.py apk --apk "release/$FILE" --build-tools "$tools" --version "$VERSION" --code "$CODE" > "$RUNNER_TEMP/apk-verification.json"
+          # Never overwrite a release or move/reuse an existing tag.
+          existing=$(git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$TAG")
+          test -z "$existing"
+          prerelease=()
+          if [ "$CHANNEL" = experimental ]; then prerelease=(--prerelease --latest=false); fi
+          printf 'Source commit: %s\nAndroid versionCode: %s\n\nDirect BLE: standard HR and optional R-R only; foreground, local encrypted storage. No cloud uploads or proprietary device writes.\n\nHardware/firmware compatibility requires the owner device checklist. BLE is experimental; no generation is marked hardware-verified by this workflow. Existing official WHOOP, Health Connect and widgets remain separate.\n\nInstall over the current app; do not uninstall or clear data. Established signing certificate is verified.\n' "$SOURCE_SHA" "$CODE" > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$TAG" "release/$FILE" "release/$FILE.sha256" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "WHOOP Lens Android $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" "${prerelease[@]}"
