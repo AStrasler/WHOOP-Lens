@@ -4,6 +4,7 @@ import { createStagingRouter } from "../../../src/router.mjs";
 import { WEBHOOK_PATH } from "../../../src/health-connect-webhook.mjs";
 import {healthConnectHttp} from '../../../src/health-import.mjs';
 import {NOTION_CALLBACK,NOTION_START} from '../../../src/notion-oauth.mjs';
+import {runRetention} from '../../../src/diagnostics.mjs';
 
 // Private MCP resource server for https://whooplens.tech/mcp.
 // Cloudflare is the live MCP resource server. Do not copy legacy WHOOP refresh tokens.
@@ -38,12 +39,26 @@ const mcpResource=new OAuthResourceServer({
   }
 });
 
+const SITE_REDIRECTS={'/':'/','/privacy':'/privacy/','/privacy/':'/privacy/','/terms':'/terms/','/terms/':'/terms/','/support':'/support/','/support/':'/support/'};
+
 export default {
+  // Cron trigger (if configured): enforce diagnostic and report retention even
+  // when no member is active. Deletes only rows already past retention.
+  scheduled(controller,env,ctx){
+    if(!env?.DB)return;
+    ctx.waitUntil(runRetention(env.DB,{now:controller?.scheduledTime??Date.now()}).then(r=>{
+      try{console.log(JSON.stringify({event:'retention',ok:r.ok,deleted:r.deleted}));}catch{/* log only */}
+    }));
+  },
   fetch(request,env,ctx){
     // The WHOOP callback is authenticated by its expiring, atomically consumed
     // state. The Health Connect webhook authenticates its own per-user bearer.
     // All other paths retain MCP OAuth protection.
-    const path=new URL(request.url).pathname;
+    const requestUrl=new URL(request.url),path=requestUrl.pathname;
+    // The apex only serves the MCP resource. Public site pages live on www, so
+    // the bare root and the site paths redirect there. Nothing else changes.
+    if((request.method==='GET'||request.method==='HEAD')&&Object.hasOwn(SITE_REDIRECTS,path))
+      return new Response(null,{status:301,headers:{location:'https://www.whooplens.tech'+SITE_REDIRECTS[path]+requestUrl.search,'cache-control':'public, max-age=3600'}});
     // Android App Links: only the debug signing certificate is registered here.
     // Release builds must add their own signing certificate fingerprint.
     if(path==='/.well-known/assetlinks.json' && request.method==='GET')

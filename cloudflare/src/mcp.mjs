@@ -7,7 +7,7 @@ import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
 import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
 import {buildWeeklyDigest,parseWeekEnding,weeklyDigestEnabled} from './ai-digest.mjs';
 import {readOwnUsage,utcDay} from './ai-quota.mjs';
-import {revokeWhoopConnection} from './whoop-oauth.mjs';
+import {disconnectWhoop} from './whoop-disconnect.mjs';
 import {FeatureDisabled} from './member-guidance.mjs';
 import {importHealthConnectFile,withdrawHealthConnectImport,publicImportError} from './health-import.mjs';
 import {issueIngestToken,revokeIngestTokens} from './health-connect-webhook.mjs';
@@ -288,7 +288,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       return ok(id,content);
     }else if(name==='disconnect_whoop'){
       if(env.WHOOP_OAUTH_ENABLED!=='true')throw new FeatureDisabled('whoop_connection');
-      data=await revokeWhoopConnection(db,userId);
+      data=await disconnectWhoop(db,userId,env);
     }else if(name==='import_health_connect_file'){
       if(env.WEB_HEALTH_IMPORT_ENABLED!=='true')throw new FeatureDisabled('health_connect_file_import');
       data=await importHealthConnectFile(db,userId,args.file_json,args.consent);
@@ -349,8 +349,10 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       try{
         data=await attachSummary(data,{db,userId,env,tool:name,whoopRequest});
         const reason=data?.summary?.status==="template"?data.summary.fallback_reason:null;
+        const detail=data?.summary?.fallback_detail;
+        const suffix=typeof detail==="string"&&/^[a-z_]{1,24}$/.test(detail)?"_"+detail:"";
         if(typeof reason==="string"&&/^[a-z_]{1,30}$/.test(reason))
-          await capture(env,db,{category:"ai_summary",subsystem:"ai_summary",code:"summary_fallback_"+reason,
+          await capture(env,db,{category:"ai_summary",subsystem:"ai_summary",code:"summary_fallback_"+reason+suffix,
             outcome:"partial",retryable:true,requestId,userId});
       }catch{
         /* Authorized records stay available when a summary fails. */
@@ -400,6 +402,10 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       if(error.network==="timeout")return toolError(id,`WHOOP did not respond in time when reading ${what}. Retry shortly. No WHOOP data was returned and nothing was changed.`,modern);
       if(error.status>=500||error.network)return toolError(id,`WHOOP is temporarily unavailable (reading ${what}). Retry shortly. No WHOOP data was returned and nothing was changed.`,modern);
     }
+    // A rejected refresh token (400/401 from WHOOP's token endpoint, after any
+    // concurrent rotation was checked) does not recover by retrying.
+    if(error?.message==="WHOOP refresh rejected")
+      return toolError(id,"WhoopLens could not renew this connection's WHOOP authorization. WHOOP no longer accepts the saved authorization, so retrying will not help; reconnect WHOOP in WhoopLens to continue. No WHOOP data was returned.",modern);
     if(/^WHOOP refresh|^Invalid WHOOP refresh/.test(error?.message||""))
       return toolError(id,"WhoopLens could not renew this connection's WHOOP authorization. Retry shortly; if it keeps failing, reconnect WHOOP. No WHOOP data was returned.",modern);
     return toolError(id,"WHOOP data is unavailable for this connection.",modern);
