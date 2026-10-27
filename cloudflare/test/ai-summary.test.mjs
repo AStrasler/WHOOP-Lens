@@ -119,7 +119,13 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
   ];
   for(const [path,binding] of configs){
     const text=readFileSync(new URL(path,import.meta.url),"utf8");
-    assert.doesNotMatch(text,/"crons"|"triggers"/);
+    if(path==="../oauth/resource/wrangler.jsonc"){
+      // The live resource Worker now has its existing daily retention cron
+      // tracked in source; legacy staged and auth Workers must stay unscheduled.
+      assert.match(text,/"triggers"\\s*:\\s*\\{\\s*"crons"\\s*:\\s*\\[\\s*"17 9 \\* \\* \\*"\\s*\\]\\s*\\}/);
+    }else{
+      assert.doesNotMatch(text,/"crons"|"triggers"/);
+    }
     if(path.includes("auth-server")){
       assert.doesNotMatch(text,/AI_SUMMARY_ENABLED|STRESS_ESTIMATE_ENABLED|WEEKLY_DIGEST_ENABLED/);
       assert.doesNotMatch(text,/"binding"\s*:\s*"AI"/);
