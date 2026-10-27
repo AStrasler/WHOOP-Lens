@@ -331,6 +331,36 @@ class DashboardTest {
     }
 
     @Test
+    fun openCycleStrainFollowsCycleStartNotPreviousEnd() {
+        val previous =
+            cycle(1, "2026-10-23T12:00:00Z", "2026-10-24T12:00:00Z", 10.0)
+        val open = cycle(2, "2026-10-24T12:00:00Z", null, 15.0)
+        val openStart = Instant.parse("2026-10-24T12:00:00Z").toEpochMilli()
+        val previousStart = Instant.parse("2026-10-23T12:00:00Z").toEpochMilli()
+        for (records in
+            listOf(JSONArray().put(open).put(previous), JSONArray().put(previous).put(open))) {
+            val b =
+                WhoopDashboard { tool, _ ->
+                        result(if (tool == "get_cycles") records else JSONArray())
+                    }
+                    .load(now)
+            assertEquals(15.0, b.metric("strain")!!.value)
+            assertEquals(openStart, b.metric("strain")!!.measuredAt)
+            assertEquals(listOf(previousStart, openStart), b.series["strain"]!!.map { it.time })
+            assertEquals(listOf(10.0, 15.0), b.series["strain"]!!.map { it.value })
+        }
+    }
+
+    private fun cycle(id: Int, start: String, end: String?, strain: Double) =
+        JSONObject()
+            .put("id", id)
+            .put("cycle_id", id)
+            .put("score_state", "SCORED")
+            .put("start", start)
+            .put("score", JSONObject().put("strain", strain))
+            .apply { if (end != null) put("end", end) }
+
+    @Test
     fun sleepTotalsDontInventTimeline() {
         val r =
             JSONObject()
