@@ -122,7 +122,7 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
     if(path==="../oauth/resource/wrangler.jsonc"){
       // The live resource Worker now has its existing daily retention cron
       // tracked in source; legacy staged and auth Workers must stay unscheduled.
-      assert.match(text,/"triggers"\\s*:\\s*\\{\\s*"crons"\\s*:\\s*\\[\\s*"17 9 \\* \\* \\*"\\s*\\]\\s*\\}/);
+      assert.match(text,/"triggers"\s*:\s*\{\s*"crons"\s*:\s*\[\s*"17 9 \* \* \*"\s*\]\s*\}/);
     }else{
       assert.doesNotMatch(text,/"crons"|"triggers"/);
     }
