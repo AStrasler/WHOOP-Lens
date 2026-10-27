@@ -25,11 +25,12 @@ class PermissionsRationaleActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    applyScreenCapturePrivacy(this)
 
-    val background = Color.rgb(12, 22, 27)
-    val foreground = Color.rgb(239, 247, 249)
-    val muted = Color.rgb(170, 193, 201)
-    val accent = Color.rgb(0, 229, 255)
+    val background = LensColors.background
+    val foreground = LensColors.text
+    val muted = LensColors.muted
+    val accent = LensColors.teal
 
     val layout = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
@@ -62,15 +63,15 @@ class PermissionsRationaleActivity : ComponentActivity() {
     }
 
     val section1 = paragraph(
-      "WhoopLens Companion connects to Android Health Connect to read your fitness data on-demand. " +
-        "With your selected permissions, it previews daily step aggregates and counts of sleep, heart-rate and exercise records. " +
+      "WhoopLens Companion reads only the Health Connect categories you choose. " +
+        "These include steps, sleep stages, heart rate, exercise, distance, calories, floors, HRV, resting heart rate, oxygen saturation, respiration, body temperature, blood pressure, weight and body fat. " +
         "The source is Health Connect; Samsung Health sharing depends on your Samsung Health and Health Connect settings."
     )
 
     val section2 = paragraph(
-      "• On-Demand Only: The companion does not perform background tracking or continuous monitoring. " +
-        "Data is read only when you explicitly tap to preview or sync.\n" +
-        "• Local Previews: This build keeps previews on your phone. Health uploads and server deletion are disabled.\n" +
+      "• Local Refresh: Foreground automatic refresh can update your dashboard. Optional WorkManager background refresh is scheduled by Android, subject to battery limits. " +
+        "Background Health Connect reads need a supported device and a separate background-read permission. No continuous sensors or location tracking are used.\n" +
+        "• Local Cache: Dashboard measurements and credentials are encrypted with separate Android Keystore keys and excluded from backup. Health uploads and server deletion remain disabled. Widgets use only saved local data; detailed home widgets require a public-display opt-in. Lock-screen widgets hide measurements.\n" +
         "• Secure Sign-in: OAuth credentials are encrypted with an Android Keystore key and excluded from backup. " +
         "Sign out erases local credentials and requests server grant revocation when online.\n" +
         "• Revocable Access: You can revoke access at any time through Android Settings > Security & Privacy > Health Connect."
