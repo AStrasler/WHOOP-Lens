@@ -1,4 +1,4 @@
-# WHOOP Lens: every open PR and Android companion review
+# WhoopLens: every open PR and Android companion review
 
 Completed locally on October 24, 2026. The open PR list was retrieved twice, including at completion: **#79, #80 and #83 are the complete current list**. Nothing was pushed, published, deployed, merged on GitHub, closed, or changed in live user data. All 244 preserved original source files still match their start-of-repair hashes. Existing backups and retired Supabase components remain intact.
 

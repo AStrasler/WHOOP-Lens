@@ -1,12 +1,12 @@
-# Already using WHOOP Lens?
+# Already using WhoopLens?
 
-Use this when WHOOP Lens is already connected and you want to know whether a newer server version is visible.
+Use this when WhoopLens is already connected and you want to know whether a newer server version is visible.
 
 ## Do I need to do anything?
 
 If recovery, sleep, and profile questions still return your own dated WHOOP data, leave that WHOOP connection in place. Start a **new ChatGPT conversation** and ask:
 
-`What can WHOOP Lens do now? Show the capability directory, and say whether Stress Monitor history is available.`
+`What can WhoopLens do now? Show the capability directory, and say whether Stress Monitor history is available.`
 
 A current answer names recovery, sleep, cycles, and workouts, and says that **WHOOP Stress Monitor zone history is not available** from the official API. It does not convert strain, heart rate, or HRV into high-stress hours. Charts appear only when that ChatGPT app can draw them.
 
@@ -28,7 +28,7 @@ You do not need to delete the connector when that server URL is already correct.
 | The reply estimates stress hours from strain or heart rate | Ask for `get_capabilities` and the Stress Monitor limitation. |
 | ChatGPT is connected, but WHOOP reads fail | Ask ChatGPT to run `connect_whoop`, open the WHOOP authorization link it returns, and approve on WHOOP's page. |
 | All seats are in use | A new WHOOP connection cannot be stored. An existing connection can always reconnect. |
-| Your WHOOP Lens membership is not active | Sign-in is refused, and reconnecting WHOOP does not re-enable it. |
+| Your WhoopLens membership is not active | Sign-in is refused, and reconnecting WHOOP does not re-enable it. |
 
 ## Two different sign-ins
 

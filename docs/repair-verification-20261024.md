@@ -1,4 +1,4 @@
-# WHOOP Lens repair and verification — October 24, 2026
+# WhoopLens repair and verification — October 24, 2026
 
 Local repairs are implemented. Final checks: **553/553 Node tests and 17/17 Android unit tests passed; Android lint and debug assembly passed.** No production deployment, preview upload, merge, credential rotation, health upload, or live data deletion was performed.
 

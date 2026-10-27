@@ -61,3 +61,17 @@ test('published App Links use the signing certificate and fallback never reflect
   assert.match(headers, /\/\.well-known\/assetlinks\.json\s+Content-Type: application\/json/);
   assert.match(headers, /\/android\/oauth\/callback\*\s+Cache-Control: no-store/);
 });
+
+test('every published HTML page visibly identifies the independent project', async () => {
+  await build();
+  for (const page of PAGES) {
+    const html = await readFile(join(OUT, page), 'utf8');
+    assert.match(html, /<main[^>]*>\s*<aside class="independence-notice"/, page);
+    assert.match(html, /PRIVATE, INDEPENDENT PROJECT/, page);
+    assert.match(html, /not owned, operated, sponsored, endorsed by, or affiliated with WHOOP/, page);
+    assert.match(html, /developer API with each user's authorization/, page);
+  }
+  const style = await readFile(join(OUT, 'style.css'), 'utf8');
+  const connect = await readFile(join(OUT, 'connect.css'), 'utf8');
+  for (const css of [style, connect]) assert.match(css, /\.independence-notice\s*\{/);
+});

@@ -70,7 +70,7 @@ export function createSamsungHealthHandler({db,now=()=>Date.now()}) {
       if(member && member.active===false) return respond({error:"This account is disabled."},403);
       const {data:connection,error:connectionError}=await db.from("whoop_connections").select("user_id").eq("user_id",user.id).maybeSingle();
       if(connectionError) return respond({error:"Connection check failed"},500);
-      if(!connection) return respond({error:"WHOOP Lens access required"},403);
+      if(!connection) return respond({error:"WhoopLens access required"},403);
       const route=new URL(req.url);
       if(req.method==="GET") {
         const metric=route.searchParams.get("metric");

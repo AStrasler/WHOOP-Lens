@@ -204,7 +204,13 @@ test('Kimberly-like delivery that stores nothing is captured as partial for her 
     const amy=data(await call(db,AMYLIKE,'issue_health_connect_ingest_token',{consent:ISSUE_CONSENT}));
     await webhook(db,amy.header_value.slice(7),envelope({steps:[{count:1200,start_time:'2026-10-17T00:00:00Z',end_time:'2026-10-18T00:00:00Z',metadata:{id:'s1',lastModifiedTime:'2026-10-18T01:00:00Z'}}]}));
     assert.ok(rows(db).some(x=>x.code==='hc_delivery_stored'&&x.outcome==='success'&&x.user_key===AMYLIKE));
-    assert.ok(!JSON.stringify(rows(db)).includes('1200'));
+    // Timestamps and random request IDs can contain the digits 1200. Check
+    // the complete allowlisted row shape instead of accidental substrings.
+    for(const event of rows(db)){
+      assert.deepEqual(Object.keys(event).sort(),['id','user_key','category','subsystem','code','outcome','retryable','bucket','count','first_at','last_at','request_id'].sort());
+      assert.ok(['hc_only_unsupported_types','hc_delivery_stored'].includes(event.code));
+      assert.equal(event.category,'health_connect');
+    }
   }finally{db.close();}
 });
 
@@ -469,13 +475,26 @@ test('with the flag off the tools are not listed and cannot be called; guidance 
   }
 });
 
-test('member-facing report responses contain no internal detail or health data',async()=>{
+test('member-facing report responses contain no internal detail or health data',async t=>{
+  // A valid random reference can coincidentally contain the redacted health digits.
+  const randomValues=crypto.getRandomValues.bind(crypto);
+  t.mock.method(crypto,'getRandomValues',bytes=>{
+    if(bytes.length===8){
+      bytes.set([..."AB45CDEF"].map(c=>"ABCDEFGHJKLMNPQRSTUVWXYZ23456789".indexOf(c)));
+      return bytes;
+    }
+    return randomValues(bytes);
+  });
   const db=await fixture();try{
     await capture(ON,db,{category:'infrastructure',subsystem:'mcp',code:'db_error',outcome:'fail',requestId:newRequestId(),userId:AMYLIKE});
     const r=await callApproved(db,AMYLIKE,{category:'backend_failure',description:'My HRV of 45 vanished'});
-    const out=text(r);
+    const response=data(r);
+    assert.equal(response.reference,'WL-AB45CDEF');
+    assert.deepEqual(Object.keys(response).sort(),['duplicate','message','reference','status','submitted']);
+    // The generated public reference is not a health value. Everything else stays private.
+    const out=text(r).replaceAll(response.reference,'[report-reference]');
     assert.ok(!out.includes('45')&&!out.includes('db_error')&&!out.includes('req_')&&!out.includes(AMYLIKE));
-    assert.match(data(r).message,/^Report WL-[A-Z0-9]{8} was saved/);
+    assert.match(response.message,/^Report WL-[A-Z0-9]{8} was saved/);
   }finally{db.close();}
 });
 

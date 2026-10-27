@@ -153,15 +153,15 @@ internal fun widgetText(
     now: Long,
 ): String {
     if (sessionAccount == null || (snapshot != null && snapshot.account != sessionAccount))
-        return "Sign in to WHOOP Lens\nNo data shown while signed out"
-    if (snapshot == null) return "No saved measurements\nOpen WHOOP Lens"
+        return "Sign in to WhoopLens\nNo data shown while signed out"
+    if (snapshot == null) return "No saved measurements\nOpen WhoopLens"
     if (lockSurface)
         return if (privacy == WidgetPrivacy.HIDDEN) "Unlock to view"
         else "Overview ready\nUnlock to view"
     if (locked || lockSurface || privacy != WidgetPrivacy.DETAILED)
-        return if (privacy == WidgetPrivacy.HIDDEN || locked) "WHOOP Lens\nUnlock to view"
+        return if (privacy == WidgetPrivacy.HIDDEN || locked) "WhoopLens\nUnlock to view"
         else
-            "WHOOP Lens\n${if(snapshot.whoop!=null || snapshot.health!=null) "Saved overview available" else "Open to refresh"} · unlock to view" +
+            "WhoopLens\n${if(snapshot.whoop!=null || snapshot.health!=null) "Saved overview available" else "Open to refresh"} · unlock to view" +
                 if (lockSurface) ""
                 else
                     listOfNotNull(snapshot.whoop, snapshot.health).joinToString("", prefix = "") {
@@ -174,7 +174,7 @@ internal fun widgetText(
                 else snapshot.whoop
             b?.metric(key)?.let { b to it }
         }
-    if (chosen.isEmpty()) return "No shared measurements\nOpen WHOOP Lens"
+    if (chosen.isEmpty()) return "No shared measurements\nOpen WhoopLens"
     return chosen.joinToString("\n") { (_, m) -> m.title + "  " + m.display() } +
         chosen
             .groupBy { it.first.source }
@@ -306,10 +306,16 @@ internal class WhoopDashboard(private val request: (String, JSONObject) -> JSONO
                     require(seen.add(cursor)) { "Repeated page" }
                     if (page == 3) complete = false
                 }
+                // Cycles are contiguous: an open cycle's start is the previous cycle's end.
+                // Dating strain by end ties those records and can keep yesterday's strain.
+                val timeKeys =
+                    if (tool == "get_cycles") listOf("start", "created_at", "end")
+                    else listOf("end", "start", "created_at")
+                fun recordTime(r: JSONObject) = stamp(r, timeKeys)
                 val unique =
                     rows
                         .distinctBy { it.optString("id", it.optString("cycle_id", it.toString())) }
-                        .sortedBy { stamp(it) ?: Long.MIN_VALUE }
+                        .sortedBy { recordTime(it) ?: Long.MIN_VALUE }
                 fun add(
                     key: String,
                     title: String,
@@ -318,7 +324,7 @@ internal class WhoopDashboard(private val request: (String, JSONObject) -> JSONO
                 ) {
                     series[key] =
                         values
-                            .mapNotNull { (r, v) -> stamp(r)?.let { Point(it, v) } }
+                            .mapNotNull { (r, v) -> recordTime(r)?.let { Point(it, v) } }
                             .toMutableList()
                     val latest = values.lastOrNull()
                     metrics.add(
@@ -328,7 +334,7 @@ internal class WhoopDashboard(private val request: (String, JSONObject) -> JSONO
                             latest?.second,
                             unit,
                             DataSource.WHOOP,
-                            latest?.first?.let(::stamp),
+                            latest?.first?.let { recordTime(it) },
                         )
                     )
                 }
@@ -459,5 +465,7 @@ internal fun parseTime(value: String): Long? =
         null
     }
 
-private fun stamp(r: JSONObject): Long? =
-    listOf("end", "start", "created_at").firstNotNullOfOrNull { parseTime(r.optString(it)) }
+private fun stamp(
+    r: JSONObject,
+    keys: List<String> = listOf("end", "start", "created_at"),
+): Long? = keys.firstNotNullOfOrNull { parseTime(r.optString(it)) }
