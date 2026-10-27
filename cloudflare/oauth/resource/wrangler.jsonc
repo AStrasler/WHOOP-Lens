@@ -5,6 +5,9 @@
   "compatibility_date": "2026-10-11",
   "workers_dev": false,
   "preview_urls": false,
+  // Existing live retention job: daily at 09:17 UTC. Keep this in sync with Cloudflare (issue #104).
+  // This is the live resource Worker config; the legacy staged config must not be used for production deploys.
+  "triggers": { "crons": ["17 9 * * *"] },
   "observability": { "enabled": true },
   "vars": {
     "NOTION_ENABLED": "false",
