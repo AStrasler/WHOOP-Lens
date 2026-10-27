@@ -16,7 +16,7 @@ Only events tied to an authenticated member are written to D1. Pre-authenticatio
 
 When `DIAGNOSTICS_CAPTURE_ENABLED` is on, every member's `account.role_boundaries` says sanitized failure codes are recorded for all signed-in members, with or without a report, and that the owner sees server-wide 24-hour counts. With capture off, the notice is gone and review_issue_reports returns no server-wide diagnostics either.
 
-Retention: 30 days. Each write sweeps at most 50 expired rows. The sweep keeps running on failure events even after capture is turned off.
+Retention: 30 days. Request-time cleanup sweeps at most 50 expired diagnostic rows per batch; the fallback can still run for authenticated events even when capture is turned off. The deployed `whoop-lens` Worker also has a daily scheduled retention trigger (`17 9 * * *`, UTC). Its `scheduled()` handler calls `runRetention()` even without member traffic. The live cron setting is not yet declared in the repo's Wrangler configuration; see #104.
 
 ## Member reports (`src/issue-reports.mjs`)
 
@@ -64,7 +64,7 @@ For free-text issues, the existing `report_issue` flow remains available:
 - Before any batch, one indexed read checks every cap (open previews, per-minute, member and server daily limits, and approval validity). A capped preview costs that read only; previews are refused during the per-minute window too, so preview/submit cycles cannot loop. A capped submit also deletes its approval, so retrying it costs one read and is refused as needing a fresh preview.
 - A `WL-XXXXXXXX` reference is returned only after the row is read back for this member and request. Every failure says "not submitted and no reference was created."
 - Evidence attached: up to 10 of this member's own sanitized events from the last 24 hours.
-- Resolved reports are purged 180 days after their last update. Expired approvals are purged too. Retention runs on every diagnostic write, preview, submission and owner review, so it does not depend on new reports. There is no cron trigger: if the server gets no traffic at all, nothing runs.
+- Resolved reports are purged 180 days after their last update; expired approvals are purged too. Request-time retention remains a fallback, while the daily scheduled `runRetention()` job runs independently of member traffic when the live cron trigger is configured. See #104 for the repository-configuration drift risk.
 
 ## Owner oversight
 `review_issue_reports` and `update_issue_report` are listed and callable only when `WHOOP_LENS_DEVELOPER_USER_ID` equals the caller (the `get_ai_usage` rule). Anyone else gets "Unknown tool".
