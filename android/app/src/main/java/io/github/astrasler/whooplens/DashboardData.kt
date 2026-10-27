@@ -153,15 +153,15 @@ internal fun widgetText(
     now: Long,
 ): String {
     if (sessionAccount == null || (snapshot != null && snapshot.account != sessionAccount))
-        return "Sign in to WHOOP Lens\nNo data shown while signed out"
-    if (snapshot == null) return "No saved measurements\nOpen WHOOP Lens"
+        return "Sign in to WhoopLens\nNo data shown while signed out"
+    if (snapshot == null) return "No saved measurements\nOpen WhoopLens"
     if (lockSurface)
         return if (privacy == WidgetPrivacy.HIDDEN) "Unlock to view"
         else "Overview ready\nUnlock to view"
     if (locked || lockSurface || privacy != WidgetPrivacy.DETAILED)
-        return if (privacy == WidgetPrivacy.HIDDEN || locked) "WHOOP Lens\nUnlock to view"
+        return if (privacy == WidgetPrivacy.HIDDEN || locked) "WhoopLens\nUnlock to view"
         else
-            "WHOOP Lens\n${if(snapshot.whoop!=null || snapshot.health!=null) "Saved overview available" else "Open to refresh"} · unlock to view" +
+            "WhoopLens\n${if(snapshot.whoop!=null || snapshot.health!=null) "Saved overview available" else "Open to refresh"} · unlock to view" +
                 if (lockSurface) ""
                 else
                     listOfNotNull(snapshot.whoop, snapshot.health).joinToString("", prefix = "") {
@@ -174,7 +174,7 @@ internal fun widgetText(
                 else snapshot.whoop
             b?.metric(key)?.let { b to it }
         }
-    if (chosen.isEmpty()) return "No shared measurements\nOpen WHOOP Lens"
+    if (chosen.isEmpty()) return "No shared measurements\nOpen WhoopLens"
     return chosen.joinToString("\n") { (_, m) -> m.title + "  " + m.display() } +
         chosen
             .groupBy { it.first.source }

@@ -21,7 +21,7 @@ internal data class ReviewedSteps(
 
   fun describe(): String =
     "$day: $count steps. Source: Health Connect daily aggregate; origin: mixed/unknown. " +
-      "Destination: your private WHOOP Lens account. Only this one record would be sent."
+      "Destination: your private WhoopLens account. Only this one record would be sent."
 
   fun exportJson(): String {
     check(valid()) { "Preview expired. Review your steps again." }

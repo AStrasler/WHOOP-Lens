@@ -177,14 +177,14 @@
         "get_capabilities"
       ],
       "data_requirements": [
-        "Signed-in WHOOP Lens account"
+        "Signed-in WhoopLens account"
       ],
       "limitations": [
         "A feature list does not imply this user has records.",
         "Measurements do not establish medical diagnoses or causality."
       ],
       "example_prompts": [
-        "What can WHOOP Lens do?"
+        "What can WhoopLens do?"
       ]
     },
     {

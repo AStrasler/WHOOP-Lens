@@ -220,7 +220,7 @@ export async function readHistoryPages({db,userId,resource,env,whoopRequest,limi
       if(pages===0)throw error;
       reason=error?.status===429?"rate_limited":"upstream_error";
       if(reason==="rate_limited"&&Number.isSafeInteger(error?.retryAfter))retryAfter=error.retryAfter;
-      // "member": this account's WHOOP Lens share (member-rate-limit.mjs);
+      // "member": this account's WhoopLens share (member-rate-limit.mjs);
       // "whoop": WHOOP throttled the app.
       if(reason==="rate_limited")scope=error?.memberLimit===true?"member":"whoop";
       break;

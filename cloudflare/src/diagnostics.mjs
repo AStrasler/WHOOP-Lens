@@ -81,6 +81,25 @@ function markCapped(clean){attempts.set(attemptKey(clean),{bucket:clean.bucket,n
 let lastOffSweep=-Infinity;
 export function resetCaptureThrottle(){lastOffSweep=-Infinity;attempts.clear();}
 const SWEEP='DELETE FROM diagnostic_events WHERE id IN (SELECT id FROM diagnostic_events WHERE last_at<?1 ORDER BY last_at LIMIT 50)';
+// Scheduled retention, independent of member activity. capture() only sweeps
+// when an authenticated member produces a diagnostic event, so with no
+// activity old rows would otherwise stay past the published 30/180 days.
+// Each statement is bounded; loop a few rounds so a backlog drains.
+export const SCHEDULED_ROUNDS=20;
+export async function runRetention(db,{now=Date.now()}={}){
+  if(!db||typeof db.prepare!=='function'||typeof db.batch!=='function')return {deleted:0,ok:false};
+  const cutoff=new Date(now-RETENTION_DAYS*86400000).toISOString();
+  let deleted=0;
+  for(let round=0;round<SCHEDULED_ROUNDS;round++){
+    let results;
+    try{results=await db.batch([db.prepare(SWEEP).bind(cutoff),...retentionStatements(db,now)]);}
+    catch{return {deleted,ok:false};}
+    const changed=(results??[]).reduce((n,r)=>n+(Number(r?.meta?.changes)||0),0);
+    deleted+=changed;
+    if(!changed)break;
+  }
+  return {deleted,ok:true};
+}
 export async function capture(env,db,event,{now=Date.now()}={}){
   const clean=sanitizeEvent(event,{now});
   if(!clean)return false;
@@ -138,12 +157,41 @@ export function toolSubsystem(name){
 }
 // Error -> fixed classification. Only error types and our own fixed message
 // strings are matched; the message itself is never stored.
+// NotionError code -> [category, diagnostic code, retryable, kind]. Setup states
+// (not connected, not configured) are kept apart from real request failures.
+const NOTION_REASONS=Object.freeze({
+  connection_required:['setup','notion_not_connected',false,'incomplete_setup'],
+  daily_log_not_configured:['setup','notion_not_configured',false,'incomplete_setup'],
+  field_not_mapped:['setup','notion_not_configured',false,'incomplete_setup'],
+  ambiguous_daily_log:['setup','notion_not_configured',false,'incomplete_setup'],
+  disabled:['setup','notion_disabled',false,'incomplete_setup'],
+  not_configured:['setup','notion_disabled',false,'incomplete_setup'],
+  membership_required:['authorization','notion_membership_required',false,'incomplete_setup'],
+  authorization_required:['auth','notion_auth_required',false,'incomplete_setup'],
+  permission_denied:['authorization','notion_forbidden',false,'incomplete_setup'],
+  not_shared_or_missing:['mcp_tool','notion_not_found',false,'unavailable_data'],
+  invalid_arguments:['mcp_validation','notion_invalid_request',false,'other'],
+  invalid_target:['mcp_validation','notion_invalid_request',false,'other'],
+  connection_changed:['mcp_tool','notion_state_changed',true,'temporary'],
+  mapping_changed:['mcp_tool','notion_state_changed',true,'temporary'],
+  page_changed:['mcp_tool','notion_state_changed',true,'temporary'],
+  preview_expired_or_used:['mcp_tool','notion_state_changed',true,'temporary'],
+  refresh_busy:['mcp_tool','notion_unavailable',true,'temporary'],
+  service_unavailable:['mcp_tool','notion_unavailable',true,'temporary'],
+  response_unavailable:['mcp_tool','notion_unavailable',true,'temporary'],
+  write_outcome_unknown:['mcp_tool','notion_write_outcome_unknown',false,'other']
+});
 export function classifyToolError(error,name){
   const subsystem=toolSubsystem(name);
   const message=error instanceof Error?error.message:'';
   const c=(category,code,retryable,kind)=>({category,subsystem,code,retryable,kind});
-  if(error instanceof NotionError)return error.status===429?c('rate_limit','notion_rate_limited',true,'temporary'):
-    c('mcp_tool','notion_request_failed',error.status>=500,error.status>=500?'temporary':'other');
+  if(error instanceof NotionError){
+    if(error.status===429)return c('rate_limit','notion_rate_limited',true,'temporary');
+    // Fixed internal NotionError codes only; the Notion response is never read here.
+    const known=Object.hasOwn(NOTION_REASONS,error.code)?NOTION_REASONS[error.code]:null;
+    if(known)return c(known[0],known[1],known[2],known[3]);
+    return c('mcp_tool','notion_request_failed',error.status>=500,error.status>=500?'temporary':'other');
+  }
   if(error instanceof SeatsFull)return c('authorization','seats_full',false,'incomplete_setup');
   if(error instanceof FeatureDisabled)return c('setup','feature_disabled',false,'incomplete_setup');
   if(error instanceof CursorError)return c('mcp_validation',error.reason==='expired'?'cursor_expired':'cursor_invalid',true,'temporary');
@@ -152,6 +200,7 @@ export function classifyToolError(error,name){
   if(message==='Consent required')return c('consent','consent_missing',false,'missing_consent');
   if(message==='Not authorized'||message==='Membership required')return c('authorization','membership_inactive',false,'incomplete_setup');
   if(message==='WHOOP connection required'||message==='digest')return c('setup','whoop_not_connected_or_no_data',false,'unavailable_data');
+  if(message==='WHOOP refresh rejected')return c('auth','whoop_refresh_rejected',false,'incomplete_setup');
   if(/^WHOOP refresh|^Invalid WHOOP refresh/.test(message))return c('auth','whoop_refresh_failed',true,'temporary');
   if(message==='WHOOP OAuth not configured'||message==='Token key unavailable'||/not configured/.test(message))
     return c('setup','server_not_configured',false,'backend_failure');

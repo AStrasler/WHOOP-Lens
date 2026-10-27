@@ -1,4 +1,4 @@
-# WHOOP Lens
+# WhoopLens
 
 Private MCP for a person's own WHOOP and separately authorized Health Connect data. WHOOP access is read-only; explicit account tools can connect/disconnect WHOOP, import Health Connect records, and manage phone-ingest consent and tokens. It can also read Samsung Health records uploaded for that same person. This is an independent project. It is not affiliated with WHOOP.
 
@@ -12,7 +12,7 @@ Verified October 15, 2026: all completed private MCP features are enabled server
 | OAuth sign-in and consent | Enabled | Complete the private sign-in and consent flow |
 | WHOOP connection, refresh and supported record reads | Enabled | Connect your own WHOOP account |
 | AI summaries and personal AI usage | Enabled | Supported account records; normal usage limits and template fallback apply |
-| Experimental WHOOP Lens stress estimates | Enabled | Sufficient valid personal baseline data; not official WHOOP Stress Monitor |
+| Experimental WhoopLens stress estimates | Enabled | Sufficient valid personal baseline data; not official WHOOP Stress Monitor |
 | Weekly digests | Enabled | Own WHOOP connection and available history; requested on demand |
 | Health Connect file imports | Enabled | Explicit file-storage consent |
 | Health Connect companion/webhook ingestion | Enabled | Own ingest token, phone permissions and webhook consent |
@@ -27,13 +27,13 @@ Flare predictions, automated flare notifications and unfinished importers remain
 
 ## Install and connect: member setup guide
 
-Start here if you are joining WHOOP Lens. You do not need to clone this repository, deploy a server, obtain an API key or enter a WHOOP client secret. The private server is already hosted. Complete step 1, then connect only the features you want.
+Start here if you are joining WhoopLens. You do not need to clone this repository, deploy a server, obtain an API key or enter a WHOOP client secret. The private server is already hosted. Complete step 1, then connect only the features you want.
 
 ### 1. Install the private plugin in ChatGPT
 
-**Need approval first?** Open [Request a WHOOP Lens seat](https://auth.whooplens.tech/request-seat), enter your name and the email you want approved, optionally add a short message, agree to be contacted, complete the human verification, and select **Request a seat**. Requests are sent to `whoop-lens@outlook.com` for owner review. Users denied by the Cloudflare email allowlist are directed to this page. A request never grants access or reserves a seat; wait for owner approval before installing. Do not include health information. See [seat-request setup and status](cloudflare/docs/seat-requests.md).
+**Need approval first?** Open [Request a WhoopLens seat](https://auth.whooplens.tech/request-seat), enter your name and the email you want approved, optionally add a short message, agree to be contacted, complete the human verification, and select **Request a seat**. Requests are sent to `whoop-lens@outlook.com` for owner review. Users denied by the Cloudflare email allowlist are directed to this page. A request never grants access or reserves a seat; wait for owner approval before installing. Do not include health information. See [seat-request setup and status](cloudflare/docs/seat-requests.md).
 
-Before starting, ask the WHOOP Lens owner to invite and activate the email address you will use. Creating a plugin connection does not create a WHOOP Lens membership. Your ChatGPT account/workspace must also allow custom MCP plugins.
+Before starting, ask the WhoopLens owner to invite and activate the email address you will use. Creating a plugin connection does not create a WhoopLens membership. Your ChatGPT account/workspace must also allow custom MCP plugins.
 
 1. Open [ChatGPT Plugins](https://chatgpt.com/plugins). If the installation controls are missing in the mobile app, use ChatGPT in a browser.
 2. Select **+**, then **Add custom MCP server**.
@@ -41,17 +41,17 @@ Before starting, ask the WHOOP Lens owner to invite and activate the email addre
 
    | Setting | Value |
    | --- | --- |
-   | Name | `WHOOP Lens` |
+   | Name | `WhoopLens` |
    | Server URL | `https://whooplens.tech/mcp` |
    | Authentication | OAuth |
    | Client ID | Leave empty |
    | Client secret | Leave empty |
 
-4. Review the connection notice and create/install the plugin. When sign-in opens, use your invited email address and enter the Cloudflare Access code sent to that inbox. Approve the WHOOP Lens consent screen.
-5. Open a new chat, type `@`, and select **WHOOP Lens**. If you chose a different display name, select that name.
+4. Review the connection notice and create/install the plugin. When sign-in opens, use your invited email address and enter the Cloudflare Access code sent to that inbox. Approve the WhoopLens consent screen.
+5. Open a new chat, type `@`, and select **WhoopLens**. If you chose a different display name, select that name.
 6. Send this first check:
 
-> Use WHOOP Lens get_capabilities. List all pages of available features and tell me which need my connection, consent or records.
+> Use WhoopLens get_capabilities. List all pages of available features and tell me which need my connection, consent or records.
 
 **Success looks like:** a capability response from the private server. WHOOP may still need connecting; that is step 2. Menu labels can vary by client. The [official ChatGPT MCP installation guide](https://developers.openai.com/plugins/build/app-quickstart#connect-your-mcp-server-in-chatgpt) describes the current installation flow.
 
@@ -61,14 +61,14 @@ The private OAuth sign-in server is `https://auth.whooplens.tech`. WHOOP connect
 
 ### 2. Connect your WHOOP account
 
-1. Select WHOOP Lens in the chat and send:
+1. Select WhoopLens in the chat and send:
 
-> Use WHOOP Lens connect_whoop to give me my WHOOP authorization link.
+> Use WhoopLens connect_whoop to give me my WHOOP authorization link.
 
-2. Open the returned link, sign into your own WHOOP account, and approve the requested read access. Complete the redirect back to WHOOP Lens.
+2. Open the returned link, sign into your own WHOOP account, and approve the requested read access. Complete the redirect back to WhoopLens.
 3. Return to the chat and verify:
 
-> Use WHOOP Lens get_profile and get_recovery. Confirm the profile is mine and show the dates of the returned recovery records.
+> Use WhoopLens get_profile and get_recovery. Confirm the profile is mine and show the dates of the returned recovery records.
 
 **Success looks like:** your profile and available measurements, or an explicit no-records result. Installing the plugin alone does not connect WHOOP. An existing connection on the older Supabase connector is separate and is not copied here.
 
@@ -76,11 +76,11 @@ Once connected, these features require no additional accounts:
 
 | Feature | Copy-paste prompt |
 | --- | --- |
-| Body measurements | Use WHOOP Lens get_body_measurements. |
-| Recovery, HRV and resting heart rate | Use WHOOP Lens get_recovery with auto_page true and show the returned dates. |
-| Sleep | Use WHOOP Lens get_sleep with auto_page true. |
-| Workouts | Use WHOOP Lens get_workouts with auto_page true. |
-| Cycles and strain | Use WHOOP Lens get_cycles with auto_page true. |
+| Body measurements | Use WhoopLens get_body_measurements. |
+| Recovery, HRV and resting heart rate | Use WhoopLens get_recovery with auto_page true and show the returned dates. |
+| Sleep | Use WhoopLens get_sleep with auto_page true. |
+| Workouts | Use WhoopLens get_workouts with auto_page true. |
+| Cycles and strain | Use WhoopLens get_cycles with auto_page true. |
 | Compare metrics | Compare my returned WHOOP recovery, sleep and strain records by date. Flag missing dates and separate observations from hypotheses. |
 
 History tools return pages. `auto_page: true` fetches up to four pages (100 records) per call, not unlimited history. To continue, call the same tool again with the returned `next_token`, with or without `auto_page`, until `complete` is true. On the Cloudflare server `next_token` is an opaque cursor sealed to your account and that history category; it expires after one hour and cannot be used by another member or on another category.
@@ -91,11 +91,11 @@ These are already enabled for all active members. No separate AI account or API 
 
 | Feature | Copy-paste prompt | What to expect |
 | --- | --- | --- |
-| AI summary and charts | Use WHOOP Lens get_recovery with auto_page true and summary true. Show the summary, chart_data and insights. | Your returned measurements with a model-selected or deterministic template summary. Charts depend on the chat client. |
-| Sleep summary | Use WHOOP Lens get_sleep with auto_page true and summary true. | Summary of your returned sleep records. |
-| Experimental stress estimate | Use WHOOP Lens get_recovery with summary true. Show chart_data.stress_estimate, including its date, value, band, confidence and missing-data explanation. | A WHOOP Lens experimental calculation when enough valid baseline data exists; it is not official WHOOP Stress Monitor. |
-| Personal AI usage | Use WHOOP Lens get_ai_usage. | Your allowance and usage for the current UTC day. |
-| Weekly digest | Use WHOOP Lens get_weekly_digest with no arguments, then show its charts and insights. | The latest completed Monday–Sunday UTC week. This is on demand, not an automatic notification subscription. |
+| AI summary and charts | Use WhoopLens get_recovery with auto_page true and summary true. Show the summary, chart_data and insights. | Your returned measurements with a model-selected or deterministic template summary. Charts depend on the chat client. |
+| Sleep summary | Use WhoopLens get_sleep with auto_page true and summary true. | Summary of your returned sleep records. |
+| Experimental stress estimate | Use WhoopLens get_recovery with summary true. Show chart_data.stress_estimate, including its date, value, band, confidence and missing-data explanation. | A WhoopLens experimental calculation when enough valid baseline data exists; it is not official WHOOP Stress Monitor. |
+| Personal AI usage | Use WhoopLens get_ai_usage. | Your allowance and usage for the current UTC day. |
+| Weekly digest | Use WhoopLens get_weekly_digest with no arguments, then show its charts and insights. | The latest completed Monday–Sunday UTC week. This is on demand, not an automatic notification subscription. |
 
 WHOOP Stress Monitor history is not in the official WHOOP developer API. The experimental estimate does not provide official stress-zone durations or an intraday Stress Monitor timeline.
 
@@ -108,7 +108,7 @@ This is optional and separate from WHOOP authorization. Use your own Android pho
 1. On the phone, make sure your source app writes the records you want to Android Health Connect. Check Health Connect's app permissions and confirm records exist there.
 2. Install HC Webhook from its [official GitHub releases](https://github.com/mcnaveen/health-connect-webhook/releases), or add that repository in Obtainium. The integration was verified with the FOSS build `app-foss-release.apk`, package `com.hcwebhook.app`, version 1.9.22; this is a compatibility reference, not a claim about the latest release.
 3. Give HC Webhook permission to read the supported data types you want to send: steps, sleep, heart rate and exercise. Allow background reading if you want background sync. Set the sync interval to 15 minutes and leave sample resolution at the app default.
-4. In the WHOOP Lens chat, send:
+4. In the WhoopLens chat, send:
 
 > I consent to storing my Health Connect webhook records. Use issue_health_connect_ingest_token with consent enable-health-connect-webhook.
 
@@ -123,7 +123,7 @@ This is optional and separate from WHOOP authorization. Use your own Android pho
 
 6. Run a manual sync and check the app's Webhook Logs. Then verify the stored data in chat:
 
-> Use WHOOP Lens get_health_connect. Show the returned record types, dates and sources, and follow pagination if needed.
+> Use WhoopLens get_health_connect. Show the returned record types, dates and sources, and follow pagination if needed.
 
 **Success looks like:** a successful delivery plus supported records returned for your account. HTTP 200 alone does not prove records were stored: unsupported types can be skipped and malformed records rejected. Check any stored/rejected/skipped counts in the response and the readback. Background delivery depends on Android permissions and scheduling.
 
@@ -131,7 +131,7 @@ The token is shown once. Keep it private; do not post it in issues or screenshot
 
 ### 5. Import a Health Connect file instead
 
-Skip phone-sync setup if you only want a one-time file import. This path accepts **WHOOP Lens Health Connect v2 JSON**, not an arbitrary Samsung export, CSV or medical document.
+Skip phone-sync setup if you only want a one-time file import. This path accepts **WhoopLens Health Connect v2 JSON**, not an arbitrary Samsung export, CSV or medical document.
 
 1. Select a compatible file that contains your own records and attach it, or paste its JSON into the chat.
 2. Send:
@@ -177,7 +177,7 @@ Use these only when you intend the stated change. Removing the plugin from your 
 
 | Intended change | Prompt / tool |
 | --- | --- |
-| Disconnect WHOOP from WHOOP Lens | Use disconnect_whoop for my account. |
+| Disconnect WHOOP from WhoopLens | Use disconnect_whoop for my account. |
 | Stop Health Connect phone delivery but keep stored records | Use revoke_health_connect_ingest_token with confirm revoke-health-connect-ingest-token. |
 | Delete stored Health Connect records and stop delivery | Use withdraw_health_connect_import with confirm delete-my-health-connect-records. |
 | Pause flare analysis but retain the journal | Use pause_flare_analysis with confirm pause-flare-analysis. |
@@ -190,7 +190,7 @@ These operations apply only to the signed-in account. Deleting server records do
 
 | What you see | Next step |
 | --- | --- |
-| Custom-plugin installation is unavailable | Check the browser version of ChatGPT and your workspace's custom-MCP permissions. A WHOOP Lens invitation does not grant ChatGPT workspace permissions. |
+| Custom-plugin installation is unavailable | Check the browser version of ChatGPT and your workspace's custom-MCP permissions. A WhoopLens invitation does not grant ChatGPT workspace permissions. |
 | Access denied or no usable sign-in | Use the invited email; ask the owner to confirm active membership. |
 | Plugin responds but WHOOP is disconnected | Complete step 2's returned authorization link, then read your profile. |
 | A new tool is missing | Refresh the plugin connection, open a new chat and select it again. |
@@ -217,13 +217,13 @@ Checked-in Wrangler defaults stay disabled. Production uses separately verified 
 
 A summary object keeps this field order: `text`, `stats`, `model`, `generated_at`, `coverage`, `status`, `chart_data`, and `insights`. A template fallback also sets `fallback_reason` to `account_check_failed`, `quota`, `timeout`, `filter`, `injection`, or `model_error`. That same word is written to the log, with no secrets or measurements. `chart_data` has `date_range`, `record_count`, `series`, `sleep_recovery`, and `stress_estimate`. Each series is one allowlisted metric from that same response: `metric`, `name`, `unit`, `date_range`, `record_count`, `stats` (`min`, `max`, `mean`, `first`, `last`, `change`), `baseline`, `points`, `gaps`, and `gaps_truncated`. `points` are ordered by date. A day inside the series span with no sample is `{date, value: null}` and is also listed in `gaps`, so a chart does not draw across it. The data does not say whether that day was unworn or unsynced. Spans longer than 400 days set `gaps_truncated` and omit the filled days. `baseline` compares the latest point with the 30 UTC days before it: `window`, `days`, `sample_count`, `median`, `typical_range` (`low` and `high`, the 25th and 75th percentiles when at least four samples exist), and `complete`. When the read can page WHOOP history, those 30 days are fetched. When it cannot, `complete` is false and `days` is only the span actually present. `insights` are short factual sentences from those stats, including the baseline comparison when it exists. They describe the measurements. The template summary includes the same `chart_data` and `insights` when the model is not called.
 
-`sleep_recovery` pairs a night's sleep with recovery by `sleep_id`; legacy records without IDs use the documented next-day fallback. `chart_data.stress_estimate` is present only when both `STRESS_ESTIMATE_ENABLED` and `AI_SUMMARY_ENABLED` are exactly `"true"`. It is a calculated, experimental daily WHOOP Lens index, not WHOOP Stress Monitor. It uses the same member's HRV, resting heart rate, sleep and respiratory measurements against their prior 30 days, requiring at least 14 valid baseline days. See [formula, units, confidence and limitations](cloudflare/docs/stress-estimate.md). No official stress-zone durations or intraday WHOOP stress endpoint are provided. Malformed, failed or truncated history remains incomplete rather than being reported as a complete empty history.
+`sleep_recovery` pairs a night's sleep with recovery by `sleep_id`; legacy records without IDs use the documented next-day fallback. `chart_data.stress_estimate` is present only when both `STRESS_ESTIMATE_ENABLED` and `AI_SUMMARY_ENABLED` are exactly `"true"`. It is a calculated, experimental daily WhoopLens index, not WHOOP Stress Monitor. It uses the same member's HRV, resting heart rate, sleep and respiratory measurements against their prior 30 days, requiring at least 14 valid baseline days. See [formula, units, confidence and limitations](cloudflare/docs/stress-estimate.md). No official stress-zone durations or intraday WHOOP stress endpoint are provided. Malformed, failed or truncated history remains incomplete rather than being reported as a complete empty history.
 
-`get_ai_usage` is listed only while `AI_SUMMARY_ENABLED` is exactly `"true"`. It returns the signed-in account's used, cap, and remaining neurons for the current UTC day. The global counter is added only when the verified user id equals `WHOOP_LENS_DEVELOPER_USER_ID`. The tool does not accept another user's id and does not return other accounts. `get_weekly_digest` is listed only while `WEEKLY_DIGEST_ENABLED` is exactly `"true"`. The checked-in flag defaults to `"false"`; live settings are recorded separately. A compatible host can pull the digest; scheduled-task connector availability depends on that host. WHOOP Lens does not send it, and no cron or schedule is configured. Call the tool with no other inputs. The optional `week_ending` argument is a `YYYY-MM-DD` date and is the last day of a seven-day window. When it is omitted, the window is the most recent complete Monday–Sunday week in UTC, ending on the previous Sunday. The response has `text`, `chart_data`, `insights`, and `status` (`model` or `template`) for that account's recovery and the prior night's sleep. Sleep is read from the day before the week as well, because a sleep can start the previous UTC day. The tool pages until that week is covered. The first complete, non-empty call for an account and week builds the digest. Cache keys include AI/stress mode and a format version. Expired generation claims cannot overwrite or release a newer claim. A local WHOOP disconnect invalidates that account’s cached digests and in-flight claims; cached reads require an active connection. Complete baseline retrieval is required for persistent caching. When summaries are also on, that call uses the same neuron quota and safety rules, and the week is cached only when `status` is `model`. A template fallback, including a full quota or a failed or stale analytics read, is returned and not cached, so a later call can try again. When summaries are off, the template is cached. A later call for a cached week returns that digest and does not spend more neurons. An empty week or a pull that stops before the week is covered is not cached, so a later call can try again. Migration `cloudflare/migrations/0011_ai_weekly_digest.sql` stores that cache. The production table has been verified present. A suggested ChatGPT scheduled task is: "Every Monday 8 AM, call WHOOP Lens get_weekly_digest and chart it."
+`get_ai_usage` is listed only while `AI_SUMMARY_ENABLED` is exactly `"true"`. It returns the signed-in account's used, cap, and remaining neurons for the current UTC day. The global counter is added only when the verified user id equals `WHOOP_LENS_DEVELOPER_USER_ID`. The tool does not accept another user's id and does not return other accounts. `get_weekly_digest` is listed only while `WEEKLY_DIGEST_ENABLED` is exactly `"true"`. The checked-in flag defaults to `"false"`; live settings are recorded separately. A compatible host can pull the digest; scheduled-task connector availability depends on that host. WhoopLens does not send it, and no cron or schedule is configured. Call the tool with no other inputs. The optional `week_ending` argument is a `YYYY-MM-DD` date and is the last day of a seven-day window. When it is omitted, the window is the most recent complete Monday–Sunday week in UTC, ending on the previous Sunday. The response has `text`, `chart_data`, `insights`, and `status` (`model` or `template`) for that account's recovery and the prior night's sleep. Sleep is read from the day before the week as well, because a sleep can start the previous UTC day. The tool pages until that week is covered. The first complete, non-empty call for an account and week builds the digest. Cache keys include AI/stress mode and a format version. Expired generation claims cannot overwrite or release a newer claim. A local WHOOP disconnect invalidates that account’s cached digests and in-flight claims; cached reads require an active connection. Complete baseline retrieval is required for persistent caching. When summaries are also on, that call uses the same neuron quota and safety rules, and the week is cached only when `status` is `model`. A template fallback, including a full quota or a failed or stale analytics read, is returned and not cached, so a later call can try again. When summaries are off, the template is cached. A later call for a cached week returns that digest and does not spend more neurons. An empty week or a pull that stops before the week is covered is not cached, so a later call can try again. Migration `cloudflare/migrations/0011_ai_weekly_digest.sql` stores that cache. The production table has been verified present. A suggested ChatGPT scheduled task is: "Every Monday 8 AM, call WhoopLens get_weekly_digest and chart it."
 
 The shared daily budget also counts Workers AI neurons used elsewhere on the same Cloudflare account. Before reserving a model call, the Worker reads today's UTC total (00:00 inclusive through the next midnight, exclusive) from the GraphQL Analytics API dataset `aiInferenceAdaptiveGroups`, summed as `totalNeurons`. The read uses the Worker secret `AI_ACCOUNT_ANALYTICS_TOKEN`, which needs only Account Analytics Read. The account id is `AI_ANALYTICS_ACCOUNT_ID`, a 32-character hex value supplied as a Wrangler var or secret when summaries are enabled. Neither value is committed. The room left for a call is the minimum of the per-user room (2,500), this Worker's global room (7,500), and 10,000 minus the account-wide total minus a 500 neuron safety margin. Migration `cloudflare/migrations/0010_ai_account_snapshot.sql` caches that total in D1 for 3 minutes. Reservations made after the snapshot are subtracted from the remaining room so analytics lag is not counted twice. `ANALYTICS_STALE_MS` is 10 minutes, measured from the fetch time or an explicit data-freshness watermark. The newest inference time is only the last counted call, so a quiet account whose last call was hours ago still gets a ceiling when the fetch is fresh. Local reservations made after that call are added to the analytics total. If the call time is missing, the ceiling uses the max of the analytics total and this Worker's local counter. A watermark older than 10 minutes, or a failed fetch, returns the template summary and does not call the model. If the analytics call fails, or a cached snapshot cannot be refreshed, the Worker also returns the template and does not call the model. `whoop-lens` and the resource Worker need the secret when the flag is turned on. The auth Worker does not. The deployed AI usage and digest paths use the production schema introduced by migrations `0009_ai_usage.sql` through `0012_ai_usage_event.sql`; their release verification is documented in the audit record.
 
-WHOOP Lens reads profile, body measurements, recovery, sleep, workouts, and cycles. Charts and outside research depend on the connected AI host.
+WhoopLens reads profile, body measurements, recovery, sleep, workouts, and cycles. Charts and outside research depend on the connected AI host.
 
 ## Seats
 

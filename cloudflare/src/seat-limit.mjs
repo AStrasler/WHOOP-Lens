@@ -1,4 +1,4 @@
-// WHOOP Lens seat cap: how many members may hold a WHOOP connection at once.
+// WhoopLens seat cap: how many members may hold a WHOOP connection at once.
 // Every connection counts, the owner/developer seat included, so the default
 // of 3 means the owner plus two approved members. Raise it to admit more,
 // after approving them through the seat-request workflow (auth Worker,
@@ -26,7 +26,7 @@ export function seatLimit(env){
 }
 export class SeatsFull extends Error{
   constructor(limit){
-    super(`All ${limit} WHOOP Lens seats are in use. New seats are granted only by the owner after a seat request.`);
+    super(`All ${limit} WhoopLens seats are in use. New seats are granted only by the owner after a seat request.`);
     this.name="SeatsFull";this.status=409;this.limit=limit;
   }
 }

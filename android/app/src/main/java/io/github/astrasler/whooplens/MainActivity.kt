@@ -343,7 +343,7 @@ class MainActivity : ComponentActivity() {
 
     private fun signOut() {
         dialog(
-            "Sign out of WHOOP Lens?",
+            "Sign out of WhoopLens?",
             "Erases encrypted sign-in and cached previews on this phone. Asks the server to revoke this phone's grant when online. Health Connect permissions stay in Android settings.",
             "Sign out",
         ) {
@@ -430,7 +430,7 @@ class MainActivity : ComponentActivity() {
         }
         val choices = healthCategories.map { it.permission in granted }.toBooleanArray()
         AlertDialog.Builder(this)
-            .setTitle("Choose what WHOOP Lens can read")
+            .setTitle("Choose what WhoopLens can read")
             .setMultiChoiceItems(
                 healthCategories.map { it.title + "\n" + it.explanation }.toTypedArray(),
                 choices,
@@ -484,7 +484,7 @@ class MainActivity : ComponentActivity() {
         bar.addView(nav, LinearLayout.LayoutParams(ui.dp(48), -2))
         val title =
             ui.text(
-                if (account == null) "WHOOP Lens"
+                if (account == null) "WhoopLens"
                 else
                     detail?.let { metric(it, detailSource)?.title ?: it }
                         ?: if (page == "Home") "Today" else page,
@@ -539,7 +539,7 @@ class MainActivity : ComponentActivity() {
 
     private fun signedOut(root: LinearLayout) {
         ui.card(root) { c ->
-            ui.add(c, ui.text("WHOOP Lens", 30f, bold = true))
+            ui.add(c, ui.text("WhoopLens", 30f, bold = true))
             ui.add(
                 c,
                 ui.text(
@@ -550,7 +550,7 @@ class MainActivity : ComponentActivity() {
             ui.add(
                 c,
                 ui.text(
-                    "Opens your browser. WHOOP Lens never sees your password. Credentials use Keystore encryption.",
+                    "Opens your browser. WhoopLens never sees your password. Credentials use Keystore encryption.",
                     12f,
                     LensColors.muted,
                 ),
@@ -1528,14 +1528,14 @@ class MainActivity : ComponentActivity() {
         }
         ui.button(root, "Help") {
             dialog(
-                "WHOOP Lens help",
+                "WhoopLens help",
                 "Missing data means a source did not share it, permission is missing, or a read failed. Check source notices, Health Connect sharing and connection. WHOOP remains authoritative. Not medical advice.",
             )
         }
         ui.button(root, "Sign out") { signOut() }
         ui.add(
             root,
-            ui.text("WHOOP Lens Companion · not affiliated with WHOOP", 12f, LensColors.muted),
+            ui.text("WhoopLens Companion · not affiliated with WHOOP", 12f, LensColors.muted),
         )
     }
 
@@ -1669,11 +1669,11 @@ class MainActivity : ComponentActivity() {
         panel.addView(
             ImageView(this).apply {
                 setImageResource(R.drawable.lens_mark)
-                contentDescription = "WHOOP Lens pulse-ring logo"
+                contentDescription = "WhoopLens pulse-ring logo"
             },
             LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)).apply { bottomMargin = ui.dp(12) },
         )
-        ui.add(panel, ui.text("WHOOP Lens", 25f, LensColors.text, true))
+        ui.add(panel, ui.text("WhoopLens", 25f, LensColors.text, true))
         ui.add(panel, ui.text("Signed in · Cloudflare", 12f, LensColors.muted))
         ui.chip(panel, DataSource.WHOOP)
         ui.chip(panel, DataSource.HEALTH_CONNECT)

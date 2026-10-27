@@ -4,6 +4,7 @@ import { createStagingRouter } from "../../../src/router.mjs";
 import { WEBHOOK_PATH } from "../../../src/health-connect-webhook.mjs";
 import {healthConnectHttp} from '../../../src/health-import.mjs';
 import {NOTION_CALLBACK,NOTION_START} from '../../../src/notion-oauth.mjs';
+import {runRetention} from '../../../src/diagnostics.mjs';
 
 // Private MCP resource server for https://whooplens.tech/mcp.
 // Cloudflare is the live MCP resource server. Do not copy legacy WHOOP refresh tokens.
@@ -11,7 +12,7 @@ const mcpResource=new OAuthResourceServer({
   resourceMetadata:{
     resource:"https://whooplens.tech/mcp",
     authorization_servers:["https://auth.whooplens.tech"],
-    resource_name:"WHOOP Lens (private MCP)"
+    resource_name:"WhoopLens (private MCP)"
   },
   requiredScopes:["mcp:read"],
   validateToken:env=>env.AUTH_SERVER.validateToken,
@@ -19,7 +20,7 @@ const mcpResource=new OAuthResourceServer({
     async fetch(request,env,ctx){
       if(env.OAUTH_RESOURCE_ENABLED!=="true"||env.MCP_ENABLED!=="true"||
          env.WHOOP_READS_ENABLED!=="true"||env.MIGRATION_API_ENABLED!=="true")
-        return Response.json({error:"WHOOP Lens MCP OAuth is disabled"},{status:503});
+        return Response.json({error:"WhoopLens MCP OAuth is disabled"},{status:503});
       if(!ctx.auth.scope.includes("mcp:read"))
         return insufficientScope(ctx.auth,["mcp:read"]);
       const id=ctx.props?.userId;
@@ -38,20 +39,34 @@ const mcpResource=new OAuthResourceServer({
   }
 });
 
+const SITE_REDIRECTS={'/':'/','/privacy':'/privacy/','/privacy/':'/privacy/','/terms':'/terms/','/terms/':'/terms/','/support':'/support/','/support/':'/support/'};
+
 export default {
+  // Cron trigger (if configured): enforce diagnostic and report retention even
+  // when no member is active. Deletes only rows already past retention.
+  scheduled(controller,env,ctx){
+    if(!env?.DB)return;
+    ctx.waitUntil(runRetention(env.DB,{now:controller?.scheduledTime??Date.now()}).then(r=>{
+      try{console.log(JSON.stringify({event:'retention',ok:r.ok,deleted:r.deleted}));}catch{/* log only */}
+    }));
+  },
   fetch(request,env,ctx){
     // The WHOOP callback is authenticated by its expiring, atomically consumed
     // state. The Health Connect webhook authenticates its own per-user bearer.
     // All other paths retain MCP OAuth protection.
-    const path=new URL(request.url).pathname;
+    const requestUrl=new URL(request.url),path=requestUrl.pathname;
+    // The apex only serves the MCP resource. Public site pages live on www, so
+    // the bare root and the site paths redirect there. Nothing else changes.
+    if((request.method==='GET'||request.method==='HEAD')&&Object.hasOwn(SITE_REDIRECTS,path))
+      return new Response(null,{status:301,headers:{location:'https://www.whooplens.tech'+SITE_REDIRECTS[path]+requestUrl.search,'cache-control':'public, max-age=3600'}});
     // Android App Links: only the debug signing certificate is registered here.
     // Release builds must add their own signing certificate fingerprint.
     if(path==='/.well-known/assetlinks.json' && request.method==='GET')
       return Response.json([{relation:['delegate_permission/common.handle_all_urls'],target:{namespace:'android_app',package_name:'io.github.astrasler.whooplens',sha256_cert_fingerprints:['C3:E4:F5:6D:7E:BC:66:32:95:85:19:7C:49:26:35:FF:B4:57:E7:C0:D0:D2:73:E1:6F:16:A4:3E:72:CC:F5:78']}}],{headers:{'cache-control':'public, max-age=3600','x-content-type-options':'nosniff'}});
     if(path==='/android/oauth/callback' && request.method==='GET')
-      return new Response('Open this link on the device with WHOOP Lens Companion installed. If it does not open automatically, enable supported links for WHOOP Lens Companion in Android settings and retry sign-in.',{status:200,headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff'}});
+      return new Response('Open this link on the device with WhoopLens Companion installed. If it does not open automatically, enable supported links for WhoopLens Companion in Android settings and retry sign-in.',{status:200,headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff'}});
     if(env?.OAUTH_RESOURCE_ENABLED!=="true")
-      return Response.json({error:"WHOOP Lens resource server not activated"},{status:503,headers:{"cache-control":"no-store"}});
+      return Response.json({error:"WhoopLens resource server not activated"},{status:503,headers:{"cache-control":"no-store"}});
     if(path==='/api/whoop/callback'||path===WEBHOOK_PATH||path===NOTION_CALLBACK||path===NOTION_START)
       return createStagingRouter()(request,env);
     return mcpResource.fetch(request,env,ctx);

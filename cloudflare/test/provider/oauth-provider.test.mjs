@@ -32,6 +32,30 @@ test('Android App Links and fallback are public, match site assets, and never re
   assert.doesNotMatch(await callback.text(), /synthetic-private|<script|https?:/);
 });
 
+test('apex root and site paths 301 to www; MCP, OAuth and API paths are unchanged', async () => {
+  const {default: resource} = await import('../../oauth/resource/src/index.mjs');
+  for (const [path, target] of [['/', '/'], ['/privacy', '/privacy/'], ['/privacy/', '/privacy/'], ['/terms', '/terms/'], ['/terms/', '/terms/'], ['/support', '/support/'], ['/support/', '/support/']]) {
+    for (const method of ['GET', 'HEAD']) {
+      const r = await resource.fetch(new Request('https://whooplens.tech' + path + '?x=1', {method}), {}, {});
+      assert.equal(r.status, 301, method + ' ' + path);
+      assert.equal(r.headers.get('location'), 'https://www.whooplens.tech' + target + '?x=1', 'query string preserved');
+      assert.equal(new URL(r.headers.get('location')).hostname, 'www.whooplens.tech', 'target is never the apex, so no loop');
+    }
+  }
+  const bare = await resource.fetch(new Request('https://whooplens.tech/privacy'), {}, {});
+  assert.equal(bare.headers.get('location'), 'https://www.whooplens.tech/privacy/', 'no stray ? without a query');
+  const env = {OAUTH_RESOURCE_ENABLED: 'false'};
+  for (const path of ['/mcp', '/.well-known/oauth-protected-resource/mcp', '/api/whoop/callback', '/v1/health-connect', '/v1/status', '/privacy/extra', '/PRIVACY']) {
+    const r = await resource.fetch(new Request('https://whooplens.tech' + path), env, {});
+    assert.notEqual(r.status, 301, path);
+    assert.equal(r.headers.get('location'), null, path);
+  }
+  const post = await resource.fetch(new Request('https://whooplens.tech/', {method: 'POST'}), env, {});
+  assert.notEqual(post.status, 301, 'non-GET is never redirected');
+  const links = await resource.fetch(new Request('https://whooplens.tech/.well-known/assetlinks.json'), {}, {});
+  assert.equal(links.status, 200);
+});
+
 test('live Worker discovery advertises DCR and registration works without metadata fetches',async t=>{
   t.mock.method(globalThis,'fetch',()=>{throw Error('Metadata origin must not be needed');});
   const env={OAUTH_SERVER_ENABLED:'true',OAUTH_CONSENT_ENABLED:'true'};
@@ -380,7 +404,7 @@ function androidOAuthFixture(){
   async function register(){
     const response=await AuthWorker.prototype.fetch.call({env,ctx:{}},new Request(ORIGIN+'/oauth/register',{
       method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({
-        client_name:'WHOOP Lens Android Companion',redirect_uris:[redirect],
+        client_name:'WhoopLens Android Companion',redirect_uris:[redirect],
         grant_types:['authorization_code','refresh_token'],response_types:['code'],token_endpoint_auth_method:'none'})}));
     assert.equal(response.status,201);
     return (await response.json()).client_id;
@@ -393,7 +417,7 @@ function androidOAuthFixture(){
     const page=await flow.authorize(request('/authorize?'+query),env);
     assert.equal(page.status,200);
     const html=await page.text();
-    assert.match(html,/WHOOP Lens Android Companion/);
+    assert.match(html,/WhoopLens Android Companion/);
     assert.match(html,/name="scope" value="offline_access"/);
     return {client,verifier,query,handle:html.match(/name="handle" value="([^"]+)"/)[1],cookie:cookies(page)};
   }

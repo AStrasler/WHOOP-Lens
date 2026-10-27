@@ -53,7 +53,7 @@ internal object LensWidgets {
             )
         views.setTextViewText(
             R.id.widget_title,
-            if (lockSurface) "WHOOP Lens · private" else "WHOOP Lens",
+            if (lockSurface) "WhoopLens · private" else "WhoopLens",
         )
         views.setTextViewText(R.id.widget_body, text)
         views.setContentDescription(R.id.widget_body, text)

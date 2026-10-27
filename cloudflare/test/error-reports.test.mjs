@@ -141,16 +141,15 @@ test('atomic submission rechecks live membership and connection generation',asyn
   }finally{f.close();}
 });
 test('report_error is exposed through the same MCP feature flag and accepts no caller-selected identity',async()=>{
+  // MCP dispatch uses the real clock; other fixture tests explicitly inject NOW.
+  const currentDiagnostics={...diagnostics,occurred_at:new Date(Date.now()-60_000).toISOString()};
   const f=fixture();try{
     const rpc=(name,args={},customEnv=env)=>handleMcpRpc({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}},
       {db:f.db,userId:A,env:customEnv},{modern:false});
     const links=JSON.parse((await rpc('get_reportable_links')).result.content[0].text);
     const link_id=links.links[0].link_id;
-    assert.equal((await rpc('report_error',{link_id,diagnostics,user_id:B})).error.code,-32602);
-    assert.equal((await rpc('report_error',{link_id,diagnostics},{ISSUE_REPORTS_ENABLED:'false'})).error.code,-32602);
-    // This RPC path uses the real clock, unlike f.run's fixed test clock.
-    // Keep its evidence inside the 24-hour acceptance window on any run date.
-    const currentDiagnostics={...diagnostics,occurred_at:new Date(Date.now()-60000).toISOString()};
+    assert.equal((await rpc('report_error',{link_id,diagnostics:currentDiagnostics,user_id:B})).error.code,-32602);
+    assert.equal((await rpc('report_error',{link_id,diagnostics:currentDiagnostics},{ISSUE_REPORTS_ENABLED:'false'})).error.code,-32602);
     const result=await rpc('report_error',{link_id,diagnostics:currentDiagnostics});
     assert.equal(result.result.isError,undefined);
     assert.equal(JSON.parse(result.result.content[0].text).approval_required,true);

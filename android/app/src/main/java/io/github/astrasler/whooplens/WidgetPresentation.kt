@@ -38,19 +38,19 @@ internal fun widgetPresentation(
 ): WidgetPresentation {
     fun status(value: String, explanation: String) =
         WidgetPresentation(
-            if (space.labeled) "WHOOP Lens" else "",
+            if (space.labeled) "WhoopLens" else "",
             value,
             description = explanation,
             footer = if (space.footer) "Tap to open" else "",
         )
     // Check ownership before selecting or formatting any cached metric.
     if (locked || privacy == WidgetPrivacy.HIDDEN)
-        return status("Lock", "WHOOP Lens. Unlock to view.")
+        return status("Lock", "WhoopLens. Unlock to view.")
     if (account == null || (snapshot != null && snapshot.account != account))
-        return status("Open", "Sign in to WHOOP Lens. No measurements displayed.")
-    if (snapshot == null) return status("—", "No saved measurements. Open WHOOP Lens to refresh.")
+        return status("Open", "Sign in to WhoopLens. No measurements displayed.")
+    if (snapshot == null) return status("—", "No saved measurements. Open WhoopLens to refresh.")
     if (privacy != WidgetPrivacy.DETAILED)
-        return status("Open", "Saved overview available. Open WHOOP Lens to view.")
+        return status("Open", "Saved overview available. Open WhoopLens to view.")
     fun batch(key: String) =
         if (key in setOf("steps", "distance", "energy", "exercise")) snapshot.health
         else snapshot.whoop
@@ -62,7 +62,7 @@ internal fun widgetPresentation(
             b != null && (b.stale(now) || now - (m?.measuredAt ?: b.fetchedAt) > 12 * 3600000L)
         }
     val label =
-        metric?.title ?: keys.firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "WHOOP Lens"
+        metric?.title ?: keys.firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "WhoopLens"
     val exact = metric?.display() ?: "Not shared"
     val primary =
         metric?.value?.let { value ->
@@ -118,7 +118,7 @@ internal fun widgetPresentation(
         primary,
         supporting,
         if (space.footer) (if (stale) "Saved · " else "") + sourceLabel else "",
-        label + ": " + exact + ". " + allDescription + ". Tap to open WHOOP Lens.",
+        label + ": " + exact + ". " + allDescription + ". Tap to open WhoopLens.",
         stale,
         space.width >= 260 * space.fontScale && space.height >= 110,
     )

@@ -1,4 +1,4 @@
-# WHOOP Lens browser-first workspace
+# WhoopLens browser-first workspace
 
 > **Retired.** This workspace depends on the retired Supabase sign-in and is no longer linked from the site. Use the Cloudflare connector at `https://whooplens.tech/mcp` and `connect_whoop` instead. The notes below are kept for history.
 
@@ -19,21 +19,21 @@ Before publishing this dashboard as an invite-only beta, the owner must approve 
 
 ## What the web workspace can do
 
-1. Verify an existing WHOOP Lens Supabase user and a connected WHOOP account. No registration or invitations are issued from the website.
+1. Verify an existing WhoopLens Supabase user and a connected WHOOP account. No registration or invitations are issued from the website.
 2. Review a **locally selected JSON file** without uploading its contents or storing it in browser storage.
-3. Validate and preview **WHOOP Lens Health Connect protocol-v2 JSON**, up to 100 supported rows per file and 500 KB, with step/sleep/heart-rate/exercise metadata.
+3. Validate and preview **WhoopLens Health Connect protocol-v2 JSON**, up to 100 supported rows per file and 500 KB, with step/sleep/heart-rate/exercise metadata.
 4. Preview supported **FHIR R4 Bundle** entries: conditions, medication statements and allergies, with unsupported entries skipped. These are sensitive context records, **not diagnoses inferred by the app**.
 5. Clear the preview and sign out; no token persistence and no automatic uploads.
 
-A generic Android Health Connect export is **not** necessarily in WHOOP Lens v2 format. This page does not currently convert Samsung CSVs, Google Takeout or arbitrary JSON; no unsupported exports are silently mapped.
+A generic Android Health Connect export is **not** necessarily in WhoopLens v2 format. This page does not currently convert Samsung CSVs, Google Takeout or arbitrary JSON; no unsupported exports are silently mapped.
 
 ## Important Android limitation
 
-Android Health Connect APIs cannot be accessed directly from a normal web page or PWA. That remains true even when the website is opened on a Galaxy phone. WHOOP Lens does not build or require an Android companion. Health Connect data enters only as a user-selected file. FHIR R4 bundles stay a local preview and are not stored as Health Connect measurements.
+Android Health Connect APIs cannot be accessed directly from a normal web page or PWA. That remains true even when the website is opened on a Galaxy phone. WhoopLens does not build or require an Android companion. Health Connect data enters only as a user-selected file. FHIR R4 bundles stay a local preview and are not stored as Health Connect measurements.
 
 ## Privacy and deployment gates
 
-The GitHub Pages preview is read-only. The browser's WEB_HEALTH_UPLOADS_ENABLED flag remains **false** and the page does not upload. The Cloudflare source can store a Health Connect v2 file only after a verified WHOOP Lens bearer, the exact consent string, and `WEB_HEALTH_IMPORT_ENABLED=true`. Checked-in flags default to false; production runs with `WEB_HEALTH_IMPORT_ENABLED=true`, and migration `cloudflare/migrations/0006_health_import_consent.sql` is applied to production. Migration `cloudflare/migrations/0008_whoop_credential_revocations.sql` is not applied to production. Deletion is per account and records consent withdrawal. A WHOOP disconnect also blocks an in-flight callback from saving that account's credentials. Automatic phone sync is a separate path, described in `docs/HC_WEBHOOK_SETUP.md`.
+The GitHub Pages preview is read-only. The browser's WEB_HEALTH_UPLOADS_ENABLED flag remains **false** and the page does not upload. The Cloudflare source can store a Health Connect v2 file only after a verified WhoopLens bearer, the exact consent string, and `WEB_HEALTH_IMPORT_ENABLED=true`. Checked-in flags default to false; production runs with `WEB_HEALTH_IMPORT_ENABLED=true`, and migration `cloudflare/migrations/0006_health_import_consent.sql` is applied to production. Migration `cloudflare/migrations/0008_whoop_credential_revocations.sql` is not applied to production. Deletion is per account and records consent withdrawal. A WHOOP disconnect also blocks an in-flight callback from saving that account's credentials. Automatic phone sync is a separate path, described in `docs/HC_WEBHOOK_SETUP.md`.
 
 No additional paid hosting services are introduced. Existing service quotas and GitHub Pages limits still apply; zero additional infrastructure cost is a design constraint, **not a guarantee of unlimited usage**.
 

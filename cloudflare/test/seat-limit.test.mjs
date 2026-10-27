@@ -1,4 +1,4 @@
-// WHOOP Lens seat cap (seat-limit.mjs). Synthetic members only; no real data.
+// WhoopLens seat cap (seat-limit.mjs). Synthetic members only; no real data.
 import assert from "node:assert/strict";
 import test from "node:test";
 import {fixture,member,baseEnv,connect,fakeWhoop,setup,content} from "./audit-fixtures.mjs";
@@ -42,7 +42,7 @@ test("seat cap: the owner counts; a 4th member is refused before WHOOP and at th
     assert.equal(count(d),3);
     // A 4th approved member is refused at authorize: no WHOOP redirect, no state.
     const states=d.sqlite.prepare("SELECT COUNT(*) n FROM whoop_oauth_states").get().n;
-    await assert.rejects(createWhoopAuthorization(d,M3,env0),e=>e instanceof SeatsFull&&e.limit===3&&/All 3 WHOOP Lens seats are in use/.test(e.message));
+    await assert.rejects(createWhoopAuthorization(d,M3,env0),e=>e instanceof SeatsFull&&e.limit===3&&/All 3 WhoopLens seats are in use/.test(e.message));
     assert.equal(d.sqlite.prepare("SELECT COUNT(*) n FROM whoop_oauth_states").get().n,states);
     // Existing members reconnect (overwrite) while seats are full.
     for(const id of [OWNER,M1,M2])assert.equal((await connectVia(d,id)).connected,true);
@@ -108,11 +108,11 @@ test("seat cap: MCP connect_whoop and REST /v1/whoop/connect say the seats are f
       body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"connect_whoop",arguments:{}}})}),env);
     const body=await mcp.json();
     assert.equal(body.result.isError,true);
-    assert.match(body.result.content[0].text,/All 3 WHOOP Lens seats are in use\. New seats are granted only by the owner after a seat request\./);
+    assert.match(body.result.content[0].text,/All 3 WhoopLens seats are in use\. New seats are granted only by the owner after a seat request\./);
     assert.doesNotMatch(JSON.stringify(body),/oauth2\/auth/);
     const rest=await route(new Request("https://staging.invalid/v1/whoop/connect",{headers:{"x-synthetic-member":M3,authorization:"Bearer synthetic"}}),env);
     assert.equal(rest.status,409);
-    assert.deepEqual(await rest.json(),{error:"All 3 WHOOP Lens seats are in use. New seats are granted only by the owner after a seat request.",seat_limit:3});
+    assert.deepEqual(await rest.json(),{error:"All 3 WhoopLens seats are in use. New seats are granted only by the owner after a seat request.",seat_limit:3});
   }finally{d.close();}
 });
 
