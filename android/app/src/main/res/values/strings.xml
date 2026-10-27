@@ -24,6 +24,8 @@
   <string name="widget_sleep">Sleep summary</string>
   <string name="widget_vitals">Vitals summary</string>
   <string name="widget_expanded">Expanded dashboard</string>
-  <string name="widget_private_lock">Private lock-screen summary</string>
+  <string name="widget_private_lock">WhoopLens status</string>
+  <string name="widget_private_lock_description">No health measurements. Home screen only.</string>
   <string name="widget_missing_value">\u2014</string>
+  <string name="widget_preview_description">WhoopLens home widget. No measurement is shown in the preview.</string>
 </resources>

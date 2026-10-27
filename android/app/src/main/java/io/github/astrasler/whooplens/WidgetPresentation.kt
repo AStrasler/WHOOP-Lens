@@ -1,6 +1,42 @@
 package io.github.astrasler.whooplens
 
+import android.appwidget.AppWidgetProviderInfo
+import android.content.Intent
+import android.view.Display
+
 /** Space budgets use launcher-reported dp, never pretend that dp are launcher cells. */
+
+/**
+ * Home widgets withhold measurements on a locked device, a visible keyguard, a
+ * screen-off conceal, or a host that reports the keyguard category. [screenConcealed]
+ * covers the gap after the display turns off and before [deviceLocked] becomes true.
+ */
+internal fun widgetConcealsMeasurements(
+    deviceLocked: Boolean,
+    keyguardLocked: Boolean,
+    screenConcealed: Boolean,
+    hostCategory: Int,
+): Boolean =
+    deviceLocked ||
+        keyguardLocked ||
+        screenConcealed ||
+        hostCategory == AppWidgetProviderInfo.WIDGET_CATEGORY_KEYGUARD
+
+/** Empty or missing display lists do not count as off. */
+internal fun displaysAreOff(states: IntArray?): Boolean =
+    states != null && states.isNotEmpty() && states.all { it == Display.STATE_OFF }
+
+internal fun concealAfterScreenBroadcast(
+    action: String?,
+    deviceLocked: Boolean,
+    keyguardLocked: Boolean,
+    currentlyConcealed: Boolean,
+): Boolean =
+    when (action) {
+        Intent.ACTION_SCREEN_OFF -> true
+        Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> deviceLocked || keyguardLocked
+        else -> currentlyConcealed
+    }
 internal data class WidgetSpace(val width: Float, val height: Float, val fontScale: Float = 1f) {
     val labeled
         get() = width >= 110 * fontScale && height >= 60 * fontScale

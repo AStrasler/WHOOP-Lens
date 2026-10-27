@@ -1,5 +1,8 @@
 package io.github.astrasler.whooplens
 
+import android.appwidget.AppWidgetProviderInfo
+import android.content.Intent
+import android.view.Display
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -152,6 +155,70 @@ class WidgetPresentationTest {
         assertTrue(result.description.contains("12,000"))
         assertTrue(result.footer.contains("Health Connect"))
         assertTrue(result.supporting.contains("Distance"))
+    }
+
+    @Test
+    fun oneByOneAtLargeFontKeepsASingleAbbreviatedPrimary() {
+        val space = WidgetSpace(57f, 102f, 2f)
+        assertFalse(space.labeled)
+        assertFalse(space.footer)
+        assertEquals(0, space.supporting)
+        val result = render(space, chosen = listOf("steps", "distance"))
+        assertEquals("12k", result.primary)
+        assertEquals("", result.title)
+        assertEquals("", result.supporting)
+        assertEquals("", result.footer)
+        assertFalse(result.wide)
+        assertTrue(result.description.contains("12,000"))
+    }
+
+    @Test
+    fun intendedMaxEnvelopeUsesTwoColumnsAtNormalFontAndStacksWhenScaled() {
+        val normal = WidgetSpace(320f, 250f, 1f)
+        assertTrue(normal.labeled)
+        assertTrue(normal.footer)
+        assertEquals(4, normal.supporting)
+        val expanded = render(normal)
+        assertTrue(expanded.wide)
+        assertTrue(expanded.supporting.lines().size <= 4)
+        val scaled = WidgetSpace(320f, 250f, 2f)
+        assertFalse(render(scaled).wide)
+        assertEquals(3, scaled.supporting)
+        assertEquals(0, WidgetSpace(40f, 40f, 2f).supporting)
+    }
+
+    @Test
+    fun lockedKeyguardAndScreenOffOmitHealthValues() {
+        val forbidden = listOf("72", "12.3", "7h", "12,000", "12k", "Recovery", "WHOOP", "Steps")
+        val rich = render(locked = true)
+        val text = widgetText(snapshot, "A", WidgetPrivacy.DETAILED, true, true, keys, now)
+        for (secret in forbidden) {
+            assertFalse(rich.toString().contains(secret))
+            assertFalse(rich.description.contains(secret))
+            assertFalse(text.contains(secret))
+        }
+        assertEquals("Lock", rich.primary)
+        assertEquals("Unlock to view", text)
+    }
+
+    @Test
+    fun concealMatrixWithholdsMeasurementsAndScreenOnRestoresOnlyWhenUnlocked() {
+        val keyguard = AppWidgetProviderInfo.WIDGET_CATEGORY_KEYGUARD
+        assertTrue(widgetConcealsMeasurements(true, false, false, 0))
+        assertTrue(widgetConcealsMeasurements(false, true, false, 0))
+        assertTrue(widgetConcealsMeasurements(false, false, true, 0))
+        assertTrue(widgetConcealsMeasurements(false, false, false, keyguard))
+        assertFalse(widgetConcealsMeasurements(false, false, false, AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN))
+        assertFalse(displaysAreOff(null))
+        assertFalse(displaysAreOff(intArrayOf()))
+        assertFalse(displaysAreOff(intArrayOf(Display.STATE_ON)))
+        assertTrue(displaysAreOff(intArrayOf(Display.STATE_OFF, Display.STATE_OFF)))
+        assertTrue(concealAfterScreenBroadcast(Intent.ACTION_SCREEN_OFF, false, false, false))
+        assertTrue(concealAfterScreenBroadcast(Intent.ACTION_SCREEN_ON, false, true, true))
+        assertFalse(concealAfterScreenBroadcast(Intent.ACTION_SCREEN_ON, false, false, true))
+        assertFalse(concealAfterScreenBroadcast(Intent.ACTION_USER_PRESENT, false, false, true))
+        assertTrue(concealAfterScreenBroadcast(Intent.ACTION_USER_PRESENT, true, false, true))
+        assertTrue(concealAfterScreenBroadcast("android.intent.action.BOOT_COMPLETED", false, false, true))
     }
 
     @Test
