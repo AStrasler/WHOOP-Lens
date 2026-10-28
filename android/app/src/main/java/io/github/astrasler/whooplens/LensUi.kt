@@ -42,6 +42,8 @@ internal class LensUi(val context: Context) {
     private val hand by lazy { context.resources.getFont(R.font.covered_by_your_grace) }
     private val surfaces by lazy { GlassSurface(context) }
 
+    fun applyElevation(view: View) = surfaces.applyElevation(view, appearance.mode)
+
     fun glassBackground(role: GlassRole, dashed: Boolean = false, edgeColor: Int? = null) =
         surfaces.background(role, appearance.mode, dashed, edgeColor)
 
@@ -400,7 +402,8 @@ internal class TrendChart(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val values = points.mapNotNull { it.value }
+        val drawableIndices = chartPointIndices(points)
+        val values = drawableIndices.map { points[it].value!! }
         if (values.isEmpty()) {
             paint.color = LensColors.muted
             paint.textSize = 14 * resources.displayMetrics.scaledDensity
@@ -447,7 +450,7 @@ internal class TrendChart(
         var open = false
         points.forEachIndexed { i, p ->
             val v = p.value
-            if (v == null) open = false
+            if (v == null || !v.isFinite()) open = false
             else if (bars) {
                 paint.strokeWidth = max(4f, w / max(1, points.size) * .62f)
                 canvas.drawLine(x(i), inset + h, x(i), y(v), paint)
@@ -459,6 +462,9 @@ internal class TrendChart(
         if (!bars) canvas.drawPath(path, paint)
         paint.pathEffect = null
         paint.style = Paint.Style.FILL
+        if (!bars) drawableIndices.forEach { i ->
+            canvas.drawCircle(x(i), y(points[i].value!!), 3.5f * resources.displayMetrics.density, paint)
+        }
         paint.color = LensColors.muted
         paint.textSize = 12f * resources.displayMetrics.scaledDensity
         val axisFormat =
@@ -484,7 +490,7 @@ internal class TrendChart(
         paint.pathEffect = null
         paint.style = Paint.Style.FILL
         selected?.let { i ->
-            points[i].value?.let { v ->
+            points[i].value?.takeIf { it.isFinite() }?.let { v ->
                 canvas.drawCircle(x(i), y(v), 6 * resources.displayMetrics.density, paint)
             }
         }
