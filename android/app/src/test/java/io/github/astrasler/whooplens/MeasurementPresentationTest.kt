@@ -89,4 +89,33 @@ class MeasurementPresentationTest {
         val metric = steps("2026-10-28")
         assertTrue(metricIsStale(metric, DataBatch(DataSource.HEALTH_CONNECT, now - 13 * 3600000L), now))
     }
+
+    @Test fun failedDailyReadCannotBorrowOtherMetricsNewRefreshTime() {
+        val midnight = Instant.ofEpochMilli(now).atZone(ZoneId.systemDefault()).toLocalDate()
+            .atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val metric = steps("2026-10-28").copy(measuredAt = midnight)
+        val batch = DataBatch(DataSource.HEALTH_CONNECT, now, listOf(metric),
+            notices = listOf("Steps could not be read. Check permission and retry."), complete = false)
+        val cached = DashboardCodec.decode(DashboardCodec.encode(DashboardSnapshot("A", health = batch)), "A")!!
+        assertNull(metricUpdatedAt(cached.health!!.metric("steps"), cached.health))
+        assertNull(dashboardUpdatedAt("steps", metric, batch))
+        assertTrue(metricIsStale(metric, batch, now))
+        val result = widgetPresentation(cached, "A", WidgetPrivacy.DETAILED, false,
+            listOf("steps"), WidgetSpace(320f, 160f), now)
+        assertTrue(result.stale)
+        assertTrue(result.description.contains("time unavailable"))
+        assertFalse(result.description.contains(dateTime(now)))
+        assertNull(result.badge) // The old successful refresh time is not in this snapshot; don't invent it.
+        val legacy = widgetText(cached, "A", WidgetPrivacy.DETAILED, false, false, listOf("steps"), now)
+        assertTrue(legacy.contains("Saved refresh time unavailable"))
+        assertFalse(legacy.contains(dateTime(now)))
+    }
+
+    @Test fun aDifferentCategoryFailureDoesNotHideSuccessfulStepsRefresh() {
+        val metric = steps("2026-10-28")
+        val batch = DataBatch(DataSource.HEALTH_CONNECT, now, listOf(metric),
+            notices = listOf("Active energy could not be read. Check permission and retry."), complete = false)
+        assertEquals(now, metricUpdatedAt(metric, batch))
+        assertFalse(dailyTotalRefreshFailed(metric, batch))
+    }
 }

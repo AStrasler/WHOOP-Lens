@@ -51,7 +51,7 @@ internal fun dashboardPeriodLabel(
 }
 
 internal fun dashboardUpdatedAt(key: String, metric: Metric?, batch: DataBatch?): Long? =
-    if (key == "steps") batch?.fetchedAt else metric?.measuredAt
+    if (key == "steps") metricUpdatedAt(metric, batch) else metric?.measuredAt
 
 /** Shared by the chart gate and renderer so isolated observations always get a mark. */
 internal fun chartPointIndices(points: List<Point>): List<Int> =

@@ -182,12 +182,13 @@ internal fun widgetText(
             .values
             .joinToString("") { pairs ->
                 val b = pairs.first().first
-                val measured = pairs.mapNotNull { metricUpdatedAt(it.second, b) }.minOrNull() ?: b.fetchedAt
+                val times = pairs.map { metricUpdatedAt(it.second, b) }
+                val measured = if (times.any { it == null }) null else times.filterNotNull().minOrNull()
                 "\n" +
                     b.source.label +
                     " · " +
                     (if (pairs.any { metricIsStale(it.second, b, now) }) "Saved " else "Read ") +
-                    dateTime(measured)
+                    (measured?.let(::dateTime) ?: "refresh time unavailable")
             }
 }
 

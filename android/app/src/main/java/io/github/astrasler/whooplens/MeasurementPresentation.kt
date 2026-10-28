@@ -8,8 +8,15 @@ import java.time.format.DateTimeFormatter
 internal fun isDailyTotal(metric: Metric?) =
     metric?.source == DataSource.HEALTH_CONNECT && metric.key in setOf("steps", "distance", "energy", "floors")
 
+/** A partial refresh can retain a previous metric under the new batch timestamp. */
+internal fun dailyTotalRefreshFailed(metric: Metric?, batch: DataBatch?): Boolean =
+    isDailyTotal(metric) && batch?.notices?.any {
+        it.startsWith("${metric?.title} could not be read.")
+    } == true
+
 internal fun metricUpdatedAt(metric: Metric?, batch: DataBatch?): Long? =
-    if (isDailyTotal(metric)) batch?.fetchedAt else metric?.measuredAt ?: batch?.fetchedAt
+    if (dailyTotalRefreshFailed(metric, batch)) null
+    else if (isDailyTotal(metric)) batch?.fetchedAt else metric?.measuredAt ?: batch?.fetchedAt
 
 internal fun dailyTotalPeriodLabel(
     metric: Metric?,
@@ -25,6 +32,7 @@ internal fun dailyTotalPeriodLabel(
 
 internal fun metricIsStale(metric: Metric?, batch: DataBatch?, now: Long): Boolean {
     if (batch == null) return false
+    if (dailyTotalRefreshFailed(metric, batch)) return true
     val updatedAt = metricUpdatedAt(metric, batch) ?: return batch.stale(now)
     return batch.stale(now) || now - updatedAt > 12 * 3600000L ||
         (isDailyTotal(metric) && dailyTotalPeriodLabel(metric, now) != "Today so far")
