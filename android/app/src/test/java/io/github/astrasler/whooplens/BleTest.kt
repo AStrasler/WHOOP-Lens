@@ -649,5 +649,5 @@ class BleTest {
         generateSequence(File("").absoluteFile) { it.parentFile }
             .first { File(it, "android/app/src/main/AndroidManifest.xml").isFile }
 
-    private fun repoFile(relative: String) = File(repoRoot(), relative).readText()
+    private fun repoFile(relative: String) = File(repoRoot(), relative).readText().replace("\r\n", "\n")
 }

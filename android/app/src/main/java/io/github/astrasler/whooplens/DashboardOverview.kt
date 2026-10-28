@@ -39,14 +39,19 @@ internal fun dashboardTrendLabel(trend: DashboardPercentTrend?): String = when {
     }
 }
 
-internal fun dashboardPeriodLabel(key: String, trend: DashboardPercentTrend?): String = when (key) {
-    "steps" -> "Today so far"
+internal fun dashboardPeriodLabel(
+    key: String,
+    trend: DashboardPercentTrend?,
+    metric: Metric? = null,
+    now: Long = System.currentTimeMillis(),
+): String = when (key) {
+    "steps" -> dailyTotalPeriodLabel(metric, now)
     "strain" -> "Cycle in progress or completion unverified"
     else -> dashboardTrendLabel(trend)
 }
 
 internal fun dashboardUpdatedAt(key: String, metric: Metric?, batch: DataBatch?): Long? =
-    if (key == "steps") batch?.fetchedAt else metric?.measuredAt
+    if (key == "steps") metricUpdatedAt(metric, batch) else metric?.measuredAt
 
 /** Shared by the chart gate and renderer so isolated observations always get a mark. */
 internal fun chartPointIndices(points: List<Point>): List<Int> =

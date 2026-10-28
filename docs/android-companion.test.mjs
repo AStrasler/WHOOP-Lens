@@ -152,3 +152,17 @@ test('Widgets remain cache-only consumers and resize/background callbacks update
   assert.match(main,/LensWidgets\.updateAll/);
   assert.match(widget,/FLAG_IMMUTABLE/);
 });
+
+test("Widget layouts declare valid autosize ranges for native inflation", () => {
+  // Confirmed on One UI: uniform TextView inflation throws if max <= min.
+  for (const name of ["lens_widget_preview", "lens_widget_responsive", "lens_widget_wide"]) {
+    const layout = read(`../android/app/src/main/res/layout/${name}.xml`);
+    for (const match of layout.matchAll(/<TextView\b[^>]*>/g)) {
+      const view = match[0];
+      if (!view.includes('android:autoSizeTextType="uniform"')) continue;
+      const min = Number(view.match(/android:autoSizeMinTextSize="([\d.]+)sp"/)?.[1]);
+      const max = Number(view.match(/android:autoSizeMaxTextSize="([\d.]+)sp"/)?.[1]);
+      assert.ok(Number.isFinite(min) && min > 0 && max > min, `${name}: invalid autosize range`);
+    }
+  }
+});

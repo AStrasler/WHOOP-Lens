@@ -44,7 +44,7 @@ class GlassDashboardStatsTest {
         val steps = metric(12345.0, 0L).copy(key = "steps", source = DataSource.HEALTH_CONNECT)
         val batch = DataBatch(DataSource.HEALTH_CONNECT, 123456L, listOf(steps))
         assertNull(dashboardPercentTrend(steps, listOf(Point(-86400000L, 20000.0))))
-        assertEquals("Today so far", dashboardPeriodLabel("steps", null))
+        assertEquals("Today so far", dashboardPeriodLabel("steps", null, steps, 0L))
         assertEquals(123456L, dashboardUpdatedAt("steps", steps, batch))
         assertNull(dashboardUpdatedAt("steps", steps, null))
     }

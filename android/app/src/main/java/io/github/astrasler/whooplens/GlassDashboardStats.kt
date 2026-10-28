@@ -93,10 +93,11 @@ internal object GlassDashboardStats {
         val batch = if (spec.source == DataSource.WHOOP) snapshot?.whoop else snapshot?.health
         val metric = batch?.metric(spec.key)
         val trend = dashboardPercentTrend(metric, batch?.series?.get(spec.key).orEmpty())
-        val trendLabel = dashboardPeriodLabel(spec.key, trend)
+        val now = System.currentTimeMillis()
+        val trendLabel = dashboardPeriodLabel(spec.key, trend, metric, now)
         val updatedAt = dashboardUpdatedAt(spec.key, metric, batch)
         val freshness = updatedAt?.let { "Updated " + dateTime(it) } ?: "Update time unavailable"
-        val isStale = batch?.stale(System.currentTimeMillis()) == true
+        val isStale = metricIsStale(metric, batch, now)
         val tile = ui.column(14).apply {
             minimumHeight = ui.dp(184)
             background = ui.glassBackground(
@@ -146,7 +147,7 @@ internal object GlassDashboardStats {
         )
 
         val comparison = trend?.let { "Compared with " + dateTime(it.previousAt) }
-            ?: if (spec.key == "strain") "No cycle comparison" else if (spec.key == "steps") "Daily total is partial" else "Prior record must be within 48 hours"
+            ?: if (spec.key == "strain") "No cycle comparison" else if (spec.key == "steps") "Daily total · no percentage comparison" else "Prior record must be within 48 hours"
         ui.add(tile, ui.text(comparison, 12f, LensColors.muted), 4)
         val status = if (isStale) "Stale" else if (batch == null) "Not refreshed" else "Cached snapshot"
         ui.add(tile, ui.text(spec.source.label + " · " + freshness + " · " + status,

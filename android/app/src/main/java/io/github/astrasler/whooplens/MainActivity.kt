@@ -1122,9 +1122,11 @@ class MainActivity : ComponentActivity() {
                         ui.heading(c, "Activity")
                         ui.chip(c, DataSource.HEALTH_CONNECT)
                         val steps = metric("steps", DataSource.HEALTH_CONNECT)
-                        ui.add(c, ui.text("Today so far", 12f, LensColors.muted))
-                        snapshot?.health?.fetchedAt?.let {
-                            ui.add(c, ui.text("Updated " + dateTime(it), 12f, LensColors.label))
+                        ui.add(c, ui.text(dailyTotalPeriodLabel(steps, System.currentTimeMillis()), 12f, LensColors.muted))
+                        snapshot?.health?.let { batch ->
+                            val refreshed = metricUpdatedAt(steps, batch)
+                            ui.add(c, ui.text(refreshed?.let { "Updated " + dateTime(it) }
+                                ?: "Refresh time unavailable", 12f, LensColors.label))
                         }
                         ui.add(
                             c,

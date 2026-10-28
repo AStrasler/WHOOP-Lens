@@ -98,7 +98,7 @@ internal fun widgetPresentation(
     val metric = first?.second
     val stale =
         selected.take(1 + space.supporting).any { (b, m) ->
-            b != null && (b.stale(now) || now - (m?.measuredAt ?: b.fetchedAt) > 12 * 3600000L)
+            metricIsStale(m, b, now)
         }
     val label =
         metric?.title ?: keys.firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "WhoopLens"
@@ -137,13 +137,9 @@ internal fun widgetPresentation(
                     ". " +
                     (b?.source?.label ?: m.source.label) +
                     ". " +
-                    (if (
-                        b?.stale(now) == true ||
-                            now - (m.measuredAt ?: b?.fetchedAt ?: now) > 12 * 3600000L
-                    )
-                        "Saved "
-                    else "Read ") +
-                    dateTime(m.measuredAt ?: b?.fetchedAt ?: now)
+                    (if (metricIsStale(m, b, now)) "Saved " else "Read ") +
+                    (metricUpdatedAt(m, b)?.let(::dateTime) ?: "time unavailable") +
+                    (if (isDailyTotal(m)) ". " + dailyTotalPeriodLabel(m, now) else "")
         }
     val sourceLabel =
         selected
@@ -152,13 +148,14 @@ internal fun widgetPresentation(
             .distinct()
             .joinToString(" + ")
             .ifEmpty { "Not shared" }
-    val measuredAt = metric?.measuredAt ?: first?.first?.fetchedAt
+    val measuredAt = metricUpdatedAt(metric, first?.first)
     val source = first?.first?.source
     return WidgetPresentation(
         if (space.labeled) label else "",
         primary,
         supporting,
-        if (space.footer) (if (stale) "Saved · " else "") + sourceLabel else "",
+        if (space.footer) (if (stale) "Saved · " else "") +
+            (if (isDailyTotal(metric)) dailyTotalPeriodLabel(metric, now) + " · " else "") + sourceLabel else "",
         label + ": " + exact + ". " + allDescription + ". Tap to open WhoopLens.",
         stale,
         space.width >= 260 * space.fontScale && space.height >= 110,
