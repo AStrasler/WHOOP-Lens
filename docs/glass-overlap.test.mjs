@@ -68,7 +68,7 @@ test("Liquid glass keeps the merged repair contracts", () => {
   assert.match(credits, /COVERED-BY-YOUR-GRACE-OFL\.txt/);
   assert.match(gradle, /applicationId = "io\.github\.astrasler\.whooplens"/);
   assert.match(gradle, /versionCode = 7/);
-  assert.match(gradle, /versionName = "0\.4\.0-beta\.2"/);
+  assert.match(gradle, /versionName = "0\.5\.0-beta\.1"/);
   assert.match(uploads, /const val ENABLE_UPLOADS = false/);
   assert.match(manifest, /android:name="android\.permission\.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/);
   assert.match(manifest, /android:name="android\.permission\.USE_BIOMETRIC"/);
