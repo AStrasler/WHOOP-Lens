@@ -1003,16 +1003,9 @@ class MainActivity : ComponentActivity() {
         b.notices.forEach { ui.add(root, ui.text(it, 12f, LensColors.amber)) }
     }
 
-    private val defaultCards =
-        listOf("Recovery", "Strain", "Sleep", "Activity", "Vitals", "Sources")
+    private val defaultCards = defaultHomeCards
 
-    private fun cardOrder() =
-        prefs
-            .getString("home-order", defaultCards.joinToString(","))!!
-            .split(',')
-            .filter { it in defaultCards }
-            .distinct()
-            .let { it + defaultCards.filterNot(it::contains) }
+    private fun cardOrder() = homeCardOrder(prefs.getString("home-order", null))
 
     private fun renderNoticeBanner(root: LinearLayout) {
         val banner = ServiceAnnouncements.banner(visibleNotices().filter { it.id !in dismissedNotices }) ?: return
@@ -1050,10 +1043,16 @@ class MainActivity : ComponentActivity() {
         freshness(root, snapshot?.whoop)
         freshness(root, snapshot?.health)
         val hidden = prefs.getStringSet("home-hidden", emptySet()).orEmpty()
-        val visible = cardOrder().filterNot { it in hidden }
+        val visible = visibleHomeCards(cardOrder(), hidden)
         visible.forEachIndexed { index, key ->
             if (key == "Sleep" && visible.getOrNull(index - 1) == "Strain") return@forEachIndexed
             when (key) {
+                "Overview" -> GlassDashboardStats.render(root, ui, snapshot) { metricKey, source ->
+                    detail = metricKey
+                    detailSource = source
+                    rangeDays = 7
+                    render()
+                }
                 "Recovery" ->
                     ui.card(root) { c ->
                         val m = metric("recovery", DataSource.WHOOP)
@@ -1123,6 +1122,10 @@ class MainActivity : ComponentActivity() {
                         ui.heading(c, "Activity")
                         ui.chip(c, DataSource.HEALTH_CONNECT)
                         val steps = metric("steps", DataSource.HEALTH_CONNECT)
+                        ui.add(c, ui.text("Today so far", 12f, LensColors.muted))
+                        snapshot?.health?.fetchedAt?.let {
+                            ui.add(c, ui.text("Updated " + dateTime(it), 12f, LensColors.label))
+                        }
                         ui.add(
                             c,
                             ui.text(
@@ -1130,7 +1133,12 @@ class MainActivity : ComponentActivity() {
                                 if (steps?.value == null) 16f else 32f,
                                 bold = steps?.value != null,
                                 role = if (steps?.value == null) TextRole.BODY else TextRole.MONO,
-                            ),
+                            ).apply {
+                                setSingleLine(true)
+                                setHorizontallyScrolling(false)
+                                ellipsize = android.text.TextUtils.TruncateAt.END
+                                setAutoSizeTextTypeUniformWithConfiguration(12, 32, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
+                            },
                         )
                         ui.add(
                             c,
