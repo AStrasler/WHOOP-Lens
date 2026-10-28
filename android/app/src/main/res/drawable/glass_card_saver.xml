@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PROPOSAL. Battery saver / blur unavailable: frosted tint, no light catch. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><corners android:radius="@dimen/radius_card" /><solid android:color="@color/glass_tint_saver" /></shape></item>
+    <item><shape><corners android:radius="@dimen/radius_card" />
+        <gradient android:angle="315" android:startColor="#0DFFFFFF" android:endColor="#05FFFFFF" /></shape></item>
+    <item><shape><corners android:radius="@dimen/radius_card" /><stroke android:width="@dimen/glass_edge_width" android:color="@color/glass_edge" /></shape></item>
+</layer-list>

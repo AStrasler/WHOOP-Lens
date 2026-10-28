@@ -2,13 +2,21 @@
 
 Nothing here is approved. Each entry is an independent request; approving one approves nothing else. Releases are one PR at a time, in any order (all candidates merge cleanly with each other and with `main`; combined suites: cloudflare 517/0, provider 25/0, docs+supabase 84/0, site 6/0).
 
+## Retention schedule (current)
+
+The live `whoop-lens` cron is `17 9 * * *` (09:17 UTC). Only `cloudflare/oauth/resource/wrangler.jsonc` declares it, as `triggers.crons`. `cloudflare/wrangler.jsonc` (legacy staged, same Worker name) and `cloudflare/oauth/auth-server/wrangler.jsonc` declare no triggers.
+
+Per Cloudflare's Cron Triggers docs, `wrangler deploy` replaces previous schedules with `triggers.crons` when that property is set, removes them when `crons` is `[]`, and leaves them when `triggers` is omitted. A non-dry-run deploy of the resource config therefore replaces the live schedule with exactly `17 9 * * *`. A deploy of the legacy config leaves the schedule in place and is still forbidden, because that file is not the production config and a plain deploy overwrites bindings and flags.
+
+Do not pass `--triggers`, `--schedule`, or `--schedules`, and do not run `wrangler triggers deploy`. Those commands replace the attached cron list. Production code updates stay on `cloudflare/scripts/release-worker-content.mjs`, which PUTs only `/content` and does not call `/schedules`.
+
 ## Common procedure (resource Worker `whoop-lens`)
 1. Owner approval for the specific entry. Merge that PR only.
 2. **Pre snapshot:** capture read-only `GET …/workers/scripts/whoop-lens/settings` and `…/deployments` into `<pre.json>` as `{workers:[{name,settings,deployment}]}` (the format the script reads; it does not create snapshots). Confirm 38 bindings and record the current version id as the rollback target (as of 1:50 PM CT: `a2fd99ec…`, deployed 10:34 AM CT).
 3. **Build:** `cloudflare/node_modules/.bin/wrangler deploy --dry-run --config cloudflare/oauth/resource/wrangler.jsonc --outdir <dir>` at the merged commit; record sha256 of `<dir>/index.js`.
 4. **Dry run:** `release-worker-content.mjs --worker whoop-lens --snapshot <pre.json> --bundle <dir>/index.js`. It refuses if settings or the deployed version drifted from `<pre.json>`; the plan must show `bindingCount 38` and `rollbackVersion` = the recorded version.
 5. **Apply:** same command with `--apply`.
-6. **Post snapshot:** the script re-checks settings identity after upload; also capture a fresh snapshot, compare settings and all 38 bindings with `<pre.json>`; schedules still `[]` (except after the separate #96 schedule step).
+6. **Post snapshot:** the script re-checks settings identity after upload; also capture a fresh snapshot, compare settings and all 38 bindings with `<pre.json>`. The content upload must leave schedules exactly `[{"cron":"17 9 * * *"}]`. See the retention schedule section above before any Wrangler command.
 7. **Smoke:** `GET https://whooplens.tech/.well-known/oauth-protected-resource` → 200; `POST /mcp` without a token → 401; plus the entry's own checks.
 8. **Rollback:** restore the recorded prior version through Cloudflare Deployments (dashboard, or `wrangler rollback <prior-version-id> --name whoop-lens`). The content script cannot redeploy an old version. Then repeat step 6–7 against `<pre.json>`.
 
@@ -43,7 +51,7 @@ Never plain `wrangler deploy`. No migration, secret, binding, route or DNS chang
 ### R5 — #96 schedule (separate, after R4)
 - **Current:** `GET …/workers/scripts/whoop-lens/schedules` → `[]` (read 1:50 PM CT; auth and site Workers also `[]`).
 - **Change:** `PUT …/workers/scripts/whoop-lens/schedules` body `[{"cron":"17 9 * * *"}]` — 09:17 UTC daily = 4:17 AM CDT, 3:17 AM CST after Nov 1. The PUT sets the full list (replaces, not appends), so repeating it is idempotent. Propagation up to 15 min.
-- **Persistence:** the release script uploads only `/content`; `wrangler.jsonc` declares no `triggers`, and Wrangler only replaces schedules when `triggers.crons` is declared. Risk: adding `triggers.crons` later would overwrite it.
+- **Persistence:** the release script uploads only `/content` and does not call `/schedules`. The Oct 25 note that no Wrangler file declared `triggers` is historical. The current rule is the retention schedule section above: the resource config now declares `17 9 * * *`, so a non-dry-run `wrangler deploy` of that config replaces the live schedule with that list. Do not pass `--triggers`, `--schedule`, or `--schedules`, and do not run `wrangler triggers deploy`.
 - **Safety:** conditional bounded deletes; rerun deletes only what is still past cutoff; a D1 error stops with `{"event":"retention","ok":false}` and the next day retries; health tables never written.
 - **Verify:** GET shows the cron; next run logs `{"event":"retention","ok":true,…}`; counts of diagnostics >30 d and resolved reports >180 d are 0; health table counts unchanged.
 - **Rollback:** PUT `[]`, GET `[]`.

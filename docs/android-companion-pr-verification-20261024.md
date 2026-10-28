@@ -52,6 +52,8 @@ refresh over time; every Samsung One UI widget dimension and resizing combinatio
 every tap action; lock-screen widget compatibility; cloud synchronization.
 Samsung hardware Keystore security level was not independently attested. The
 existing lock-screen provider declaration alone does not establish One UI support.
+Issue #102 follows up on that limit: the app no longer describes a lock-screen
+widget, and the phone checklist is `docs/android-s26-ultra-widgets.md`.
 
 ## Final automated results
 

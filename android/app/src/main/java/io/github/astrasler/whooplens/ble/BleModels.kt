@@ -11,13 +11,12 @@ internal data class BleCandidate(val id: String, val name: String, val family: S
     companion object {
         fun identify(id: String, name: String?, services: Set<String>): BleCandidate? {
             val clean = name.orEmpty().filter { !it.isISOControl() }.take(40)
-            val uuids = services.map { it.lowercase() }.toSet()
+            val observed = StrapObservation.fromAdvertisement(services)
             val family =
-                when {
-                    WHOOP4_SERVICE in uuids -> "4.0 service family (model unverified)"
-                    WHOOP5_SERVICE in uuids -> "5.0 / MG service family (model unverified)"
-                    clean.uppercase().startsWith("WHOOP") -> "Unknown generation; name match only"
-                    else -> return null
+                when (observed.product) {
+                    ProductCall.NOT_A_CANDIDATE ->
+                        if (clean.uppercase().startsWith("WHOOP")) LABEL_NAME_ONLY else return null
+                    else -> observed.label
                 }
             return BleCandidate(id, clean.ifBlank { "WHOOP candidate" }, family)
         }

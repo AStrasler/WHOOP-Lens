@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PROPOSAL. Reduced transparency: solid, no gradients. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="@dimen/radius_card" />
+    <solid android:color="@color/glass_solid_reduced" />
+    <stroke android:width="@dimen/glass_edge_width" android:color="@color/glass_edge_reduced" />
+</shape>

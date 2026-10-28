@@ -5,6 +5,10 @@
   "compatibility_date": "2026-10-11",
   "workers_dev": false,
   "preview_urls": false,
+  // Live retention cron, 09:17 UTC (issue #104). A non-dry-run wrangler deploy of THIS file
+  // replaces whoop-lens schedules with this list. The legacy staged config and the auth
+  // Worker must not declare triggers. Do not pass --triggers or run `wrangler triggers deploy`.
+  "triggers": { "crons": ["17 9 * * *"] },
   "observability": { "enabled": true },
   "vars": {
     "NOTION_ENABLED": "false",
@@ -19,6 +23,7 @@
     "STRESS_ESTIMATE_ENABLED": "false",
     "WEEKLY_DIGEST_ENABLED": "false",
     "FLARE_JOURNAL_ENABLED": "false",
+    "ANNOUNCEMENTS_ENABLED": "false",
     "WHOOP_REDIRECT_URI": "https://whooplens.tech/api/whoop/callback"
   },
   "ai": { "binding": "AI" },

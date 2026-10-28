@@ -43,6 +43,7 @@ internal fun renderOpenSourceCredits(ui: LensUi, root: LinearLayout) {
             "Health Connect external protobuf · BSD" to "licenses/health-connect-protobuf-BSD.txt",
             "Inter font" to "INTER-OFL.txt",
             "JetBrains Mono font" to "JETBRAINS-MONO-OFL.txt",
+            "Covered By Your Grace font" to "COVERED-BY-YOUR-GRACE-OFL.txt",
         )
         .forEach { (title, path) ->
             ui.card(root) { card ->
@@ -64,7 +65,7 @@ internal fun renderOpenSourceCredits(ui: LensUi, root: LinearLayout) {
                 ui.context.assets.open("licenses/dependencies.json").bufferedReader().use {
                     it.readText()
                 },
-                11f,
+                12f,
                 LensColors.muted,
             ),
         )

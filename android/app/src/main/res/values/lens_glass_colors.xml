@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PROPOSAL — design handoff, not applied. Liquid glass v2 palette. -->
+<resources>
+    <!-- Ground -->
+    <color name="lens_ground">#06090B</color>
+    <color name="lens_ground_top">#0A1219</color>
+    <color name="lens_ground_reduced">#0A1215</color>
+    <!-- Text (worst-case contrast on glass in comments) -->
+    <color name="lens_text">#F2F8F8</color>            <!-- 9.9:1 -->
+    <color name="lens_text_secondary">#C3D4D4</color>  <!-- 6.9:1 -->
+    <color name="lens_label">#A9C0C1</color>           <!-- 5.6:1 -->
+    <!-- Sources and status -->
+    <color name="lens_whoop">#8FF3EA</color>           <!-- 8.2:1 -->
+    <color name="lens_teal_fill">#4FD8CF</color>
+    <color name="lens_teal_deep">#23807A</color>
+    <color name="lens_health_connect">#F2DDB2</color>  <!-- 8.0:1 -->
+    <color name="lens_stale">#FFCB8F</color>           <!-- 7.2:1 -->
+    <color name="lens_error">#FFC7BD</color>           <!-- 7.2:1, also Direct BLE -->
+    <color name="lens_on_teal">#03201F</color>
+    <!-- Glass surface -->
+    <color name="glass_tint">#94121B1F</color>         <!-- rgba(18,27,31,.58) -->
+    <color name="glass_tint_top_bar">#D1121B1F</color> <!-- .82, no live blur -->
+    <color name="glass_tint_saver">#E0141E22</color>   <!-- rgba(20,30,34,.88) -->
+    <color name="glass_solid_reduced">#152227</color>
+    <color name="glass_edge">#29CDDEE2</color>         <!-- rgba(205,222,226,.16) -->
+    <color name="glass_edge_reduced">#26383E</color>
+    <color name="glass_sheen_start">#13FFFFFF</color>  <!-- 7.5% -->
+    <color name="glass_sheen_mid">#05FFFFFF</color>    <!-- 2% -->
+    <color name="glass_sheen_end">#09FFFFFF</color>    <!-- 3.5% -->
+    <color name="glass_light_catch">#17FFFFFF</color>  <!-- 9% -->
+    <color name="glass_highlight">#29E6F5F6</color>    <!-- inset top .16 -->
+    <color name="glass_shadow">#61000000</color>       <!-- 38% -->
+    <!-- Aurora (static, pre-blurred) -->
+    <color name="aurora_blue">#423C5096</color>        <!-- rgba(60,80,150,.26) -->
+    <color name="aurora_teal">#38309696</color>        <!-- rgba(48,150,150,.22) -->
+</resources>

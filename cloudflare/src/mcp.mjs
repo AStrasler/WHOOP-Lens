@@ -17,6 +17,7 @@ import {SeatsFull} from './seat-limit.mjs';
 import {memberLimitMessage} from './member-rate-limit.mjs';
 import {capture,classifyToolError,newRequestId,validRequestId,toolSubsystem} from './diagnostics.mjs';
 import {issueToolsFor,issueArguments,reportIssue,reviewIssueReports,updateIssueReport,ReportNotSubmitted} from './issue-reports.mjs';
+import {announcementToolsFor,announcementArguments,runAnnouncementTool,isAnnouncementTool,AnnouncementRejected,ANNOUNCEMENT_OWNER_TOOLS} from './announcements.mjs';
 // Private WhoopLens MCP on Cloudflare. Supabase whoop-mcp stays up in parallel.
 // The HTTP router MUST validate the bearer and ACTIVE membership before calling
 // this module. Do not copy WHOOP refresh tokens from Supabase.
@@ -112,7 +113,10 @@ const weeklyDigestTool=Object.freeze({
 });
 function listedTools(env,userId){
   const issueTools=[...issueToolsFor(env,userId),...errorReportToolsFor(env,userId)];
-  const tools=issueTools.length?[...baseListedTools(env),...issueTools]:baseListedTools(env);
+  const notices=announcementToolsFor(env,userId);
+  let tools=baseListedTools(env);
+  if(issueTools.length)tools=[...tools,...issueTools];
+  if(notices.length)tools=[...tools,...notices];
   return notionEnabled(env)?[...tools,...notionTools]:tools;
 }
 function baseListedTools(env){
@@ -129,6 +133,7 @@ function baseListedTools(env){
   return tools;
 }
 function optionalTool(name,env,userId){
+  if(isAnnouncementTool(name))return announcementToolsFor(env,userId).some(t=>t.name===name);
   if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name);
   if(isNotionTool(name))return notionEnabled(env);
   if(issueToolsFor(env,userId).some(t=>t.name===name))return true;
@@ -156,6 +161,7 @@ function toolError(id,message,modern) {
 }
 function checkArguments(name,args,env,userId) {
   if(!isObject(args))return null;
+  if(isAnnouncementTool(name))return announcementToolsFor(env,userId).some(t=>t.name===name)?announcementArguments(name,args):null;
   if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name)?errorReportArguments(name,args):null;
   if(isNotionTool(name))return notionEnabled(env)?notionArguments(name,args):null;
   if(issueToolsFor(env,userId).some(t=>t.name===name))return issueArguments(name,args);
@@ -319,6 +325,8 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       data={kind:digest.kind,week_ending:digest.week_ending,period:digest.period,
         text:digest.text,chart_data:digest.chart_data,insights:digest.insights,
         status:digest.status,cached:digest.cached===true};
+    }else if(isAnnouncementTool(name)){
+      data=await runAnnouncementTool(name,args,{db,userId,env});
     }else if(name==="report_issue"){
       data=await reportIssue(db,userId,args,{requestId,env});
     }else if(name==="review_issue_reports"){
@@ -332,7 +340,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
         // Never advertise owner-only controls to ordinary members.
         data.tool_permissions=listedTools(env,userId).map(tool=>({
           tool:tool.name,allowed_use:tool.description,
-          owner_only:['get_reportable_links','review_issue_reports','update_issue_report'].includes(tool.name),
+          owner_only:['get_reportable_links','review_issue_reports','update_issue_report',...ANNOUNCEMENT_OWNER_TOOLS].includes(tool.name),
           read_only_hint:tool.annotations?.readOnlyHint===true,
           destructive_hint:tool.annotations?.destructiveHint===true
         }));
@@ -364,6 +372,11 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
     if(modern){result.resultType="complete";result.structuredContent=data;}
     return ok(id,result);
   }catch(error){
+    if(error instanceof AnnouncementRejected){
+      await capture(env,db,{category:'mcp_tool',subsystem:'announcements',code:'announcement_'+error.reason,
+        outcome:'fail',retryable:error.reason==='unavailable',requestId,userId});
+      return toolError(id,error.message,modern);
+    }
     const kind=classifyToolError(error,name);
     if(!(error instanceof ReportNotSubmitted))
       await capture(env,db,{...kind,outcome:"fail",requestId,userId});

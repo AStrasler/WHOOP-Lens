@@ -259,7 +259,20 @@ class DesignReviewInstrumentation : Instrumentation() {
                         info.maxResizeWidth > info.minResizeWidth &&
                         info.maxResizeHeight > info.minResizeHeight
                 )
-                check(info.previewLayout == R.layout.lens_widget_responsive)
+                check(info.previewLayout == R.layout.lens_widget_preview)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= 36) {
+                for (type in LensWidgets.profiles.keys) {
+                    val info = providers.single { it.provider.className == type.name }
+                    check(
+                        (info.widgetCategory and
+                            android.appwidget.AppWidgetProviderInfo.WIDGET_CATEGORY_NOT_KEYGUARD) != 0
+                    ) { type.simpleName + " missing not_keyguard" }
+                    check(
+                        (info.widgetCategory and
+                            android.appwidget.AppWidgetProviderInfo.WIDGET_CATEGORY_KEYGUARD) == 0
+                    ) { type.simpleName + " still opts into keyguard" }
+                }
             }
             var widgetRenders = 0
             for ((type, keys) in
@@ -282,7 +295,7 @@ class DesignReviewInstrumentation : Instrumentation() {
                                 "2x1" to (150 to 72),
                                 "2x2" to (150 to 160),
                                 "4x1" to (320 to 72),
-                                "4x2" to (320 to 160),
+                                "4x2" to (320 to 250),
                             )) {
                             runOnMainSync {
                                 val config =

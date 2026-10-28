@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PROPOSAL. Amber age badge, shown only when data is older than 12 h. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <corners android:radius="999dp" />
+    <solid android:color="@color/lens_stale" />
+</shape>

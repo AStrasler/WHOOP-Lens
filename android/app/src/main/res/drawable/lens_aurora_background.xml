@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PROPOSAL. Static aurora; already soft, so cards over it read as frosted without live blur. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><gradient android:angle="270" android:startColor="@color/lens_ground_top" android:endColor="@color/lens_ground" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0.8" android:centerY="0.04" android:gradientRadius="90%p" android:startColor="@color/aurora_blue" android:endColor="#00000000" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0" android:centerY="0.45" android:gradientRadius="80%p" android:startColor="@color/aurora_teal" android:endColor="#00000000" /></shape></item>
+</layer-list>

@@ -3,6 +3,7 @@ package io.github.astrasler.whooplens
 import android.app.*
 import android.appwidget.*
 import android.content.*
+import android.hardware.display.DisplayManager
 import android.os.Bundle
 import android.util.SizeF
 import android.view.View
@@ -39,6 +40,7 @@ class ExpandedWidget : LensWidget()
 class PrivateLockWidget : LensWidget()
 
 internal object LensWidgets {
+    @Volatile internal var screenConcealed: Boolean = false
     internal fun widgetViews(
         context: Context,
         text: String,
@@ -108,6 +110,25 @@ internal object LensWidgets {
             R.id.widget_body,
             if (content.stale) LensColors.amber else LensColors.text,
         )
+        if (!content.wide) {
+            views.setTextViewText(R.id.widget_source, content.glyph)
+            views.setViewVisibility(
+                R.id.widget_source,
+                if (content.glyph.isEmpty()) View.GONE else View.VISIBLE,
+            )
+            views.setTextViewText(R.id.widget_badge, content.badge ?: "")
+            views.setViewVisibility(
+                R.id.widget_badge,
+                if (content.badge.isNullOrEmpty()) View.GONE else View.VISIBLE,
+            )
+        }
+        if (content.healthConnectSurface) {
+            views.setInt(
+                R.id.widget_root,
+                "setBackgroundResource",
+                R.drawable.widget_surface_health_connect,
+            )
+        }
         return views
     }
 
@@ -120,13 +141,23 @@ internal object LensWidgets {
 
     fun render(context: Context, manager: AppWidgetManager, id: Int, type: Class<out LensWidget>) {
         val prefs = context.getSharedPreferences("dashboard-options", Context.MODE_PRIVATE)
-        val lock = context.getSystemService(KeyguardManager::class.java).isDeviceLocked
-        val lockSurface =
-            type == PrivateLockWidget::class.java ||
-                manager
-                    .getAppWidgetOptions(id)
-                    .getInt(AppWidgetManager.OPTION_APPWIDGET_HOST_CATEGORY) ==
-                    AppWidgetProviderInfo.WIDGET_CATEGORY_KEYGUARD
+        val options = manager.getAppWidgetOptions(id)
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        val conceal =
+            widgetConcealsMeasurements(
+                keyguard?.isDeviceLocked == true,
+                keyguard?.isKeyguardLocked == true,
+                screenConcealed ||
+                    displaysAreOff(
+                        context
+                            .getSystemService(DisplayManager::class.java)
+                            ?.displays
+                            ?.map { it.state }
+                            ?.toIntArray()
+                    ),
+                options.getInt(AppWidgetManager.OPTION_APPWIDGET_HOST_CATEGORY),
+            )
+        val nonNumeric = type == PrivateLockWidget::class.java
         val privacy =
             try {
                 WidgetPrivacy.valueOf(prefs.getString("widget-privacy", "SUMMARY")!!)
@@ -140,8 +171,7 @@ internal object LensWidgets {
             } catch (_: Exception) {
                 null
             }
-        val cache = if (!lock && account != null) DashboardRepository.read(context, auth) else null
-        val options = manager.getAppWidgetOptions(id)
+        val cache = if (!conceal && account != null) DashboardRepository.read(context, auth) else null
         val keys =
             profiles[type].orEmpty().filter {
                 it in prefs.getStringSet("widget-keys", profiles.values.flatten().toSet()).orEmpty()
@@ -160,11 +190,11 @@ internal object LensWidgets {
         fun clickable(view: RemoteViews) =
             view.apply { setOnClickPendingIntent(R.id.widget_root, open) }
         val views =
-            if (lockSurface) {
+            if (nonNumeric) {
                 clickable(
                     widgetViews(
                         context,
-                        widgetText(cache, account, privacy, lock, true, keys, now),
+                        widgetText(cache, account, privacy, conceal, true, keys, now),
                         true,
                         true,
                         false,
@@ -213,7 +243,15 @@ internal object LensWidgets {
                         clickable(
                             responsiveViews(
                                 context,
-                                widgetPresentation(cache, account, privacy, lock, keys, space, now),
+                                widgetPresentation(
+                                    cache,
+                                    account,
+                                    privacy,
+                                    conceal,
+                                    keys,
+                                    space,
+                                    now,
+                                ),
                             )
                         )
                     }
@@ -229,11 +267,20 @@ class LensApplication : Application() {
         registerReceiver(
             object : BroadcastReceiver() {
                 override fun onReceive(context: Context, intent: Intent) {
+                    val keyguard = context.getSystemService(KeyguardManager::class.java)
+                    LensWidgets.screenConcealed =
+                        concealAfterScreenBroadcast(
+                            intent.action,
+                            keyguard?.isDeviceLocked == true,
+                            keyguard?.isKeyguardLocked == true,
+                            LensWidgets.screenConcealed,
+                        )
                     LensWidgets.updateAll(context)
                 }
             },
             IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
             },
             Context.RECEIVER_NOT_EXPORTED,

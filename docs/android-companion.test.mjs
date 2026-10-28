@@ -94,14 +94,47 @@ test('Android production wiring persists sessions and excludes backup and transf
 test('All six home widgets declare compact picker previews and bounded two-axis resizing', () => {
   for (const name of ['daily', 'recovery', 'steps', 'sleep', 'vitals', 'expanded']) {
     const xml = read('../android/app/src/main/res/xml/widget_' + name + '.xml');
+    const v36 = read('../android/app/src/main/res/xml-v36/widget_' + name + '.xml');
     for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.match(xml, new RegExp('android:' + attr + '="1"'));
     for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.match(xml, new RegExp('android:' + attr + '="40dp"'));
     assert.match(xml, /maxResizeWidth="320dp"/);
-    assert.match(xml, /maxResizeHeight="160dp"/);
+    assert.match(xml, /maxResizeHeight="250dp"/);
     assert.match(xml, /resizeMode="horizontal\|vertical"/);
-    assert.match(xml, /previewLayout="@layout\/lens_widget_responsive"/);
+    assert.match(xml, /previewLayout="@layout\/lens_widget_preview"/);
     assert.match(xml, /initialLayout="@layout\/lens_widget_responsive"/);
+    assert.match(xml, /widgetCategory="home_screen"/);
+    assert.doesNotMatch(xml, /not_keyguard|initialKeyguardLayout|\|keyguard/);
+    assert.equal(v36.replace('home_screen|not_keyguard', 'home_screen'), xml);
+    assert.match(v36, /widgetCategory="home_screen\|not_keyguard"/);
   }
+  const preview = read('../android/app/src/main/res/layout/lens_widget_preview.xml');
+  assert.match(preview, /@string\/widget_missing_value/);
+  assert.match(preview, /textSize="18sp"/);
+  assert.doesNotMatch(preview, /72%|12,000|Recovery|steps/);
+  const strings = read('../android/app/src/main/res/values/strings.xml');
+  assert.doesNotMatch(strings, /lock-screen summary/i);
+  const activity = read('../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt');
+  assert.doesNotMatch(activity, /Lock-screen provider/);
+  assert.match(activity, /Measurements stay off the lock screen/);
+});
+
+test('No provider opts into the keyguard, including the status widget', () => {
+  for (const folder of ['xml', 'xml-v36']) {
+    const xml = read(`../android/app/src/main/res/${folder}/widget_private_lock.xml`);
+    assert.doesNotMatch(xml, /initialKeyguardLayout/);
+    assert.doesNotMatch(xml, /widgetCategory="[^"]*\|keyguard"|widgetCategory="keyguard"/);
+    assert.match(xml, /@string\/widget_private_lock_description/);
+  }
+  const base = read('../android/app/src/main/res/xml/widget_private_lock.xml');
+  const v36 = read('../android/app/src/main/res/xml-v36/widget_private_lock.xml');
+  assert.match(base, /widgetCategory="home_screen"/);
+  assert.doesNotMatch(base, /not_keyguard/);
+  assert.match(v36, /widgetCategory="home_screen\|not_keyguard"/);
+  const widgets = read('../android/app/src/main/java/io/github/astrasler/whooplens/LensWidgets.kt');
+  assert.match(widgets, /if \(!conceal && account != null\)/);
+  assert.match(widgets, /Intent\.ACTION_SCREEN_OFF/);
+  assert.match(widgets, /Intent\.ACTION_SCREEN_ON/);
+  assert.match(widgets, /screenConcealed =\s*\n\s*concealAfterScreenBroadcast/);
 });
 
 test('Widgets remain cache-only consumers and resize/background callbacks update current account views', () => {
@@ -113,7 +146,7 @@ test('Widgets remain cache-only consumers and resize/background callbacks update
   assert.match(widget,/configuration\.fontScale/);
   assert.match(widget,/override fun onAppWidgetOptionsChanged/);
   assert.match(widget,/DashboardRepository\.read\(context, auth\)/);
-  assert.match(widget,/if \(!lock && account != null\)/);
+  assert.match(widget,/if \(!conceal && account != null\)/);
   assert.doesNotMatch(widget,/refreshToken|readRecords|insertRecords|deleteRecords|HttpURLConnection/);
   assert.match(worker,/LensWidgets\.updateAll/);
   assert.match(main,/LensWidgets\.updateAll/);

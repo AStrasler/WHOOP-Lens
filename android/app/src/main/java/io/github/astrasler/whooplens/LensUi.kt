@@ -11,25 +11,41 @@ import android.widget.*
 import androidx.core.view.ViewCompat
 import kotlin.math.*
 
+internal enum class TextRole { HAND, BODY, MONO }
+
 internal object LensColors {
-    val background = Color.rgb(11, 20, 24)
-    val top = Color.rgb(15, 28, 33)
-    val card = Color.rgb(19, 34, 40)
+    val background = GlassTokens.ground
+    val top = GlassTokens.groundTop
+    val card = GlassTokens.solidReduced
     val inset = Color.rgb(14, 26, 30)
-    val edge = Color.rgb(30, 51, 58)
-    val text = Color.rgb(238, 246, 245)
-    val muted = Color.rgb(138, 163, 166)
-    val teal = Color.rgb(79, 216, 207)
-    val sand = Color.rgb(227, 207, 164)
-    val amber = Color.rgb(255, 184, 107)
-    val error = Color.rgb(255, 154, 139)
+    val edge = GlassTokens.edgeReduced
+    val text = GlassTokens.text
+    val muted = GlassTokens.textSecondary
+    val label = GlassTokens.label
+    val teal = GlassTokens.teal
+    val sand = GlassTokens.sand
+    val amber = GlassTokens.stale
+    val error = GlassTokens.error
+    val onTeal = Color.rgb(3, 32, 31)
 }
 
 internal class LensUi(val context: Context) {
+    var appearance: AppearanceState =
+        resolveAppearance(
+            AppearanceInputs(AppearanceChoice.AUTO, powerSave = false, blurAvailable = true, animatorScale = 1f)
+        )
+
     fun dp(n: Int) = (n * context.resources.displayMetrics.density + 0.5f).toInt()
 
     private val inter by lazy { context.resources.getFont(R.font.inter) }
     private val mono by lazy { context.resources.getFont(R.font.jetbrains_mono) }
+    private val hand by lazy { context.resources.getFont(R.font.covered_by_your_grace) }
+    private val surfaces by lazy { GlassSurface(context) }
+
+    fun glassBackground(role: GlassRole, dashed: Boolean = false, edgeColor: Int? = null) =
+        surfaces.background(role, appearance.mode, dashed, edgeColor)
+
+    fun blurBehind(content: View, open: Boolean) = surfaces.blurBehind(content, appearance, open)
 
     fun text(
         value: String,
@@ -37,20 +53,30 @@ internal class LensUi(val context: Context) {
         color: Int = LensColors.text,
         bold: Boolean = false,
         numbers: Boolean = false,
-    ) =
-        TextView(context).apply {
+        role: TextRole? = null,
+    ): TextView {
+        val requested = role ?: if (numbers) TextRole.MONO else TextRole.BODY
+        val resolved =
+            if (requested == TextRole.HAND && (size < 20f || value.any { it.isDigit() })) TextRole.BODY
+            else requested
+        return TextView(context).apply {
             text = value
-            textSize = size
+            textSize = if (resolved == TextRole.HAND) size.coerceAtLeast(20f) else size.coerceAtLeast(12f)
             setTextColor(color)
             typeface =
                 Typeface.create(
-                    if (numbers) mono else inter,
-                    if (bold) Typeface.BOLD else Typeface.NORMAL,
+                    when (resolved) {
+                        TextRole.HAND -> hand
+                        TextRole.MONO -> mono
+                        TextRole.BODY -> inter
+                    },
+                    if (bold && resolved != TextRole.HAND) Typeface.BOLD else Typeface.NORMAL,
                 )
             setLineSpacing(dp(3).toFloat(), 1f)
             includeFontPadding = false
             setPadding(0, dp(3), 0, dp(3))
         }
+    }
 
     fun column(pad: Int = 0) =
         LinearLayout(context).apply {
@@ -81,37 +107,35 @@ internal class LensUi(val context: Context) {
     }
 
     fun heading(parent: LinearLayout, title: String) {
-        add(
-            parent,
-            text(title.uppercase(), 11.5f, LensColors.muted, true).apply {
-                letterSpacing = .08f
+        val view =
+            text(title, 24f, LensColors.text, role = TextRole.HAND).apply {
                 ViewCompat.setAccessibilityHeading(this, true)
-            },
-            8,
-        )
+            }
+        add(parent, view, 8)
     }
 
-    fun card(parent: LinearLayout, block: (LinearLayout) -> Unit): LinearLayout {
+    fun card(
+        parent: LinearLayout,
+        dashed: Boolean = false,
+        edgeColor: Int? = null,
+        block: (LinearLayout) -> Unit,
+    ): LinearLayout {
         val c = column(18)
-        c.background = shape()
-        add(parent, c, 12)
+        c.background = glassBackground(GlassRole.CARD, dashed, edgeColor)
+        surfaces.applyElevation(c, appearance.mode)
+        add(parent, c, 16)
         block(c)
         return c
     }
 
     fun chip(parent: LinearLayout, source: DataSource) {
-        val color = if (source == DataSource.WHOOP) LensColors.teal else LensColors.sand
-        val t = text(source.label, 11f, color, true)
-        t.background =
-            shape(LensColors.top, 12, source == DataSource.HEALTH_CONNECT).apply {
-                setStroke(
-                    dp(1),
-                    color,
-                    if (source == DataSource.HEALTH_CONNECT) dp(4).toFloat() else 0f,
-                    if (source == DataSource.HEALTH_CONNECT) dp(3).toFloat() else 0f,
-                )
-            }
-        t.setPadding(dp(9), dp(5), dp(9), dp(5))
+        val health = source == DataSource.HEALTH_CONNECT
+        val color = if (health) LensColors.sand else LensColors.teal
+        val t = text(source.label, 12f, color, true, role = TextRole.BODY)
+        t.minHeight = dp(26)
+        t.gravity = android.view.Gravity.CENTER_VERTICAL
+        t.background = glassBackground(GlassRole.CHIP, health, color)
+        t.setPadding(dp(10), dp(4), dp(10), dp(4))
         parent.addView(t, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(8) })
     }
 
@@ -123,7 +147,8 @@ internal class LensUi(val context: Context) {
         action: () -> Unit,
     ): TextView {
         val b =
-            text(title, 14f, if (primary) Color.rgb(5, 32, 35) else LensColors.teal, true).apply {
+            text(title, 14f, if (primary) LensColors.onTeal else LensColors.teal, true, role = TextRole.BODY)
+                .apply {
                 gravity = android.view.Gravity.CENTER
                 minHeight = dp(48)
                 setPadding(dp(12), dp(12), dp(12), dp(12))
@@ -134,10 +159,10 @@ internal class LensUi(val context: Context) {
                     if (primary)
                         GradientDrawable(
                                 GradientDrawable.Orientation.TOP_BOTTOM,
-                                intArrayOf(Color.rgb(106, 230, 221), LensColors.teal),
+                                intArrayOf(Color.rgb(166, 246, 238), Color.rgb(79, 216, 207)),
                             )
-                            .apply { cornerRadius = dp(12).toFloat() }
-                    else shape(LensColors.inset, 12, !enabled)
+                            .apply { cornerRadius = dp(18).toFloat() }
+                    else shape(Color.TRANSPARENT, 18, !enabled)
                 background = RippleDrawable(ColorStateList.valueOf(0x334FD8CF), bg, null)
                 if (!enabled) setTextColor(LensColors.muted)
                 setOnClickListener { action() }
@@ -165,19 +190,20 @@ internal class LensUi(val context: Context) {
         source: DataSource,
         onClick: (() -> Unit)? = null,
     ) =
-        card(parent) { c ->
+        card(parent, dashed = source == DataSource.HEALTH_CONNECT) { c ->
             val stale =
                 m?.measuredAt?.let { System.currentTimeMillis() - it > 12 * 3600000L } == true
+            val missing = m?.value == null
+            heading(c, title)
             chip(c, source)
-            add(c, text(title, 12f, LensColors.muted, true), 2)
             add(
                 c,
                 text(
-                    m?.display() ?: "Not shared",
-                    24f,
-                    if (stale) LensColors.muted else LensColors.text,
-                    bold = true,
-                    numbers = true,
+                    if (missing) "Not shared" else m?.display() ?: "Not shared",
+                    if (missing) 16f else 22f,
+                    if (missing) LensColors.muted else if (stale) LensColors.amber else LensColors.text,
+                    bold = !missing,
+                    role = if (missing) TextRole.BODY else TextRole.MONO,
                 ),
                 5,
             )
@@ -189,6 +215,7 @@ internal class LensUi(val context: Context) {
                     } ?: "No available measurement",
                     12f,
                     if (stale) LensColors.amber else LensColors.muted,
+                    role = if (m?.measuredAt != null) TextRole.MONO else TextRole.BODY,
                 ),
                 0,
             )
@@ -228,43 +255,94 @@ internal fun dateTime(time: Long): String =
         .atZone(java.time.ZoneId.systemDefault())
         .format(java.time.format.DateTimeFormatter.ofPattern("MMM d · HH:mm"))
 
-internal class RecoveryRing(context: Context, private val value: Double?) : View(context) {
-    private val paint = Paint(3)
+internal class RecoveryRing(
+    context: Context,
+    private val value: Double?,
+    private val spoken: String? = null,
+) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val d = resources.displayMetrics.density
         val size = min(width, height).toFloat()
-        val r =
-            RectF((width - size) / 2 + 10 * d, 10 * d, (width + size) / 2 - 10 * d, size - 10 * d)
+        val inset = 10 * d
+        val r = RectF((width - size) / 2 + inset, inset, (width + size) / 2 - inset, size - inset)
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 7 * d
+        paint.strokeWidth = 12 * d
         paint.strokeCap = Paint.Cap.ROUND
-        paint.color = LensColors.edge
+        paint.shader = null
+        paint.color = GlassTokens.edge
         canvas.drawArc(r, 0f, 360f, false, paint)
-        value
-            ?.takeIf { it in 0.0..100.0 }
-            ?.let {
-                paint.color = LensColors.teal
-                canvas.drawArc(r, -90f, (it * 3.6).toFloat(), false, paint)
-            }
-        paint.style = Paint.Style.FILL
-        paint.color = LensColors.text
-        paint.textSize = 30 * resources.displayMetrics.scaledDensity
-        paint.typeface = resources.getFont(R.font.jetbrains_mono)
-        paint.textAlign = Paint.Align.CENTER
-        canvas.drawText(
-            value?.let { "${it.toInt()}%" } ?: "—",
-            width / 2f,
-            height / 2f + 8 * d,
-            paint,
-        )
+        value?.takeIf { it in 0.0..100.0 }?.let {
+            paint.shader =
+                LinearGradient(
+                    r.left,
+                    r.top,
+                    r.right,
+                    r.bottom,
+                    intArrayOf(Color.rgb(184, 251, 245), Color.rgb(79, 216, 207), Color.rgb(42, 143, 137)),
+                    floatArrayOf(0f, 0.55f, 1f),
+                    Shader.TileMode.CLAMP,
+                )
+            canvas.drawArc(r, -90f, (it * 3.6).toFloat(), false, paint)
+            paint.shader = null
+        }
+        if (recoveryPercentInsideRing(resources.configuration.fontScale)) {
+            paint.style = Paint.Style.FILL
+            paint.color = LensColors.text
+            paint.textSize = 30 * resources.displayMetrics.scaledDensity
+            paint.typeface = resources.getFont(R.font.jetbrains_mono)
+            paint.textAlign = Paint.Align.CENTER
+            canvas.drawText(
+                value?.let { "${it.toInt()}%" } ?: "—",
+                width / 2f,
+                height / 2f + 8 * d,
+                paint,
+            )
+        }
     }
 
     init {
-        contentDescription =
-            value?.let { "WHOOP recovery $it percent" } ?: "WHOOP recovery not shared"
+        contentDescription = spoken ?: (value?.let { "Recovery $it percent, WHOOP" } ?: "Recovery not shared, WHOOP")
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+    }
+}
+
+internal class StrainArc(context: Context, private val value: Double?, private val spoken: String) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    init {
+        contentDescription = spoken
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val w = MeasureSpec.getSize(widthMeasureSpec)
+        val h = (64 * resources.displayMetrics.density).toInt().coerceAtLeast(suggestedMinimumHeight)
+        setMeasuredDimension(w, h)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        val stroke = 9f * resources.displayMetrics.density
+        val pad = stroke / 2f + resources.displayMetrics.density
+        val scale = min((width - 2 * pad) / 140f, (height - 2 * pad) / 76f)
+        if (scale <= 0f) return
+        canvas.save()
+        canvas.translate((width - 140f * scale) / 2f, pad)
+        canvas.scale(scale, scale)
+        val oval = RectF(10f, 10f, 130f, 130f)
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = 9f
+        paint.color = GlassTokens.edge
+        canvas.drawArc(oval, 180f, strainArcSweep(21.0), false, paint)
+        value?.takeIf { it.isFinite() && it >= 0 }?.let {
+            paint.color = GlassTokens.teal
+            canvas.drawArc(oval, 180f, strainArcSweep(it), false, paint)
+        }
+        canvas.restore()
     }
 }
 
@@ -382,7 +460,7 @@ internal class TrendChart(
         paint.pathEffect = null
         paint.style = Paint.Style.FILL
         paint.color = LensColors.muted
-        paint.textSize = 10.5f * resources.displayMetrics.scaledDensity
+        paint.textSize = 12f * resources.displayMetrics.scaledDensity
         val axisFormat =
             java.time.format.DateTimeFormatter.ofPattern(
                 if (points.last().time - points.first().time < 2 * 86400000L) "HH:mm" else "MMM d"
@@ -428,11 +506,19 @@ internal class SleepTimeline(context: Context, private val sleep: SleepDetail) :
         val d = resources.displayMetrics.density
         val left = 48 * d
         val row = height / 4f
-        paint.textSize = 11 * resources.displayMetrics.scaledDensity
+        paint.textSize = 12 * resources.displayMetrics.scaledDensity
+        paint.typeface = resources.getFont(R.font.jetbrains_mono)
         labels.forEachIndexed { i, label ->
-            paint.color = LensColors.muted
+            paint.color = LensColors.label
             canvas.drawText(label, 0f, row * i + row * .6f, paint)
         }
+        val stageColor =
+            mapOf(
+                "Awake" to Color.rgb(230, 241, 241),
+                "REM" to Color.rgb(184, 251, 245),
+                "Light" to Color.rgb(79, 216, 207),
+                "Deep" to Color.rgb(35, 128, 122),
+            )
         sleep.stages.forEach { s ->
             val lane = labels.indexOf(s.label)
             if (lane >= 0) {
@@ -444,8 +530,8 @@ internal class SleepTimeline(context: Context, private val sleep: SleepDetail) :
                     left +
                         (width - left) * (s.end - sleep.start).toFloat() /
                             (sleep.end - sleep.start).coerceAtLeast(1)
-                paint.color = LensColors.sand
-                paint.alpha = if (lane == 0) 130 else 255
+                paint.color = stageColor[s.label] ?: LensColors.sand
+                paint.alpha = 255
                 canvas.drawRoundRect(
                     x,
                     row * lane + 3 * d,

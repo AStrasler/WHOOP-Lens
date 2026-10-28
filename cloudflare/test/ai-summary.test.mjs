@@ -3,6 +3,7 @@ import {groundedStatements,selectedSummaryText} from '../src/ai-summary.mjs';
 import test from "node:test";
 import {DatabaseSync} from "node:sqlite";
 import {readFileSync} from "node:fs";
+import {parseJsonc} from "./jsonc.mjs";
 import {handleMcpRpc,mcpTools,attributeWhoop} from "../src/mcp.mjs";
 import {d1Database} from "./d1-sqlite.mjs";
 import {reconcileQuota,reserveQuota,userScope} from "../src/ai-quota.mjs";
@@ -119,7 +120,13 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
   ];
   for(const [path,binding] of configs){
     const text=readFileSync(new URL(path,import.meta.url),"utf8");
-    assert.doesNotMatch(text,/"crons"|"triggers"/);
+    const parsed=parseJsonc(text);
+    if(path==="../oauth/resource/wrangler.jsonc"){
+      // Effective JSON, not a comment: legacy staged and auth Workers stay unscheduled.
+      assert.deepEqual(parsed.triggers,{crons:["17 9 * * *"]});
+    }else{
+      assert.equal(parsed.triggers,undefined);
+    }
     if(path.includes("auth-server")){
       assert.doesNotMatch(text,/AI_SUMMARY_ENABLED|STRESS_ESTIMATE_ENABLED|WEEKLY_DIGEST_ENABLED/);
       assert.doesNotMatch(text,/"binding"\s*:\s*"AI"/);

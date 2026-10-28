@@ -38,8 +38,10 @@ inventory is packaged at `assets/licenses/dependencies.json` and is readable in
 the in-app credits. Guava's Apache-2.0 terms are declared in its parent POMs.
 
 Inter and JetBrains Mono retain their existing SIL Open Font License notices at
-`android/app/src/main/assets/INTER-OFL.txt` and `JETBRAINS-MONO-OFL.txt`; both are
-also readable in the in-app credits. Existing fonts and notices are unchanged.
+`android/app/src/main/assets/INTER-OFL.txt` and `JETBRAINS-MONO-OFL.txt`. Covered
+By Your Grace, used only for titles at 20sp or larger, is packaged under the same
+license at `android/app/src/main/assets/COVERED-BY-YOUR-GRACE-OFL.txt`. All three
+notices are readable in the in-app credits.
 
 ## Research references, not incorporated code
 

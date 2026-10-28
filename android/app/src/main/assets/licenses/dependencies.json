@@ -346,5 +346,11 @@
     "declared_licenses": [
       "The Apache License, Version 2.0"
     ]
+  },
+  {
+    "coordinate": "font:covered-by-your-grace",
+    "declared_licenses": [
+      "SIL Open Font License, Version 1.1"
+    ]
   }
 ]

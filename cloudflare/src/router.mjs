@@ -10,6 +10,7 @@ import { createWhoopAuthorization, acceptWhoopCallback } from "./whoop-oauth.mjs
 import { handleMcpRpc, validateMcpTransport } from "./mcp.mjs";
 import { CursorError, cursorShapeOk, readHistoryPages } from "./history-pagination.mjs";
 import { healthConnectHttp } from "./health-import.mjs";
+import { announcementsHttp } from "./announcements.mjs";
 import { healthConnectWebhook, WEBHOOK_PATH } from "./health-connect-webhook.mjs";
 import { capture, classifyWebhookStatus, newRequestId } from "./diagnostics.mjs";
 
@@ -125,6 +126,20 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       }catch(error){
         if(error instanceof AccessDenied)return json({error:"Unauthorized"},error.status);
         return json({error:"Health Connect import unavailable"},503);
+      }
+    }
+    if(preliminaryUrl.pathname==="/v1/announcements"||
+       preliminaryUrl.pathname==="/v1/announcements/manage"||
+       preliminaryUrl.pathname==="/v1/announcements/update"){
+      if(!env?.DB)return json({error:"Staging unavailable"},503);
+      try{
+        const userId=await verifyIdentity(request,env);
+        if(!await activeMembership(env.DB,userId))
+          return json({error:"Not authorized for WhoopLens"},403);
+        return announcementsHttp(request,env,userId);
+      }catch(error){
+        if(error instanceof AccessDenied)return json({error:"Unauthorized"},error.status);
+        return json({error:"Service announcements are not available right now."},503);
       }
     }
     if (request.method !== "GET")

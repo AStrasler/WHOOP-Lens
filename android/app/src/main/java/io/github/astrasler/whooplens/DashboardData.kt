@@ -154,19 +154,18 @@ internal fun widgetText(
 ): String {
     if (sessionAccount == null || (snapshot != null && snapshot.account != sessionAccount))
         return "Sign in to WhoopLens\nNo data shown while signed out"
-    if (snapshot == null) return "No saved measurements\nOpen WhoopLens"
-    if (lockSurface)
-        return if (privacy == WidgetPrivacy.HIDDEN) "Unlock to view"
+    // Locked and lock-surface text is chosen before any metric is formatted.
+    if (locked || lockSurface)
+        return if (privacy == WidgetPrivacy.HIDDEN || snapshot == null || locked) "Unlock to view"
         else "Overview ready\nUnlock to view"
-    if (locked || lockSurface || privacy != WidgetPrivacy.DETAILED)
-        return if (privacy == WidgetPrivacy.HIDDEN || locked) "WhoopLens\nUnlock to view"
+    if (snapshot == null) return "No saved measurements\nOpen WhoopLens"
+    if (privacy != WidgetPrivacy.DETAILED)
+        return if (privacy == WidgetPrivacy.HIDDEN) "WhoopLens\nUnlock to view"
         else
             "WhoopLens\n${if(snapshot.whoop!=null || snapshot.health!=null) "Saved overview available" else "Open to refresh"} · unlock to view" +
-                if (lockSurface) ""
-                else
-                    listOfNotNull(snapshot.whoop, snapshot.health).joinToString("", prefix = "") {
-                        "\n${it.source.label} · read ${dateTime(it.fetchedAt)}"
-                    }
+                listOfNotNull(snapshot.whoop, snapshot.health).joinToString("", prefix = "") {
+                    "\n${it.source.label} · read ${dateTime(it.fetchedAt)}"
+                }
     val chosen =
         keys.mapNotNull { key ->
             val b =

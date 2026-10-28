@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PROPOSAL. Static XML version of GlassSurface.background(CARD, GLASS) for layouts/widgets. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><corners android:radius="@dimen/radius_card" /><solid android:color="@color/glass_tint" /></shape></item>
+    <item><shape><corners android:radius="@dimen/radius_card" />
+        <gradient android:angle="315" android:startColor="@color/glass_sheen_start" android:centerColor="@color/glass_sheen_mid" android:endColor="@color/glass_sheen_end" /></shape></item>
+    <item><shape><corners android:radius="@dimen/radius_card" />
+        <gradient android:type="radial" android:centerX="0.12" android:centerY="0" android:gradientRadius="60%p" android:startColor="@color/glass_light_catch" android:endColor="#00FFFFFF" /></shape></item>
+    <item><shape><corners android:radius="@dimen/radius_card" /><stroke android:width="@dimen/glass_edge_width" android:color="@color/glass_edge" /></shape></item>
+    <item android:gravity="top|fill_horizontal" android:left="@dimen/radius_card" android:right="@dimen/radius_card" android:top="1dp" android:height="1dp">
+        <shape><solid android:color="@color/glass_highlight" /></shape></item>
+</layer-list>

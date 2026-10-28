@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Battery saver: same static aurora at about a quarter of glass strength. No live blur. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item><shape><gradient android:angle="270" android:startColor="@color/lens_ground_top" android:endColor="@color/lens_ground" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0.8" android:centerY="0.04" android:gradientRadius="90%p" android:startColor="#103C5096" android:endColor="#00000000" /></shape></item>
+    <item><shape><gradient android:type="radial" android:centerX="0" android:centerY="0.45" android:gradientRadius="80%p" android:startColor="#0E309696" android:endColor="#00000000" /></shape></item>
+</layer-list>
