@@ -84,11 +84,12 @@ function ownerView(row){
     member_ids:row.member_ids,starts_at:row.starts_at,expires_at:row.expires_at,status:row.status,
     created_at:row.created_at,updated_at:row.updated_at};
 }
-function timingOk(row,nowIso){
+function timingOk(row,nowIso,{allowStartedSchedule=false}={}){
   if(!row.starts_at)return false;
   // Expiring or cancelling a notice that has not started yet is allowed.
   if(row.status!=='expired'&&row.status!=='cancelled'&&row.expires_at&&row.expires_at<=row.starts_at)return false;
-  if(row.status==='scheduled'&&row.starts_at<=nowIso)return false;
+  // A new schedule must be in the future. One that has already started stays editable.
+  if(row.status==='scheduled'&&row.starts_at<=nowIso&&!allowStartedSchedule)return false;
   if(row.status==='active'&&row.starts_at>nowIso)return false;
   if(row.status==='active'&&row.expires_at&&row.expires_at<=nowIso)return false;
   if(row.audience==='members'&&row.member_ids.length<1)return false;
@@ -202,7 +203,10 @@ function applyUpdate(existing,input,nowIso){
     if(!CREATE_STATUSES.includes(input.status))return null;
     next.status=input.status;
   }
-  return timingOk(next,nowIso)?next:null;
+  // Members already see a scheduled notice after starts_at. Ordinary edits must
+  // still save. A new schedule, or an explicit past start, stays rejected.
+  const allowStartedSchedule=existing.status==='scheduled'&&existing.starts_at<=nowIso&&next.status==='scheduled'&&action!=='schedule';
+  return timingOk(next,nowIso,{allowStartedSchedule})?next:null;
 }
 export function parseUpdate(input){
   if(!isObject(input))return null;

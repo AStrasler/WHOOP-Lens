@@ -272,6 +272,29 @@ test('reviving a retired notice obeys the outstanding cap and stays visible',asy
   }finally{db.close();}
 });
 
+test('a scheduled notice stays editable after it has started',async()=>{
+  const db=database();
+  try{
+    const upcoming=await createAnnouncement(db,OWNER,notice({title:'Tonight',body:'Scheduled work.',starts_at:FUTURE,expires_at:LATER,status:'scheduled'}),{env:ON,now:NOW});
+    const started=Date.parse(FUTURE)+1000;
+    assert.ok((await listMemberAnnouncements(db,AMY,{env:ON,now:started})).announcements.some(item=>item.id===upcoming.id));
+    const edited=await updateAnnouncement(db,OWNER,{id:upcoming.id,action:'save',body:'The window has started.'},{env:ON,now:started});
+    assert.equal(edited.body,'The window has started.');
+    assert.equal(edited.status,'scheduled');
+    const after=await listMemberAnnouncements(db,AMY,{env:ON,now:started});
+    assert.equal(after.announcements.find(item=>item.id===upcoming.id).body,'The window has started.');
+    const moved=await updateAnnouncement(db,OWNER,{id:upcoming.id,action:'save',audience:'members',member_ids:[KIM]},{env:ON,now:started});
+    assert.deepEqual(moved.member_ids,[KIM]);
+    assert.equal((await listMemberAnnouncements(db,AMY,{env:ON,now:started})).announcements.some(item=>item.id===upcoming.id),false);
+    assert.ok((await listMemberAnnouncements(db,KIM,{env:ON,now:started})).announcements.some(item=>item.id===upcoming.id));
+    await assert.rejects(()=>updateAnnouncement(db,OWNER,{id:upcoming.id,action:'schedule',starts_at:PAST},{env:ON,now:started}),
+      error=>error instanceof AnnouncementRejected&&error.reason==='invalid');
+    await assert.rejects(()=>createAnnouncement(db,OWNER,notice({status:'scheduled',starts_at:PAST}),{env:ON,now:NOW}),
+      error=>error instanceof AnnouncementRejected&&error.reason==='invalid');
+    assert.equal(db.sqlite.prepare('SELECT body FROM service_announcements WHERE id=?').get(upcoming.id).body,'The window has started.');
+  }finally{db.close();}
+});
+
 test('malformed notices and private text are refused and not stored or echoed',async()=>{
   const db=database();
   try{

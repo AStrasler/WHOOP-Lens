@@ -37,7 +37,9 @@ Only while the flag is on, and only for the owner id:
 
 - `POST /v1/announcements` or `create_service_announcement`
 - `POST /v1/announcements/update` or `update_service_announcement`
-  (`save`, `schedule`, `publish`, `expire`, `cancel`, and retarget)
+  (`save`, `schedule`, `publish`, `expire`, `cancel`, and retarget).
+  A scheduled notice can still be edited after it has started. Saving it
+  does not require a new start time.
 - `GET /v1/announcements/manage` or `manage_service_announcements`
 
 `audience` is `all` or `members`. `members` takes up to 20 existing active
