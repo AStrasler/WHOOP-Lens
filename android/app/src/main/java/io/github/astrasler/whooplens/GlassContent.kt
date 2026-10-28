@@ -90,6 +90,21 @@ internal fun baselineDelta(value: Double?, baseline: Triple<Double, Double, Doub
     return if (delta > 0) "+$formatted" else "\u2212$formatted"
 }
 
+/**
+ * Percentage relative to a genuine personal baseline mean. Missing, zero and
+ * non-finite baselines never produce invented trend percentages.
+ * Direction is descriptive, not a judgment about whether a change is healthy.
+ */
+internal fun baselinePercent(value: Double?, baseline: Triple<Double, Double, Double>?): String? {
+    val mean = baseline?.second
+    if (value == null || !value.isFinite() || mean == null || !mean.isFinite() || mean <= 0.0) return null
+    val percentage = (value - mean) * 100.0 / mean
+    if (!percentage.isFinite()) return null
+    if (abs(percentage) < 0.05) return "≈ 0% vs baseline"
+    val direction = if (percentage > 0.0) "↑" else "↓"
+    return "$direction ${java.text.DecimalFormat("0.#").format(abs(percentage))}% vs baseline"
+}
+
 /** Android's positive sweep from the left endpoint follows the upper half. */
 internal fun strainArcSweep(value: Double): Float =
     (180.0 * (value / 21.0).coerceIn(0.0, 1.0)).toFloat()
