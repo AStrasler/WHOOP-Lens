@@ -138,6 +138,7 @@ internal object GlassDashboardStats {
                 role = if (hasValue && trend != null) TextRole.MONO else TextRole.BODY,
             ).apply {
                 setSingleLine(true)
+                setHorizontallyScrolling(false)
                 ellipsize = TextUtils.TruncateAt.END
                 setAutoSizeTextTypeUniformWithConfiguration(12, 22, 1, TypedValue.COMPLEX_UNIT_SP)
             },

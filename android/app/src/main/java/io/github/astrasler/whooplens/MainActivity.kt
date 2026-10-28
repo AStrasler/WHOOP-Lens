@@ -1135,6 +1135,7 @@ class MainActivity : ComponentActivity() {
                                 role = if (steps?.value == null) TextRole.BODY else TextRole.MONO,
                             ).apply {
                                 setSingleLine(true)
+                                setHorizontallyScrolling(false)
                                 ellipsize = android.text.TextUtils.TruncateAt.END
                                 setAutoSizeTextTypeUniformWithConfiguration(12, 32, 1, android.util.TypedValue.COMPLEX_UNIT_SP)
                             },
