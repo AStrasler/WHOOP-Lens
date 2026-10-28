@@ -23,6 +23,7 @@
     "STRESS_ESTIMATE_ENABLED": "false",
     "WEEKLY_DIGEST_ENABLED": "false",
     "FLARE_JOURNAL_ENABLED": "false",
+    "ANNOUNCEMENTS_ENABLED": "false",
     "WHOOP_REDIRECT_URI": "https://whooplens.tech/api/whoop/callback"
   },
   "ai": { "binding": "AI" },

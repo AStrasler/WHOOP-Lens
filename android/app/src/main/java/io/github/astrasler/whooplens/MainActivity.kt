@@ -38,6 +38,8 @@ class MainActivity : ComponentActivity() {
     private var rangeDays = 7
     private var activityDays = 7
     private var message = ""
+    private var notices = ServiceAnnouncements.empty("")
+    private val dismissedNotices = mutableSetOf<String>()
     private var drawer: View? = null
     private lateinit var frame: FrameLayout
     private var bleScreen: BleScreenBinding? = null
@@ -157,6 +159,7 @@ class MainActivity : ComponentActivity() {
         handler.removeCallbacks(bleTick)
         handler.removeCallbacks(periodic)
         handler.removeCallbacks(sessionTick)
+        handler.removeCallbacks(noticeTick)
         super.onPause()
     }
 
@@ -204,12 +207,16 @@ class MainActivity : ComponentActivity() {
                     account = current
                     snapshot = null
                     message = ""
+                    notices = ServiceAnnouncements.empty(current ?: "")
+                    dismissedNotices.clear()
                     ble.selectAccount()
                 }
                 val old = prefs.getStringSet("last-permissions", emptySet()).orEmpty()
                 granted = permissions
                 if (current == null) {
                     ble.forget()
+                    notices = ServiceAnnouncements.empty("")
+                    dismissedNotices.clear()
                     DashboardRepository.clear(this)
                     BackgroundRefresh.cancel(this)
                     prefs
@@ -230,6 +237,26 @@ class MainActivity : ComponentActivity() {
                 render()
                 scheduleSession()
                 if (current != null && prefs.getBoolean("local-refresh", true)) refresh(false)
+                if (current != null) loadNotices(current)
+            }
+        }
+    }
+
+    /** Pulls service notices for this account. An empty or disabled response shows nothing. */
+    private fun loadNotices(owner: String) {
+        val attempt = uiGeneration
+        io.execute {
+            val raw =
+                try {
+                    AnnouncementClient(auth, owner).fetch()
+                } catch (_: Exception) {
+                    """{"enabled":false,"announcements":[]}"""
+                }
+            val parsed = ServiceAnnouncements.parse(owner, raw, System.currentTimeMillis())
+            runOnUiThread {
+                if (attempt != uiGeneration || account != owner || isDestroyed) return@runOnUiThread
+                notices = parsed
+                if (drawer == null) render()
             }
         }
     }
@@ -512,9 +539,26 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
+    private val noticeTick = Runnable {
+        if (foreground && !isDestroyed) render()
+    }
+
+    /** Redraws at the next notice expiry so a cached banner does not outlive its window. */
+    private fun scheduleNoticeExpiry() {
+        handler.removeCallbacks(noticeTick)
+        if (!foreground || account == null) return
+        val now = System.currentTimeMillis()
+        val at = ServiceAnnouncements.nextExpiryEpochMs(visibleNotices(now), now) ?: return
+        handler.postDelayed(noticeTick, (at - now + 1L).coerceAtLeast(1L))
+    }
+
+    private fun visibleNotices(now: Long = System.currentTimeMillis()) =
+        ServiceAnnouncements.current(notices, account, now).notices
+
     private fun render() {
         applyScreenCapturePrivacy(this)
         if (!::frame.isInitialized) return
+        scheduleNoticeExpiry()
         bleScreen = null
         if (
             page != "Direct BLE" &&
@@ -579,6 +623,7 @@ class MainActivity : ComponentActivity() {
             signedOut(root)
             return
         }
+        renderNoticeBanner(root)
         if (detail != null) {
             metricDetail(root)
             return
@@ -682,7 +727,39 @@ class MainActivity : ComponentActivity() {
             .distinct()
             .let { it + defaultCards.filterNot(it::contains) }
 
+    private fun renderNoticeBanner(root: LinearLayout) {
+        val banner = ServiceAnnouncements.banner(visibleNotices().filter { it.id !in dismissedNotices }) ?: return
+        ui.card(root) { c ->
+            ui.add(c, ui.text(banner.kind.replaceFirstChar { it.uppercase() }, 12f, LensColors.amber, true))
+            ui.add(
+                c,
+                ui.text(banner.title, 16f, bold = true).apply {
+                    accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+                },
+            )
+            ui.add(c, ui.text(banner.body, 14f))
+            ui.button(c, "Dismiss notice") {
+                dismissedNotices.add(banner.id)
+                render()
+            }
+        }
+    }
+
+    private fun renderNoticeInbox(root: LinearLayout) {
+        val visible = visibleNotices()
+        if (visible.isEmpty()) return
+        ui.heading(root, "Service notices")
+        visible.forEach { notice ->
+            ui.card(root) { c ->
+                ui.add(c, ui.text(notice.kind.replaceFirstChar { it.uppercase() }, 12f, LensColors.amber, true))
+                ui.add(c, ui.text(notice.title, 16f, bold = true))
+                ui.add(c, ui.text(notice.body, 14f))
+            }
+        }
+    }
+
     private fun home(root: LinearLayout) {
+        renderNoticeInbox(root)
         ui.add(
             root,
             ui.text(

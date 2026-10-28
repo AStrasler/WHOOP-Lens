@@ -61,7 +61,9 @@ export function featureStates(env){
       // rule as the summary path and host instructions).
       state:state(on(env,'STRESS_ESTIMATE_ENABLED')&&on(env,'AI_SUMMARY_ENABLED'))},
     {id:'flare_journal',tools:['set_flare_consent','get_flare_journal'],
-      state:state(on(env,'FLARE_JOURNAL_ENABLED'))}
+      state:state(on(env,'FLARE_JOURNAL_ENABLED'))},
+    {id:'service_announcements',tools:['list_service_announcements'],
+      state:state(on(env,'ANNOUNCEMENTS_ENABLED'))}
   ];
   return features.map(f=>({...f,reason:f.state==='enabled'?'Server flag is on and required settings are present.':
     f.state==='disabled'?'Server flag is off. Its tools may still be listed but return a feature-off message.':
@@ -85,11 +87,16 @@ const REPORT_BOUNDARIES=Object.freeze({
   // Captured whether or not the member ever submits a report.
   diagnostics:'This server records sanitized failure codes for every signed-in member, whether or not they submit a report (codes, counts and times only; no health data, message text or tokens). The server owner can see them, as server-wide 24-hour counts in review_issue_reports, and they expire after 30 days.'
 });
+const ANNOUNCEMENT_BOUNDARIES=Object.freeze({
+  member:'Service announcements addressed to this account or to all members can be read while they are active. The audience list and other account ids are not included. Announcement text is a service notice, not health data.',
+  owner:'Creating, editing, scheduling, expiring and targeting announcements is owner-only. This is the announcement exception to the own-account rule: manage_service_announcements lists notice text and the pseudonymous member ids you targeted. It does not include health data, names or emails. Members never receive that list.'
+});
 function boundaries(seatRole,owner,env){
   const usage=aiSummaryEnabled(env)?[owner?ROLE_BOUNDARIES.ownerUsage:ROLE_BOUNDARIES.memberUsage]:[];
   const reports=[...(env?.ISSUE_REPORTS_ENABLED==='true'?[owner?REPORT_BOUNDARIES.owner:REPORT_BOUNDARIES.member]:[]),
     ...(env?.DIAGNOSTICS_CAPTURE_ENABLED==='true'?[REPORT_BOUNDARIES.diagnostics]:[])];
-  return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...usage,...reports];
+  const announcements=env?.ANNOUNCEMENTS_ENABLED==='true'?[owner?ANNOUNCEMENT_BOUNDARIES.owner:ANNOUNCEMENT_BOUNDARIES.member]:[];
+  return [...ROLE_BOUNDARIES.shared,...(seatRole?ROLE_BOUNDARIES[seatRole]:[]),...usage,...reports,...announcements];
 }
 const BUDGET_PROBE_SQL='SELECT 1 FROM whoop_member_request_budget WHERE user_id=?1 LIMIT 1';
 const ROLE_SQL='SELECT seat_role FROM whoop_connections WHERE user_id=?1 LIMIT 1';

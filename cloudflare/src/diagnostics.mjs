@@ -152,6 +152,7 @@ export function toolSubsystem(name){
   if(name==='get_ai_usage')return 'ai_summary';
   if(name==='get_weekly_digest')return 'weekly_digest';
   if(name==='report_issue'||name==='review_issue_reports'||name==='update_issue_report'||name==='report_error'||name==='get_reportable_links')return 'issue_reports';
+  if(name==='list_service_announcements'||name==='create_service_announcement'||name==='update_service_announcement'||name==='manage_service_announcements')return 'announcements';
   if(typeof name==='string'&&/^[a-z_]{1,40}$/.test(name)&&/flare/.test(name))return 'flare_journal';
   return 'mcp_tool';
 }
