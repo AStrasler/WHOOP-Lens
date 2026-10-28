@@ -1078,28 +1078,63 @@ class MainActivity : ComponentActivity() {
                         ui.add(c, ringBox, 4)
                         val status = recoveryStatus(m?.value)
                         ui.add(c, ui.text(status, 26f, LensColors.teal, role = TextRole.HAND), 8)
-                        val stats =
-                            listOf(
-                                (metric("hrv", DataSource.WHOOP)?.display() ?: "—") to "HRV",
-                                (metric("rhr", DataSource.WHOOP)?.display() ?: "—") to "Resting HR",
-                                (m?.measuredAt?.let(::dateTime) ?: "—") to "Scored",
-                            )
-                        val columns = metricsPerRow(resources.configuration.fontScale, resources.configuration.screenWidthDp)
-                        if (columns == 1) {
-                            stats.forEach { (value, label) ->
-                                ui.add(c, ui.text(value, 15f, role = TextRole.MONO, bold = true), 0)
-                                ui.add(c, ui.text(label, 12f, LensColors.muted), 4)
-                            }
-                        } else {
-                            val row = ui.row()
-                            stats.forEach { (value, label) ->
-                                val cell = ui.column()
-                                cell.addView(ui.text(value, 15f, role = TextRole.MONO, bold = true))
-                                cell.addView(ui.text(label, 12f, LensColors.muted))
-                                row.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
-                            }
-                            ui.add(c, row, 0)
-                        }
+                        // The video reference's StatsCard is adapted to native Android.
+                        // Show real WHOOP values; trend percentages require a valid baseline.
+                        val hrv = metric("hrv", DataSource.WHOOP)
+                        val rhr = metric("rhr", DataSource.WHOOP)
+                        ui.pair(
+                            c,
+                            { column ->
+                                ui.statsCard(
+                                    column,
+                                    "HRV",
+                                    hrv?.display() ?: "—",
+                                    "♥",
+                                    baselinePercent(
+                                        hrv?.value,
+                                        personalBaseline(
+                                            snapshot?.whoop?.baselineSeries("hrv").orEmpty(),
+                                            System.currentTimeMillis(),
+                                        ),
+                                    ),
+                                    DataSource.WHOOP,
+                                ) {
+                                    detail = "hrv"
+                                    detailSource = DataSource.WHOOP
+                                    render()
+                                }
+                            },
+                            { column ->
+                                ui.statsCard(
+                                    column,
+                                    "Resting HR",
+                                    rhr?.display() ?: "—",
+                                    "◉",
+                                    baselinePercent(
+                                        rhr?.value,
+                                        personalBaseline(
+                                            snapshot?.whoop?.baselineSeries("rhr").orEmpty(),
+                                            System.currentTimeMillis(),
+                                        ),
+                                    ),
+                                    DataSource.WHOOP,
+                                ) {
+                                    detail = "rhr"
+                                    detailSource = DataSource.WHOOP
+                                    render()
+                                }
+                            },
+                        )
+                        ui.add(
+                            c,
+                            ui.text(
+                                "Scored " + (m?.measuredAt?.let(::dateTime) ?: "time unavailable"),
+                                12f,
+                                LensColors.muted,
+                                role = TextRole.MONO,
+                            ),
+                            0,
+                        )
                         c.isClickable = true
                         c.isFocusable = true
                         c.contentDescription = spoken + ". Open measurements"
@@ -2315,25 +2350,42 @@ class MainActivity : ComponentActivity() {
         ui.add(panel, ui.text("Signed in · Cloudflare", 12f, LensColors.muted))
         ui.chip(panel, DataSource.WHOOP)
         ui.chip(panel, DataSource.HEALTH_CONNECT)
-        for (destination in
-            listOf("Home", "Activity", "Sleep", "Vitals", "Health Connect", "Account & Settings")) {
-            val item =
+        ui.add(panel, ui.text("MENU", 11f, LensColors.label, bold = true), 4)
+        val navigation = listOf(
+            "Home" to "⌂",
+            "Activity" to "◷",
+            "Sleep" to "☾",
+            "Vitals" to "♥",
+            "Health Connect" to "✚",
+            "Account & Settings" to "⚙",
+        )
+        for ((destination, symbol) in navigation) {
+            val selected = destination == page
+            val item = ui.row()
+            item.minimumHeight = ui.dp(56)
+            item.setPadding(ui.dp(16), ui.dp(4), ui.dp(16), ui.dp(4))
+            item.background = ui.glassBackground(
+                GlassRole.CHIP,
+                edgeColor = if (selected) LensColors.teal else null,
+            )
+            item.addView(
+                ui.text(symbol, 20f, if (selected) LensColors.teal else LensColors.muted).apply {
+                    gravity = Gravity.CENTER
+                },
+                LinearLayout.LayoutParams(ui.dp(32), -2).apply { rightMargin = ui.dp(8) },
+            )
+            item.addView(
                 ui.text(
                     destination,
                     15f,
-                    if (destination == page) LensColors.teal else LensColors.text,
-                    true,
-                )
-            item.minimumHeight = ui.dp(56)
-            item.gravity = Gravity.CENTER_VERTICAL
-            item.setPadding(ui.dp(16), 0, ui.dp(16), 0)
-            item.background =
-                ui.glassBackground(
-                    GlassRole.CHIP,
-                    edgeColor = if (destination == page) LensColors.teal else null,
-                )
+                    if (selected) LensColors.teal else LensColors.text,
+                    bold = selected,
+                ),
+                LinearLayout.LayoutParams(0, -2, 1f),
+            )
             item.isFocusable = true
             item.isClickable = true
+            item.contentDescription = destination + if (selected) ", current page" else ", open page"
             item.setOnClickListener {
                 page = destination
                 detail = null
