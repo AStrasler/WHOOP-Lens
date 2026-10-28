@@ -40,7 +40,7 @@ The inspected backend currently accepts the consent-bound Health Connect v2 file
 
 Six resizable Android RemoteViews providers implement daily overview, recovery/strain, steps/activity, sleep summary, vitals and expanded dashboard. Compact and larger layouts use the same design palette, fonts, sources and freshness. Hidden/Summary is privacy-safe by default; Detailed home display requires an explicit public-display warning and measurement selection. Sign-out/account changes prevent previous-account values from being reused.
 
-A seventh dedicated private lock-screen provider is non-numeric in every mode. Public Android widget host/category APIs are used; Samsung's built-in lock-screen picker/AOD/Brief widgets/Now Bar availability cannot be forced or assumed. A launcher may retain copied Detailed home content; the consent explains that limitation. Detailed health measurements on arbitrary lock-screen hosts are deliberately not promised. No watch app or proprietary Samsung service was added.
+The six home widgets are the supported surface. A seventh status provider remains so an already placed receiver does not break, and it stays non-numeric, but it is a home-screen status widget. It does not register a Samsung lock-screen, Brief widget, or Now Bar integration. Issue #102 records why `widgetCategory="keyguard"` does not do that, and the current resources opt out with `not_keyguard` on API 36. A launcher may retain copied Detailed home content; the consent explains that limitation. Measurements are withheld while the device is locked. No watch app or proprietary Samsung service was added.
 
 Platform references:
 - [Android background Health Connect reads](https://developer.android.com/health-and-fitness/health-connect/read-data)

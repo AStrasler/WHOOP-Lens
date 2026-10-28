@@ -1,17 +1,22 @@
 # Android home widget sizing
 
-All six existing home providers (Daily, Recovery, Steps, Sleep, Vitals, Expanded) now
-start at a declared 1 x 1 cell footprint, including their picker preview layout.
-The private lock-screen provider is outside this change; its declaration does not
-establish Samsung lock-screen support.
+All six home providers (Daily, Recovery, Steps, Sleep, Vitals, Expanded) declare a
+1 x 1 cell footprint. The picker uses a separate one-cell preview that shows an em
+dash and no sample measurement. Issue #102 corrected the lock-screen claim: no
+provider opts into `keyguard`, and API 36 resources add `not_keyguard`. Samsung
+Brief widgets and Now Bar are not provided. Evidence, inference, and the Galaxy
+S26 Ultra checklist are in `docs/android-s26-ultra-widgets.md`. Emulator renders
+are not One UI cell measurements and are not results from the phone.
 
 ## Sizing and content
 
 - `targetCellWidth=1`, `targetCellHeight=1`; minimum/fallback resize bounds 40 x 40dp.
-- Both resize axes are enabled; maximum requested bounds are 320 x 160dp, an
-  approximate four-column/two-row handset envelope, **not a conversion of cells
-  into dp**. Android has no public maximum-cell attribute. Launchers can exceed
-  maximum dp hints or round them differently. One UI grid settings must be tested.
+- Both resize axes are enabled. Maximum hints are 320 x 250dp. On the handset
+  table in Android's widget layout guide, portrait 4 cells are 276dp wide and 5
+  cells are 349dp; portrait 2 cells are 220dp tall and 3 cells are 337dp. The
+  hints sit between those published estimates. They are **not Samsung cells** and
+  **not a maximum-cell attribute**. Launchers can ignore them. The guide's table
+  is a Pixel 4 demonstration.
 - Actual `OPTION_APPWIDGET_SIZES` are used to build native size-specific RemoteViews
   (up to Android's 16-layout limit). Older host options fall back to portrait and
   landscape min/max size pairs. Resize callbacks rebuild from the current cache.
@@ -59,7 +64,7 @@ The separate test APK verifies installed provider metadata and produces 110 nati
 RemoteViews PNG renders on the API 36 emulator: all six providers at five test
 bounds and both 100%/200% font scales, plus missing, account-mismatch, summary,
 stale and long-label cases for Expanded. Primary text fit is asserted. Bounds used
-are 56x56, 150x72, 150x160, 320x72 and 320x160dp; labels such as 1x1 and 4x2 describe
+were 56x56, 150x72, 150x160, 320x72 and 320x160dp at that time; labels such as 1x1 and 4x2 describe
 intended test scenarios, **not measured Samsung launcher cells**. Images use test
 fixtures, no personal health records. They are native view renders, not proof of
 placement in Samsung's launcher. Existing emulator Keystore persistence/erasure

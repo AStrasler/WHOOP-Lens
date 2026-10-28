@@ -1527,7 +1527,7 @@ class MainActivity : ComponentActivity() {
                 if (n == 2)
                     dialog(
                         "Public home-screen measurements",
-                        "Widget contents are copied to your launcher. Anyone seeing that surface can read them, including host copies. Lock-screen provider never receives numbers. Choose Summary for privacy.",
+                        "Detailed widgets copy measurements onto the home screen. Anyone who can see that home screen can read them, including launcher copies. Measurements are withheld while the phone is locked. Choose Summary for privacy.",
                         "Use detailed home widgets",
                         save,
                     )
@@ -1536,7 +1536,7 @@ class MainActivity : ComponentActivity() {
             ui.add(
                 c,
                 ui.text(
-                    "Six resizable home widgets. Lock-screen host support varies by Android and One UI. No Now Bar or watch companion. Lock-screen provider is non-numeric.",
+                    "Six resizable home widgets, from 1\u00d71 through an intended 4\u00d72. Samsung lock screen, Brief widgets, and Now Bar are not part of this app. Measurements stay off the lock screen.",
                     12f,
                     LensColors.muted,
                 ),
