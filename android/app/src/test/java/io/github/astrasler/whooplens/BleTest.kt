@@ -431,15 +431,40 @@ class BleTest {
         assertEquals(9, KNOWN_CUSTOM_CHARACTERISTICS.distinct().size)
         assertFalse(observed.evidenceLine().contains("WHOOP 5.0"))
         assertFalse(observed.evidenceLine().contains("WHOOP MG"))
+        assertTrue(LABEL_SHARED.contains("5.0") && LABEL_SHARED.contains("MG"))
+        assertFalse(LABEL_SHARED.contains("WHOOP 5.0") || LABEL_SHARED.contains("WHOOP MG"))
     }
 
     @Test
-    fun deviceInformationTextDoesNotSelectEitherProduct() {
+    fun gattInventoryCoversFourEmptyAmbiguousAndAdvertisement() {
+        val four =
+            StrapObservation.fromGatt(
+                setOf(WHOOP4_SERVICE),
+                setOf(WHOOP4_COMMAND_WRITE, WHOOP4_DATA_NOTIFY),
+            )
+        assertEquals(ProductCall.WHOOP_4_0, four.product)
+        assertEquals(LABEL_4_0, four.label)
+        assertTrue(four.evidenceLine().contains("2A37=no"))
+        assertTrue(four.evidenceLine().contains("custom=61080002,61080005"))
+        val empty = StrapObservation.fromGatt(emptySet(), emptySet())
+        assertEquals(LABEL_NO_CUSTOM_SERVICE, empty.label)
+        assertTrue(empty.evidenceLine().contains("custom=none"))
+        val both =
+            StrapObservation.fromGatt(setOf(WHOOP4_SERVICE, WHOOP5_SERVICE), emptySet())
+        assertEquals(LABEL_AMBIGUOUS, both.label)
+        val advertised = StrapObservation.fromAdvertisement(setOf(WHOOP5_SERVICE))
+        assertEquals(LABEL_SHARED, advertised.evidenceLine())
+        assertNull(advertised.heartRateMeasurement)
+    }
+
+    @Test
+    fun deviceInformationTextAndAdvertisedNamesDoNotSelectEitherProduct() {
         listOf("WHOOP 5.0", "WHOOP MG", "WHOOP AGT", "Maverick", "Goose").forEach { text ->
-            assertEquals(text, DeviceInformationText.printable(text.toByteArray(Charsets.US_ASCII)))
+            val decoded = DeviceInformationText.printable(text.toByteArray(Charsets.US_ASCII))
+            assertEquals(text, decoded)
             assertEquals(
                 LABEL_SHARED,
-                BleCandidate.identify("id", text, setOf(WHOOP5_SERVICE))!!.family,
+                BleCandidate.identify("id", decoded, setOf(WHOOP5_SERVICE))!!.family,
             )
         }
         assertNull(DeviceInformationText.printable(byteArrayOf(0)))
@@ -482,6 +507,25 @@ class BleTest {
         assertNull(StrapEnvelope.recognize(shared))
         assertNull(StrapEnvelope.recognize(byteArrayOf(0xaa.toByte())))
         assertNull(StrapEnvelope.recognize(ByteArray(513) { 0xaa.toByte() }))
+        val intactFour = hex("aa07006b300000823c2adb")
+        val intactShared = hex("aa01070001002535300100c30d31c2")
+        val badCrc8 = intactFour.copyOf()
+        badCrc8[3] = (badCrc8[3].toInt() xor 1).toByte()
+        val badCrc16 = intactShared.copyOf()
+        badCrc16[6] = (badCrc16[6].toInt() xor 1).toByte()
+        assertNull(StrapEnvelope.recognize(badCrc8))
+        assertNull(StrapEnvelope.recognize(badCrc16))
+        assertNull(StrapEnvelope.recognize(intactFour + byteArrayOf(0.toByte())))
+        assertNull(StrapEnvelope.recognize(intactShared + byteArrayOf(0.toByte())))
+        assertNull(StrapEnvelope.recognize(intactShared.copyOf(14)))
+        val wrongFormat = intactShared.copyOf()
+        wrongFormat[1] = 0x02
+        val headerCrc = StrapChecksum.crc16Modbus(wrongFormat.copyOfRange(0, 6))
+        wrongFormat[6] = (headerCrc and 0xff).toByte()
+        wrongFormat[7] = (headerCrc shr 8 and 0xff).toByte()
+        assertNull(StrapEnvelope.recognize(wrongFormat))
+        assertNull(StrapEnvelope.recognize(shortHarvard(6)))
+        assertNull(StrapEnvelope.recognize(shortShared(6)))
     }
 
     @Test
@@ -520,6 +564,13 @@ class BleTest {
             }
         assertTrue(five.finding.contains("does not identify WHOOP 5.0"))
         assertTrue(mg.finding.contains("does not identify WHOOP MG"))
+        val fiveHeartRate =
+            GenerationMatrix.cells.first {
+                it.generation == StrapGeneration.WHOOP_5_0 &&
+                    it.topic == "standard heart-rate notifications on a strap"
+            }
+        assertFalse(fiveHeartRate.finding.contains("5.0/MG"))
+        assertTrue(fiveHeartRate.finding.contains("an MG"))
         val doc = repoFile("docs/ble/GENERATION_MATRIX.md")
         val start = doc.indexOf("<!-- matrix-start -->")
         val end = doc.indexOf("<!-- matrix-end -->")
@@ -549,23 +600,46 @@ class BleTest {
                 "ACCESS_BACKGROUND_LOCATION",
             )
             .forEach { assertFalse(manifest.contains(it)) }
-        val transport =
-            repoFile(
-                "android/app/src/main/java/io/github/astrasler/whooplens/ble/AndroidBleTransport.kt"
-            )
-        assertEquals(1, Regex("""writeDescriptor\(""").findAll(transport).count())
-        assertFalse(transport.contains("writeCharacteristic"))
-        assertFalse(transport.contains("ENABLE_INDICATION_VALUE"))
         val sources =
             File(repoRoot(), "android/app/src/main")
                 .walk()
                 .filter { it.extension == "kt" }
-                .map { it.readText().lowercase() }
+                .map { it.readText() }
                 .joinToString("\n")
-        assertFalse(sources.contains("e671230191"))
+        assertEquals(1, Regex("""writeDescriptor\(""").findAll(sources).count())
+        assertFalse(sources.contains("writeCharacteristic"))
+        assertFalse(sources.contains("ENABLE_INDICATION_VALUE"))
+        assertTrue(sources.contains("ENABLE_NOTIFICATION_VALUE"))
+        assertTrue(sources.contains("getDescriptor(UUID.fromString(HR_CCCD))"))
+        assertTrue(sources.contains("getCharacteristic(UUID.fromString(HR_CHARACTERISTIC))"))
+        val lower = sources.lowercase()
+        assertFalse(lower.contains("e671230191"))
+        assertFalse(Regex("""0xe6\s*,\s*0x71""").containsMatchIn(lower))
     }
 
     private fun hex(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+    private fun le32(value: Long) =
+        ByteArray(4) { index -> ((value shr (8 * index)) and 0xff).toByte() }
+
+    private fun shortHarvard(length: Int): ByteArray {
+        val inner = ByteArray(length - 4)
+        val prefix = byteArrayOf(0xaa.toByte(), (length and 0xff).toByte(), 0)
+        val crc8 = StrapChecksum.crc8(prefix.copyOfRange(1, 3))
+        return prefix + crc8.toByte() + inner + le32(StrapChecksum.crc32(inner))
+    }
+
+    private fun shortShared(declared: Int): ByteArray {
+        val payload = ByteArray(declared - 4)
+        val header =
+            byteArrayOf(0xaa.toByte(), 0x01, (declared and 0xff).toByte(), 0, 0x01, 0)
+        val crc16 = StrapChecksum.crc16Modbus(header)
+        return header +
+            (crc16 and 0xff).toByte() +
+            (crc16 shr 8 and 0xff).toByte() +
+            payload +
+            le32(StrapChecksum.crc32(payload))
+    }
 
     private fun repoRoot(): File =
         generateSequence(File("").absoluteFile) { it.parentFile }
