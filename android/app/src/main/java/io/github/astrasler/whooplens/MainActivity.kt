@@ -1049,6 +1049,12 @@ class MainActivity : ComponentActivity() {
         renderNoticeInbox(root)
         freshness(root, snapshot?.whoop)
         freshness(root, snapshot?.health)
+        GlassDashboardStats.render(root, ui, snapshot) { key, source ->
+            detail = key
+            detailSource = source
+            rangeDays = 7
+            render()
+        }
         val hidden = prefs.getStringSet("home-hidden", emptySet()).orEmpty()
         val visible = cardOrder().filterNot { it in hidden }
         visible.forEachIndexed { index, key ->
