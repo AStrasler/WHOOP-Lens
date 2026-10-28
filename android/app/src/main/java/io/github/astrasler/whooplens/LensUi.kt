@@ -365,7 +365,7 @@ internal class TrendChart(
         contentDescription = description()
         setOnClickListener {
             if (points.isNotEmpty()) {
-                if (!touchSelection) selected = ((selected ?: -1) + 1) % points.size
+                if (!touchSelection) selected = nextChartPointIndex(points, selected)
                 touchSelection = false
                 contentDescription = description()
                 announceForAccessibility(contentDescription)
@@ -374,20 +374,14 @@ internal class TrendChart(
         }
     }
 
-    private fun description(): String {
-        val p = selected?.let { points[it] }
-        return if (p != null)
-            "${source.label}, ${dateTime(p.time)}, ${p.value?.let { java.text.DecimalFormat("0.#").format(it)}?:"Not shared"}"
-        else
-            "${source.label} chart. ${points.count {it.value!=null}} available points. Gaps mean missing data. Tap to read each point; full measurements below."
-    }
+    private fun description() = chartDescription(points, source, selected)
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_UP && points.isNotEmpty()) {
             val t =
                 points.first().time +
                     (event.x / width).coerceIn(0f, 1f) * (points.last().time - points.first().time)
-            selected = points.indices.minByOrNull { abs(points[it].time - t) }
+            selected = chartPointIndices(points).minByOrNull { abs(points[it].time - t) }
             touchSelection = true
             performClick()
             return true

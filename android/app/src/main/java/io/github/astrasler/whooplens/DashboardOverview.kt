@@ -39,8 +39,13 @@ internal fun dashboardTrendLabel(trend: DashboardPercentTrend?): String = when {
     }
 }
 
-internal fun dashboardPeriodLabel(key: String, trend: DashboardPercentTrend?): String = when (key) {
-    "steps" -> "Today so far"
+internal fun dashboardPeriodLabel(
+    key: String,
+    trend: DashboardPercentTrend?,
+    metric: Metric? = null,
+    now: Long = System.currentTimeMillis(),
+): String = when (key) {
+    "steps" -> dailyTotalPeriodLabel(metric, now)
     "strain" -> "Cycle in progress or completion unverified"
     else -> dashboardTrendLabel(trend)
 }
