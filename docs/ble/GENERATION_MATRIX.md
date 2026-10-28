@@ -13,7 +13,7 @@ two diverge.
 
 ## How to read a cell
 
-- **completed code** — the app does this now.
+- **completed code** — implemented in this source. It does not mean a strap was contacted. Parsers with no GATT caller are still completed code, and the matrix says when they are not wired.
 - **simulated or unit-tested** — covered by a synthetic packet, a fake transport,
   or a source check. Not a radio.
 - **pending physical verification** — needs the procedure in
@@ -33,7 +33,7 @@ A cell can carry more than one mark. None of the marks means hardware-tested.
 
 ## Protocol differences encoded in the recognizer
 
-These are checks of captured bytes. The app has no path that transmits them.
+These checks are not connected to a GATT callback. The app neither receives nor transmits these frames. The unit-test frames are synthetic, not captures.
 
 WHOOP 4.0, from the MIT protocol note: `AA`, little-endian length, CRC-8
 (poly `0x07`, init `0`) over those two length bytes, inner bytes starting at
@@ -65,7 +65,7 @@ connected to GATT.
 | WHOOP 5.0 | standard heart-rate parser | completed code; simulated or unit-tested | Same parser. Not evidence that a 5.0 strap notifies. |
 | WHOOP MG | standard heart-rate parser | completed code; simulated or unit-tested | Same parser. Not evidence that an MG strap notifies. |
 | WHOOP 4.0 | standard heart-rate notifications on a strap | pending physical verification | whoop4-ble reports live 180D/2A37 on that author's 4.0. WHOOP Lens has not confirmed it. |
-| WHOOP 5.0 | standard heart-rate notifications on a strap | pending physical verification | NOOP claims unbonded 180D/2A37. Vestigator part 7 says it is not the 5.0/MG data path. Unresolved for 5.0. |
+| WHOOP 5.0 | standard heart-rate notifications on a strap | pending physical verification | NOOP claims unbonded 180D/2A37. Vestigator part 7 reports on an MG that 2A37 was not the data path; no 5.0 is cited. Unresolved for 5.0. |
 | WHOOP MG | standard heart-rate notifications on a strap | pending physical verification | Same public conflict. Vestigator's session was an MG. Unresolved for MG until that strap is tested. |
 | WHOOP 4.0 | optional R-R intervals | completed code; simulated or unit-tested; pending physical verification | Parser keeps 1/1024 s ticks when the standard flag is set. Whether a 4.0 strap sets it is unverified. |
 | WHOOP 5.0 | optional R-R intervals | completed code; simulated or unit-tested; pending physical verification | No 5.0 capture in this repo shows 2A37 R-R. Absence must stay absent. |

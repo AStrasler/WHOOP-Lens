@@ -51,7 +51,6 @@ internal enum class ProductCall {
     WHOOP_4_0,
     SHARED_5_0_OR_MG,
     AMBIGUOUS_SERVICES,
-    NAME_ONLY,
     NOT_A_CANDIDATE,
 }
 
@@ -92,8 +91,7 @@ internal data class StrapObservation(
                     ProductCall.WHOOP_4_0 -> LABEL_4_0
                     ProductCall.SHARED_5_0_OR_MG -> LABEL_SHARED
                     ProductCall.AMBIGUOUS_SERVICES -> LABEL_AMBIGUOUS
-                    ProductCall.NOT_A_CANDIDATE,
-                    ProductCall.NAME_ONLY -> ""
+                    ProductCall.NOT_A_CANDIDATE -> ""
                 }
             return StrapObservation(product, label, null, null, null, null, emptyList(), emptyList())
         }
@@ -107,8 +105,7 @@ internal data class StrapObservation(
                     ProductCall.WHOOP_4_0 -> LABEL_4_0
                     ProductCall.SHARED_5_0_OR_MG -> LABEL_SHARED
                     ProductCall.AMBIGUOUS_SERVICES -> LABEL_AMBIGUOUS
-                    ProductCall.NOT_A_CANDIDATE,
-                    ProductCall.NAME_ONLY -> LABEL_NO_CUSTOM_SERVICE
+                    ProductCall.NOT_A_CANDIDATE -> LABEL_NO_CUSTOM_SERVICE
                 }
             return StrapObservation(
                 product,
@@ -203,7 +200,20 @@ internal enum class EnvelopeFamily {
     SHARED_5_0_OR_MG,
 }
 
-/** A recognized notification envelope. [observedCommand] is never transmitted. */
+/**
+ * A recognized notification envelope. [observedCommand] is never transmitted.
+ *
+ * 4.0 layout: `AA`, little-endian length at offset 1, CRC-8 (poly `0x07`, init 0)
+ * of those two bytes at offset 3, inner bytes from offset 4 up to `length`,
+ * CRC-32 (zlib) little-endian at `length`, total size `length + 4`, length at least 7.
+ *
+ * Shared 5.0/MG layout: `AA`, format `01`, little-endian declared length at offset 2,
+ * CRC-16-Modbus (poly `0xA001`, init `0xFFFF`) of the first six bytes, little-endian
+ * at offset 6, inner bytes from offset 8 up to `declared + 4`, CRC-32 little-endian
+ * there, total size `declared + 8`, declared length at least 7. A match is
+ * [EnvelopeFamily.SHARED_5_0_OR_MG]. It is not 5.0 alone and not MG alone.
+ * These checks are not connected to a GATT callback.
+ */
 internal data class RecognizedEnvelope(
     val family: EnvelopeFamily,
     val observedType: Int,
@@ -328,7 +338,7 @@ internal object GenerationMatrix {
                 "standard heart-rate notifications on a strap",
                 physical,
                 "whoop4-ble reports live 180D/2A37 on that author's 4.0. WHOOP Lens has not confirmed it.",
-                "NOOP claims unbonded 180D/2A37. Vestigator part 7 says it is not the 5.0/MG data path. Unresolved for 5.0.",
+                "NOOP claims unbonded 180D/2A37. Vestigator part 7 reports on an MG that 2A37 was not the data path; no 5.0 is cited. Unresolved for 5.0.",
                 "Same public conflict. Vestigator's session was an MG. Unresolved for MG until that strap is tested.",
                 ),
             )
