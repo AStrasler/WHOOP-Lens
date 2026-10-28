@@ -76,6 +76,17 @@ class GlassContentTest {
         assertEquals("−5", baselineDelta(60.0, band))
     }
 
+    @Test fun statCardPercentIsCalculatedFromActualBaselineOnly() {
+        val band = Triple(40.0, 50.0, 60.0)
+        assertEquals("↑ 10% vs baseline", baselinePercent(55.0, band))
+        assertEquals("↓ 10% vs baseline", baselinePercent(45.0, band))
+        assertEquals("≈ 0% vs baseline", baselinePercent(50.0, band))
+        assertNull(baselinePercent(null, band))
+        assertNull(baselinePercent(55.0, null))
+        assertNull(baselinePercent(55.0, Triple(0.0, 0.0, 0.0)))
+        assertNull(baselinePercent(Double.NaN, band))
+    }
+
     @Test fun sleepTimingKeepsMidnightNeighborsTogetherRegardlessOfInputOrder() {
         val nights = listOf(
             night("2026-10-27", "23:50", "07:00"),
