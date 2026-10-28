@@ -9,13 +9,13 @@
     <TextView android:id="@+id/widget_body" android:layout_width="0dp" android:layout_height="match_parent"
         android:layout_weight="1" android:gravity="center_vertical" android:text="@string/widget_missing_value" android:textColor="#EEF6F5"
         android:textSize="28sp" android:fontFamily="@font/jetbrains_mono" android:maxLines="1"
-        android:autoSizeTextType="uniform" android:autoSizeMinTextSize="7sp" android:autoSizeMaxTextSize="32sp"
+        android:autoSizeTextType="uniform" android:autoSizeMinTextSize="18sp" android:autoSizeMaxTextSize="32sp"
         android:autoSizeStepGranularity="1sp" android:includeFontPadding="false" />
     <TextView android:id="@+id/widget_supporting" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center_vertical" android:paddingStart="8dp" android:paddingEnd="0dp"
         android:visibility="gone" android:textColor="#EEF6F5" android:textSize="13sp" android:fontFamily="@font/inter"
         android:ellipsize="end" />
     </LinearLayout>
     <TextView android:id="@+id/widget_footer" android:layout_alignParentBottom="true" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:visibility="gone" android:textColor="#8AA3A6" android:textSize="11sp" android:fontFamily="@font/inter"
+        android:visibility="gone" android:textColor="@color/lens_text_secondary" android:textSize="12sp" android:fontFamily="@font/jetbrains_mono"
         android:maxLines="1" android:ellipsize="end" />
 </RelativeLayout>

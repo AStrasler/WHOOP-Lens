@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PROPOSAL — design handoff, not applied. -->
+<resources>
+    <!-- Spacing: 4 dp base, 16 dp rhythm -->
+    <dimen name="space_1">4dp</dimen>
+    <dimen name="space_2">8dp</dimen>
+    <dimen name="space_3">12dp</dimen>
+    <dimen name="space_4">16dp</dimen>
+    <dimen name="space_5">20dp</dimen>
+    <dimen name="space_6">24dp</dimen>
+    <dimen name="screen_gutter">16dp</dimen>
+    <dimen name="card_gap">16dp</dimen>
+    <dimen name="card_padding">18dp</dimen>
+    <!-- Radii -->
+    <dimen name="radius_top_bar">22dp</dimen>
+    <dimen name="radius_card">26dp</dimen>
+    <dimen name="radius_tile">24dp</dimen>
+    <dimen name="radius_inset">16dp</dimen>
+    <dimen name="radius_drawer">30dp</dimen>
+    <dimen name="radius_button">18dp</dimen>
+    <dimen name="radius_icon_button">14dp</dimen>
+    <dimen name="radius_widget">24dp</dimen>
+    <!-- Touch targets -->
+    <dimen name="touch_min">48dp</dimen>
+    <dimen name="row_drawer">56dp</dimen>
+    <dimen name="row_list_min">52dp</dimen>
+    <dimen name="chart_point_target">32dp</dimen>
+    <!-- Glass -->
+    <dimen name="glass_edge_width">1dp</dimen>
+    <dimen name="glass_elevation">10dp</dimen>
+    <dimen name="glass_elevation_reduced">6dp</dimen>
+    <dimen name="blur_behind_drawer">28dp</dimen>
+    <!-- Type (sp). Handwritten only at 20sp and above; nothing below 12sp. -->
+    <dimen name="type_display">30sp</dimen>
+    <dimen name="type_card_title">24sp</dimen>
+    <dimen name="type_hand_min">20sp</dimen>
+    <dimen name="type_body">14.5sp</dimen>
+    <dimen name="type_secondary">13sp</dimen>
+    <dimen name="type_min">12sp</dimen>
+    <dimen name="type_metric_hero">38sp</dimen>
+    <dimen name="type_metric">22sp</dimen>
+    <dimen name="type_metric_small">15sp</dimen>
+    <dimen name="widget_value_min">18sp</dimen>
+    <dimen name="widget_value_max_1x1">20sp</dimen>
+    <!-- Strain arc: drawn in a 140 x 76 box, never clipped -->
+    <dimen name="strain_arc_height">64dp</dimen>
+    <dimen name="strain_arc_stroke">9dp</dimen>
+</resources>

@@ -35,7 +35,7 @@ internal class BleScreenBinding(
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z").withZone(ZoneId.systemDefault())
 
     init {
-        ui.card(root) { card ->
+        ui.card(root, dashed = true, edgeColor = LensColors.error) { card ->
             ui.heading(card, "WHOOP Direct BLE · experimental")
             text(
                 card,
@@ -55,7 +55,7 @@ internal class BleScreenBinding(
                 ui.button(card, "Stop / disconnect", action = stop).apply { tag = "ble-stop" }
         }
         ui.add(root, candidates, 0)
-        ui.card(root) { card ->
+        ui.card(root, dashed = true, edgeColor = LensColors.error) { card ->
             ui.heading(card, "Direct BLE heart rate")
             heartRate =
                 ui.text("No measurement", 32f, LensColors.teal, true, true).also {
@@ -117,7 +117,7 @@ internal class BleScreenBinding(
             shownCandidates = list
             candidates.removeAllViews()
             list.forEachIndexed { index, candidate ->
-                ui.card(candidates) { card ->
+                ui.card(candidates, dashed = true, edgeColor = LensColors.error) { card ->
                     ui.heading(card, "Candidate ${index + 1} · ${candidate.name}")
                     text(card, candidate.family)
                     text(card, "Address ending ${candidate.id.takeLast(5)} · not proof of identity")

@@ -110,6 +110,25 @@ internal object LensWidgets {
             R.id.widget_body,
             if (content.stale) LensColors.amber else LensColors.text,
         )
+        if (!content.wide) {
+            views.setTextViewText(R.id.widget_source, content.glyph)
+            views.setViewVisibility(
+                R.id.widget_source,
+                if (content.glyph.isEmpty()) View.GONE else View.VISIBLE,
+            )
+            views.setTextViewText(R.id.widget_badge, content.badge ?: "")
+            views.setViewVisibility(
+                R.id.widget_badge,
+                if (content.badge.isNullOrEmpty()) View.GONE else View.VISIBLE,
+            )
+        }
+        if (content.healthConnectSurface) {
+            views.setInt(
+                R.id.widget_root,
+                "setBackgroundResource",
+                R.drawable.widget_surface_health_connect,
+            )
+        }
         return views
     }
 

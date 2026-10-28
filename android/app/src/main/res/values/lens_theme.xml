@@ -1,13 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
   <style name="LensTheme" parent="android:style/Theme.Material.NoActionBar">
     <item name="android:fontFamily">@font/inter</item>
     <item name="android:windowLightStatusBar">false</item>
     <item name="android:windowLightNavigationBar">false</item>
-    <item name="android:colorAccent">#4FD8CF</item>
-    <item name="android:windowBackground">#0B1418</item>
-    <item name="android:colorBackground">#0B1418</item>
-    <item name="android:textColorPrimary">#EEF6F5</item>
-    <item name="android:textColorSecondary">#8AA3A6</item>
+    <item name="android:colorAccent">@color/lens_teal_fill</item>
+    <item name="android:windowBackground">@drawable/lens_aurora_background</item>
+    <item name="android:colorBackground">@color/lens_ground</item>
+    <item name="android:textColorPrimary">@color/lens_text</item>
+    <item name="android:textColorSecondary">@color/lens_text_secondary</item>
     <item name="android:windowActionModeOverlay">true</item>
+  </style>
+
+  <style name="LensTheme.Reduced">
+    <item name="android:windowBackground">@color/lens_ground_reduced</item>
+  </style>
+
+  <style name="Lens.Text.Display" parent="">
+    <item name="android:fontFamily">@font/covered_by_your_grace</item>
+    <item name="android:textSize">@dimen/type_display</item>
+    <item name="android:textColor">@color/lens_text</item>
+  </style>
+  <style name="Lens.Text.CardTitle" parent="Lens.Text.Display">
+    <item name="android:textSize">@dimen/type_card_title</item>
+  </style>
+  <style name="Lens.Text.Body" parent="">
+    <item name="android:fontFamily">@font/inter</item>
+    <item name="android:textSize">@dimen/type_body</item>
+    <item name="android:textColor">@color/lens_text</item>
+  </style>
+  <style name="Lens.Text.Secondary" parent="Lens.Text.Body">
+    <item name="android:textSize">@dimen/type_secondary</item>
+    <item name="android:textColor">@color/lens_text_secondary</item>
+  </style>
+  <style name="Lens.Text.Label" parent="Lens.Text.Body">
+    <item name="android:textSize">@dimen/type_min</item>
+    <item name="android:textColor">@color/lens_label</item>
+    <item name="android:textStyle">bold</item>
+  </style>
+  <style name="Lens.Text.Metric" parent="">
+    <item name="android:fontFamily">@font/jetbrains_mono</item>
+    <item name="android:textSize">@dimen/type_metric</item>
+    <item name="android:textColor">@color/lens_text</item>
+    <item name="android:textStyle">bold</item>
+  </style>
+  <style name="Lens.Text.Metric.Hero">
+    <item name="android:textSize">@dimen/type_metric_hero</item>
+  </style>
+  <style name="Lens.Text.Timestamp" parent="">
+    <item name="android:fontFamily">@font/jetbrains_mono</item>
+    <item name="android:textSize">@dimen/type_min</item>
+    <item name="android:textColor">@color/lens_text_secondary</item>
   </style>
 </resources>

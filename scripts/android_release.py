@@ -47,7 +47,7 @@ def verify_apk(apk, build_tools, version, code, allow_debug=False):
         raise ValueError("Unnecessary BLE permissions")
     with zipfile.ZipFile(apk) as z:
         names = z.namelist()
-        for required in ("assets/licenses/whoop4-ble-MIT.txt", "assets/licenses/Apache-2.0.txt", "assets/licenses/checker-qual-MIT.txt", "assets/licenses/health-connect-protobuf-BSD.txt", "assets/licenses/dependencies.json", "assets/INTER-OFL.txt", "assets/JETBRAINS-MONO-OFL.txt"):
+        for required in ("assets/licenses/whoop4-ble-MIT.txt", "assets/licenses/Apache-2.0.txt", "assets/licenses/checker-qual-MIT.txt", "assets/licenses/health-connect-protobuf-BSD.txt", "assets/licenses/dependencies.json", "assets/INTER-OFL.txt", "assets/JETBRAINS-MONO-OFL.txt", "assets/COVERED-BY-YOUR-GRACE-OFL.txt"):
             if required not in names or not z.read(required):
                 raise ValueError("Missing packaged notice: " + required)
         if any(n.lower().endswith((".jks", ".keystore", "direct-ble.bin", "oauth-session.bin", "dashboard.bin")) for n in names):

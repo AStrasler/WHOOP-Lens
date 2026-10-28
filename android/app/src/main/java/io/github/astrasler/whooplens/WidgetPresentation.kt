@@ -61,6 +61,9 @@ internal data class WidgetPresentation(
     val description: String = "",
     val stale: Boolean = false,
     val wide: Boolean = false,
+    val glyph: String = "",
+    val badge: String? = null,
+    val healthConnectSurface: Boolean = false,
 )
 
 internal fun widgetPresentation(
@@ -149,6 +152,8 @@ internal fun widgetPresentation(
             .distinct()
             .joinToString(" + ")
             .ifEmpty { "Not shared" }
+    val measuredAt = metric?.measuredAt ?: first?.first?.fetchedAt
+    val source = first?.first?.source
     return WidgetPresentation(
         if (space.labeled) label else "",
         primary,
@@ -157,5 +162,13 @@ internal fun widgetPresentation(
         label + ": " + exact + ". " + allDescription + ". Tap to open WhoopLens.",
         stale,
         space.width >= 260 * space.fontScale && space.height >= 110,
+        glyph =
+            when (source) {
+                DataSource.WHOOP -> WidgetSource.WHOOP.glyph
+                DataSource.HEALTH_CONNECT -> WidgetSource.HEALTH_CONNECT.glyph
+                else -> ""
+            },
+        badge = measuredAt?.let { staleBadge(now - it) },
+        healthConnectSurface = source == DataSource.HEALTH_CONNECT,
     )
 }

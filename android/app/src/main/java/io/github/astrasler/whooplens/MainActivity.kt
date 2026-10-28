@@ -33,6 +33,10 @@ class MainActivity : ComponentActivity() {
     private var busy = false
     private var loading = false
     private var page = "Home"
+    private var arrangeDraft: Pair<MutableList<String>, MutableSet<String>>? = null
+    private var edgeTracking = false
+    private var edgeStartX = 0f
+    private var edgeStartY = 0f
     private var detail: String? = null
     private var detailSource = DataSource.WHOOP
     private var rangeDays = 7
@@ -103,7 +107,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyScreenCapturePrivacy(this)
         page = savedInstanceState?.getString("page") ?: "Home"
-        frame = FrameLayout(this).apply { setBackgroundColor(LensColors.background) }
+        frame = FrameLayout(this)
         setContentView(frame)
         protectSystemBars(this, frame)
         onBackPressedDispatcher.addCallback(
@@ -129,6 +133,30 @@ class MainActivity : ComponentActivity() {
         handleOAuthCallback(intent)
     }
 
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (account != null && drawer == null && detail == null) {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    edgeTracking = ev.x <= ui.dp(24)
+                    edgeStartX = ev.x
+                    edgeStartY = ev.y
+                }
+                MotionEvent.ACTION_MOVE ->
+                    if (
+                        edgeTracking &&
+                            ev.x - edgeStartX > ui.dp(72) &&
+                            kotlin.math.abs(ev.y - edgeStartY) < ui.dp(64)
+                    ) {
+                        edgeTracking = false
+                        showDrawer()
+                        return true
+                    }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> edgeTracking = false
+            }
+        } else edgeTracking = false
+        return super.dispatchTouchEvent(ev)
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("page", page)
         super.onSaveInstanceState(outState)
@@ -138,6 +166,44 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleOAuthCallback(intent)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        stopAppearance = LensAppearanceReader(this).observe { if (!isDestroyed) render() }
+    }
+
+    override fun onStop() {
+        stopAppearance?.invoke()
+        stopAppearance = null
+        super.onStop()
+    }
+
+    private var stopAppearance: (() -> Unit)? = null
+
+    private fun syncAppearance() {
+        val choice =
+            when (prefs.getString("appearance", "AUTO")) {
+                "REDUCED_TRANSPARENCY" -> AppearanceChoice.REDUCED_TRANSPARENCY
+                "BATTERY_SAVER" -> AppearanceChoice.BATTERY_SAVER
+                else -> AppearanceChoice.AUTO
+            }
+        val inputs =
+            try {
+                LensAppearanceReader(this).read(choice)
+            } catch (_: Exception) {
+                AppearanceInputs(choice, powerSave = false, blurAvailable = true, animatorScale = 1f)
+            }
+        var state = resolveAppearance(inputs)
+        if (prefs.getBoolean("reduced-motion", false)) state = state.copy(reduceMotion = true, transitionMs = 0)
+        ui.appearance = state
+        window.setBackgroundDrawableResource(
+            when (state.mode) {
+                LensAppearance.REDUCED_TRANSPARENCY -> R.color.lens_ground_reduced
+                LensAppearance.BATTERY_SAVER -> R.drawable.lens_aurora_saver
+                LensAppearance.GLASS -> R.drawable.lens_aurora_background
+            }
+        )
     }
 
     override fun onResume() {
@@ -209,6 +275,9 @@ class MainActivity : ComponentActivity() {
                     message = ""
                     notices = ServiceAnnouncements.empty(current ?: "")
                     dismissedNotices.clear()
+                    resetGlance()
+                    arrangeDraft = null
+                    if (page == "Arrange Home") page = "Home"
                     ble.selectAccount()
                 }
                 val old = prefs.getStringSet("last-permissions", emptySet()).orEmpty()
@@ -347,6 +416,9 @@ class MainActivity : ComponentActivity() {
             .putBoolean("background", false)
             .putBoolean("sync-consent", false)
             .putString("widget-privacy", "SUMMARY")
+            .putString("glance-level", "HIDDEN")
+            .putBoolean("glance-confirmed", false)
+            .remove("glance-metrics")
             .remove("sync-account")
             .apply()
         val authAttempt =
@@ -446,6 +518,9 @@ class MainActivity : ComponentActivity() {
                 .putBoolean("background", false)
                 .putBoolean("sync-consent", false)
                 .putString("widget-privacy", "SUMMARY")
+                .putString("glance-level", "HIDDEN")
+                .putBoolean("glance-confirmed", false)
+                .remove("glance-metrics")
                 .remove("sync-account")
                 .remove("sync-categories")
                 .apply()
@@ -473,11 +548,14 @@ class MainActivity : ComponentActivity() {
         positive: String = "OK",
         action: () -> Unit = {},
     ) {
+        val content = if (::frame.isInitialized && frame.childCount > 0) frame.getChildAt(0) else null
+        content?.let { ui.blurBehind(it, true) }
         AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(body)
             .setNegativeButton("Cancel", null)
             .setPositiveButton(positive) { _, _ -> action() }
+            .setOnDismissListener { content?.let { if (drawer == null) ui.blurBehind(it, false) } }
             .show()
     }
 
@@ -555,9 +633,137 @@ class MainActivity : ComponentActivity() {
     private fun visibleNotices(now: Long = System.currentTimeMillis()) =
         ServiceAnnouncements.current(notices, account, now).notices
 
+    private fun resetGlance() {
+        prefs
+            .edit()
+            .putString("glance-level", "HIDDEN")
+            .putBoolean("glance-confirmed", false)
+            .remove("glance-metrics")
+            .apply()
+    }
+
+    private fun glanceLevel(): LockLevel =
+        try {
+            LockLevel.valueOf(prefs.getString("glance-level", "HIDDEN")!!)
+        } catch (_: Exception) {
+            LockLevel.HIDDEN
+        }
+
+    private fun saveGlance(level: LockLevel, confirmed: Boolean) {
+        val editor =
+            prefs
+                .edit()
+                .putString("glance-level", level.name)
+                .putBoolean("glance-confirmed", confirmed && level == LockLevel.DETAILED)
+        if (level != LockLevel.DETAILED) editor.remove("glance-metrics")
+        else if (confirmed && prefs.getStringSet("glance-metrics", emptySet()).isNullOrEmpty())
+            editor.putStringSet("glance-metrics", linkedSetOf("recovery", "strain", "sleep"))
+        editor.apply()
+        render()
+    }
+
+    private fun chooseGlance(level: LockLevel) {
+        val from = glanceLevel()
+        if (level.ordinal <= from.ordinal) {
+            saveGlance(level, confirmed = false)
+            return
+        }
+        if (locked()) return
+        if (level == LockLevel.SUMMARY) {
+            if (canChangeLevel(from, level, deviceUnlocked = true, authenticatedJustNow = false))
+                saveGlance(level, confirmed = false)
+            return
+        }
+        dialog(
+            "Show measurements on the lock screen?",
+            "This stores a Detailed opt-in. It does not enable a Samsung lock screen. Issue #102 is still pending physical testing. Measurements stay off the lock screen.",
+            "Continue",
+        ) {
+            confirmGlanceDetailed()
+        }
+    }
+
+    private fun confirmGlanceDetailed() {
+        val authenticators =
+            android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK or
+                android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        try {
+            val prompt =
+                android.hardware.biometrics.BiometricPrompt.Builder(this)
+                    .setTitle("Confirm detailed At a glance")
+                    .setSubtitle("Pending Samsung testing")
+                    .setDescription(
+                        "Stored on this phone only. Measurements stay off the lock screen until issue #102 is verified."
+                    )
+                    .setAllowedAuthenticators(authenticators)
+                    .build()
+            prompt.authenticate(
+                android.os.CancellationSignal(),
+                mainExecutor,
+                object : android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(
+                        result: android.hardware.biometrics.BiometricPrompt.AuthenticationResult
+                    ) {
+                        if (canChangeLevel(glanceLevel(), LockLevel.DETAILED, deviceUnlocked = true, authenticatedJustNow = true))
+                            saveGlance(LockLevel.DETAILED, confirmed = true)
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        message = "Detailed At a glance was not confirmed."
+                        render()
+                    }
+                },
+            )
+        } catch (_: Exception) {
+            message = "This phone could not confirm Detailed At a glance. Hidden stays in effect."
+            render()
+        }
+    }
+
+    private fun chooseGlanceMetrics() {
+        if (locked() || glanceLevel() != LockLevel.DETAILED || !prefs.getBoolean("glance-confirmed", false)) return
+        val keys = LOCK_ELIGIBLE_METRICS
+        val selected = prefs.getStringSet("glance-metrics", emptySet()).orEmpty()
+        val choices = keys.map { it in selected }.toBooleanArray()
+        AlertDialog.Builder(this)
+            .setTitle("Stored At a glance measurements")
+            .setMessage("Up to three. These stay on this phone and are not shown until issue #102 is verified. Measurements stay off the lock screen.")
+            .setMultiChoiceItems(keys.toTypedArray(), choices) { _, i, checked -> choices[i] = checked }
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Save") { _, _ ->
+                val picked = keys.filterIndexed { i, _ -> choices[i] }
+                if (picked.size > LOCK_MAX_METRICS) {
+                    message = "Choose at most three At a glance measurements."
+                    render()
+                    return@setPositiveButton
+                }
+                prefs.edit().putStringSet("glance-metrics", picked.toSet()).apply()
+                render()
+            }
+            .show()
+    }
+
+    private fun glanceDecision(): LockDecision {
+        val newest = listOfNotNull(snapshot?.whoop?.fetchedAt, snapshot?.health?.fetchedAt).maxOrNull()
+        return effectiveLockContent(
+            LockInputs(
+                chosen = glanceLevel(),
+                signedInAccount = account,
+                dataAccount = snapshot?.account,
+                deviceSecure = LockSystemReader.deviceSecure(this),
+                systemAllowsSensitive = LockSystemReader.systemAllowsSensitive(this),
+                platformSupported = LOCK_SCREEN_PLATFORM_VERIFIED,
+                newestDataAgeMs = newest?.let { System.currentTimeMillis() - it },
+                detailedConfirmed = prefs.getBoolean("glance-confirmed", false),
+                selectedMetrics = prefs.getStringSet("glance-metrics", emptySet()).orEmpty().toList(),
+            )
+        )
+    }
+
     private fun render() {
         applyScreenCapturePrivacy(this)
         if (!::frame.isInitialized) return
+        syncAppearance()
         scheduleNoticeExpiry()
         bleScreen = null
         if (
@@ -573,6 +779,13 @@ class MainActivity : ComponentActivity() {
         scroll.addView(root)
         frame.addView(scroll)
         val bar = ui.row()
+        bar.minimumHeight = ui.dp(48)
+        bar.background =
+            ui.glassBackground(
+                GlassRole.TOP_BAR,
+                edgeColor = if (page == "Arrange Home") LensColors.teal else null,
+            )
+        bar.setPadding(ui.dp(4), ui.dp(4), ui.dp(8), ui.dp(4))
         val nav = ui.column()
         ui.button(nav, if (detail != null) "‹" else "☰", enabled = account != null) {
                 if (detail != null) {
@@ -583,28 +796,68 @@ class MainActivity : ComponentActivity() {
             .contentDescription =
             if (detail != null) "Back to overview" else "Open navigation drawer"
         bar.addView(nav, LinearLayout.LayoutParams(ui.dp(48), -2))
+        val titleText =
+            if (account == null) "WhoopLens"
+            else
+                detail?.let { metric(it, detailSource)?.title ?: it }
+                    ?: if (page == "Home") "Today" else page
+        val titles = ui.column()
         val title =
             ui.text(
-                if (account == null) "WhoopLens"
-                else
-                    detail?.let { metric(it, detailSource)?.title ?: it }
-                        ?: if (page == "Home") "Today" else page,
-                21f,
-                bold = true,
+                titleText,
+                30f,
+                role = TextRole.HAND,
             )
         ViewCompat.setAccessibilityHeading(title, true)
-        bar.addView(title, LinearLayout.LayoutParams(0, -2, 1f))
-        ui.add(root, bar)
+        titles.addView(title)
+        if (page == "Home" && detail == null && account != null)
+            titles.addView(
+                ui.text(
+                    LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEE · MMM d")),
+                    12f,
+                    LensColors.muted,
+                    role = TextRole.MONO,
+                )
+            )
+        bar.addView(titles, LinearLayout.LayoutParams(0, -2, 1f))
+        if (page == "Home" && detail == null && account != null) {
+            val edit = ui.column()
+            ui.button(edit, "Edit") {
+                    arrangeDraft =
+                        cardOrder().toMutableList() to
+                            prefs.getStringSet("home-hidden", emptySet()).orEmpty().toMutableSet()
+                    page = "Arrange Home"
+                    render()
+                }
+                .contentDescription = "Edit Home layout"
+            bar.addView(edit, LinearLayout.LayoutParams(-2, -2))
+        }
+        if (page == "Arrange Home" && detail == null && account != null) {
+            val cancel = ui.column()
+            ui.button(cancel, "Cancel") {
+                    arrangeDraft = null
+                    page = "Home"
+                    render()
+                }
+                .contentDescription = "Cancel Home layout edits"
+            bar.addView(cancel, LinearLayout.LayoutParams(-2, -2))
+        }
+        ui.add(root, bar, 0)
         if (locked()) {
             ui.card(root) { ui.add(it, ui.text("Unlock to view your private dashboard")) }
             return
         }
         if (loading) {
+            val refreshing = snapshot != null
             ui.add(
                 root,
-                ui.text("Reading permitted sources…", 12f, LensColors.teal).apply {
-                    accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
-                },
+                ui.text(
+                        if (refreshing) "Refreshing…" else "Reading permitted sources…",
+                        12f,
+                        LensColors.teal,
+                        role = TextRole.MONO,
+                    )
+                    .apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE },
             )
             root.addView(
                 ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -613,12 +866,22 @@ class MainActivity : ComponentActivity() {
                 LinearLayout.LayoutParams(-1, ui.dp(4)),
             )
         }
-        if (message.isNotEmpty())
+        if (message.isNotEmpty()) {
+            val failed = message.contains("unavailable", true) || message.contains("blocked", true)
             ui.add(
                 root,
-                ui.text(message, 12f, if (!online(this)) LensColors.amber else LensColors.muted)
+                ui.text(
+                        message,
+                        12f,
+                        when {
+                            failed -> LensColors.error
+                            !online(this) -> LensColors.amber
+                            else -> LensColors.muted
+                        },
+                    )
                     .apply { accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE },
             )
+        }
         if (account == null) {
             signedOut(root)
             return
@@ -662,7 +925,7 @@ class MainActivity : ComponentActivity() {
 
     private fun signedOut(root: LinearLayout) {
         ui.card(root) { c ->
-            ui.add(c, ui.text("WhoopLens", 30f, bold = true))
+            ui.add(c, ui.text("WhoopLens", 30f, role = TextRole.HAND))
             ui.add(
                 c,
                 ui.text(
@@ -689,28 +952,52 @@ class MainActivity : ComponentActivity() {
         if (source == DataSource.WHOOP) snapshot?.whoop?.metric(key)
         else snapshot?.health?.metric(key)
 
-    private fun metricCard(root: LinearLayout, key: String, title: String, source: DataSource) =
-        ui.metric(root, metric(key, source), title, source) {
-            detail = key
-            detailSource = source
-            rangeDays = 7
-            render()
-        }
+    private fun metricCard(root: LinearLayout, key: String, title: String, source: DataSource) {
+        val card =
+            ui.metric(root, metric(key, source), title, source) {
+                detail = key
+                detailSource = source
+                rangeDays = 7
+                render()
+            }
+        val series =
+            if (source == DataSource.WHOOP) snapshot?.whoop?.series?.get(key).orEmpty()
+            else snapshot?.health?.series?.get(key).orEmpty()
+        ui.add(
+            card,
+            ui.text(
+                "Vs your baseline " +
+                    baselineDelta(
+                        metric(key, source)?.value,
+                        personalBaseline(series, System.currentTimeMillis()),
+                    ),
+                12f,
+                LensColors.muted,
+                role = TextRole.MONO,
+            ),
+            0,
+        )
+    }
 
     private fun freshness(root: LinearLayout, b: DataBatch?) {
         if (b == null) return
+        val ageHours = (System.currentTimeMillis() - b.fetchedAt) / 3600000L
         val stale = b.stale(System.currentTimeMillis()) || !online(this)
         ui.add(
             root,
             ui.text(
-                b.source.label +
-                    " · " +
-                    (if (stale) "Saved" else "Read") +
-                    " " +
-                    dateTime(b.fetchedAt) +
-                    (if (!b.complete) " · partial" else ""),
+                if (b.stale(System.currentTimeMillis()))
+                    b.source.label + " · Not updated for " + ageHours + "h · last " + dateTime(b.fetchedAt)
+                else
+                    b.source.label +
+                        " · " +
+                        (if (!online(this)) "Saved" else "Read") +
+                        " " +
+                        dateTime(b.fetchedAt) +
+                        (if (!b.complete) " · partial" else ""),
                 12f,
                 if (stale) LensColors.amber else LensColors.muted,
+                role = TextRole.BODY,
             ),
         )
         b.notices.forEach { ui.add(root, ui.text(it, 12f, LensColors.amber)) }
@@ -760,14 +1047,6 @@ class MainActivity : ComponentActivity() {
 
     private fun home(root: LinearLayout) {
         renderNoticeInbox(root)
-        ui.add(
-            root,
-            ui.text(
-                LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEE · MMM d")),
-                12f,
-                LensColors.muted,
-            ),
-        )
         freshness(root, snapshot?.whoop)
         freshness(root, snapshot?.health)
         val hidden = prefs.getStringSet("home-hidden", emptySet()).orEmpty()
@@ -777,60 +1056,53 @@ class MainActivity : ComponentActivity() {
             when (key) {
                 "Recovery" ->
                     ui.card(root) { c ->
-                        ui.chip(c, DataSource.WHOOP)
                         val m = metric("recovery", DataSource.WHOOP)
-                        val row =
-                            if (resources.configuration.fontScale > 1.3f) ui.column() else ui.row()
-                        val ring = RecoveryRing(this, m?.value)
-                        ring.alpha =
-                            if (snapshot?.whoop?.stale(System.currentTimeMillis()) == true) .6f
-                            else 1f
-                        row.addView(ring, LinearLayout.LayoutParams(ui.dp(112), ui.dp(112)))
-                        val info = ui.column(8)
-                        ui.add(
-                            info,
-                            ui.text(
-                                if (m?.value == null) "No WHOOP recovery yet" else "Recovery",
-                                17f,
-                                bold = true,
-                            ),
-                        )
-                        ui.add(
-                            info,
-                            ui.text(
-                                "HRV " + (metric("hrv", DataSource.WHOOP)?.display() ?: "—"),
-                                12f,
-                                LensColors.muted,
-                            ),
-                        )
-                        ui.add(
-                            info,
-                            ui.text(
-                                "Resting HR " + (metric("rhr", DataSource.WHOOP)?.display() ?: "—"),
-                                12f,
-                                LensColors.muted,
-                            ),
-                        )
-                        ui.add(
-                            info,
-                            ui.text(
-                                m?.measuredAt?.let(::dateTime) ?: "Waiting for a WHOOP score",
-                                11f,
-                                LensColors.muted,
-                            ),
-                        )
-                        row.addView(
-                            info,
-                            LinearLayout.LayoutParams(
-                                if (row.orientation == LinearLayout.HORIZONTAL) 0 else -1,
-                                -2,
-                                1f,
-                            ),
-                        )
-                        ui.add(c, row, 0)
+                        val header = ui.row()
+                        header.addView(ui.text("Recovery", 24f, role = TextRole.HAND), LinearLayout.LayoutParams(0, -2, 1f))
+                        ui.chip(header, DataSource.WHOOP)
+                        ui.add(c, header, 4)
+                        val spoken =
+                            "Recovery " +
+                                (m?.value?.let { "${it.toInt()} percent" } ?: "not shared") +
+                                ", WHOOP, " +
+                                (m?.measuredAt?.let { "updated " + dateTime(it) } ?: "time unavailable")
+                        val ring = RecoveryRing(this, m?.value, spoken)
+                        ring.alpha = if (snapshot?.whoop?.stale(System.currentTimeMillis()) == true) .6f else 1f
+                        val ringBox = ui.column()
+                        ringBox.gravity = Gravity.CENTER_HORIZONTAL
+                        ringBox.addView(ring, LinearLayout.LayoutParams(ui.dp(188), ui.dp(188)))
+                        if (!recoveryPercentInsideRing(resources.configuration.fontScale))
+                            ringBox.addView(
+                                ui.text(m?.value?.let { "${it.toInt()}%" } ?: "—", 22f, role = TextRole.MONO, bold = true)
+                            )
+                        ui.add(c, ringBox, 4)
+                        val status = recoveryStatus(m?.value)
+                        ui.add(c, ui.text(status, 26f, LensColors.teal, role = TextRole.HAND), 8)
+                        val stats =
+                            listOf(
+                                (metric("hrv", DataSource.WHOOP)?.display() ?: "—") to "HRV",
+                                (metric("rhr", DataSource.WHOOP)?.display() ?: "—") to "Resting HR",
+                                (m?.measuredAt?.let(::dateTime) ?: "—") to "Scored",
+                            )
+                        val columns = metricsPerRow(resources.configuration.fontScale, resources.configuration.screenWidthDp)
+                        if (columns == 1) {
+                            stats.forEach { (value, label) ->
+                                ui.add(c, ui.text(value, 15f, role = TextRole.MONO, bold = true), 0)
+                                ui.add(c, ui.text(label, 12f, LensColors.muted), 4)
+                            }
+                        } else {
+                            val row = ui.row()
+                            stats.forEach { (value, label) ->
+                                val cell = ui.column()
+                                cell.addView(ui.text(value, 15f, role = TextRole.MONO, bold = true))
+                                cell.addView(ui.text(label, 12f, LensColors.muted))
+                                row.addView(cell, LinearLayout.LayoutParams(0, -2, 1f))
+                            }
+                            ui.add(c, row, 0)
+                        }
                         c.isClickable = true
                         c.isFocusable = true
-                        c.contentDescription = "WHOOP recovery details"
+                        c.contentDescription = spoken + ". Open measurements"
                         c.setOnClickListener {
                             detail = "recovery"
                             detailSource = DataSource.WHOOP
@@ -841,23 +1113,23 @@ class MainActivity : ComponentActivity() {
                     if (visible.getOrNull(index + 1) == "Sleep")
                         ui.pair(
                             root,
-                            { metricCard(it, "strain", "Strain", DataSource.WHOOP) },
-                            { metricCard(it, "sleep", "Sleep", DataSource.WHOOP) },
+                            { column -> strainTile(column) },
+                            { column -> sleepTile(column) },
                         )
-                    else metricCard(root, "strain", "Strain", DataSource.WHOOP)
+                    else strainTile(root)
                 "Sleep" -> metricCard(root, "sleep", "Sleep", DataSource.WHOOP)
                 "Activity" ->
-                    ui.card(root) { c ->
+                    ui.card(root, dashed = true) { c ->
+                        ui.heading(c, "Activity")
                         ui.chip(c, DataSource.HEALTH_CONNECT)
-                        ui.heading(c, "Activity · today")
+                        val steps = metric("steps", DataSource.HEALTH_CONNECT)
                         ui.add(
                             c,
                             ui.text(
-                                metric("steps", DataSource.HEALTH_CONNECT)?.display()
-                                    ?: "Allow Steps or record activity",
-                                28f,
-                                bold = true,
-                                numbers = true,
+                                steps?.display() ?: "Allow Steps or record activity",
+                                if (steps?.value == null) 16f else 32f,
+                                bold = steps?.value != null,
+                                role = if (steps?.value == null) TextRole.BODY else TextRole.MONO,
                             ),
                         )
                         ui.add(
@@ -978,7 +1250,7 @@ class MainActivity : ComponentActivity() {
         )
         ui.add(
             root,
-            ui.text(source.label + " · gaps mean not shared · tap a point", 11f, LensColors.muted),
+            ui.text(source.label + " · gaps mean not shared · tap a point", 12f, LensColors.muted),
         )
     }
 
@@ -987,9 +1259,10 @@ class MainActivity : ComponentActivity() {
             activityDays = listOf(1, 7, 30)[it]
             render()
         }
-        ui.card(root) { c ->
+        ui.card(root, dashed = true) { c ->
             ui.chip(c, DataSource.HEALTH_CONNECT)
-            ui.heading(c, "Steps · " + activityDays + " days")
+            ui.heading(c, "Steps")
+            ui.add(c, ui.text(activityDays.toString() + " days", 12f, LensColors.muted, role = TextRole.MONO), 4)
             val p =
                 chartSlots(
                     snapshot?.health?.series?.get("steps").orEmpty(),
@@ -1076,7 +1349,100 @@ class MainActivity : ComponentActivity() {
         freshness(root, snapshot?.health)
     }
 
+    private fun strainTile(parent: LinearLayout) {
+        val strain = metric("strain", DataSource.WHOOP)
+        ui.card(parent) { c ->
+            ui.heading(c, "Strain")
+            ui.chip(c, DataSource.WHOOP)
+            val spoken =
+                "Strain " + (strain?.display() ?: "not shared") + " of 21, WHOOP"
+            c.addView(StrainArc(this, strain?.value, spoken), LinearLayout.LayoutParams(-1, ui.dp(64)))
+            ui.add(
+                c,
+                ui.text(strain?.display() ?: "—", 26f, bold = true, role = if (strain?.value == null) TextRole.BODY else TextRole.MONO),
+                0,
+            )
+            c.isClickable = true
+            c.isFocusable = true
+            c.contentDescription = spoken
+            c.setOnClickListener {
+                detail = "strain"
+                detailSource = DataSource.WHOOP
+                render()
+            }
+        }
+    }
+
+    private fun sleepTile(parent: LinearLayout) {
+        val sleep = metric("sleep", DataSource.WHOOP)
+        val performance = metric("performance", DataSource.WHOOP)
+        ui.card(parent) { c ->
+            ui.heading(c, "Sleep")
+            ui.chip(c, DataSource.WHOOP)
+            ui.add(
+                c,
+                ui.text(sleep?.display() ?: "—", 26f, bold = true, role = if (sleep?.value == null) TextRole.BODY else TextRole.MONO),
+                0,
+            )
+            ui.add(
+                c,
+                ui.text(
+                    "Performance " + (performance?.display() ?: "—"),
+                    12f,
+                    LensColors.muted,
+                    role = if (performance?.value == null) TextRole.BODY else TextRole.MONO,
+                ),
+                0,
+            )
+            c.isClickable = true
+            c.isFocusable = true
+            c.contentDescription = "Sleep " + (sleep?.display() ?: "not shared") + ", WHOOP"
+            c.setOnClickListener {
+                detail = "sleep"
+                detailSource = DataSource.WHOOP
+                render()
+            }
+        }
+    }
+
     private fun sleep(root: LinearLayout) {
+        val timing = sleepTiming(snapshot?.whoop?.sleeps.orEmpty(), System.currentTimeMillis())
+        ui.card(root) { c ->
+            ui.heading(c, "Consistency")
+            ui.add(c, ui.text("Recorded nights only. Missing nights are left out.", 13f, LensColors.muted))
+            ui.pair(
+                c,
+                { tile ->
+                    ui.add(
+                        tile,
+                        ui.text(
+                            timing.consistencyPercent?.let { "$it%" } ?: "—",
+                            22f,
+                            LensColors.teal,
+                            bold = true,
+                            role = if (timing.consistencyPercent == null) TextRole.BODY else TextRole.MONO,
+                        ),
+                    )
+                    ui.add(tile, ui.text("Timing consistency", 13f, bold = true))
+                    ui.add(
+                        tile,
+                        ui.text(
+                            "How close bed and wake times stayed to the recorded-night median.",
+                            12f,
+                            LensColors.muted,
+                        ),
+                    )
+                },
+                { tile ->
+                    ui.add(
+                        tile,
+                        ui.text("${timing.recorded} of ${timing.window}", 22f, bold = true, role = TextRole.MONO),
+                    )
+                    ui.add(tile, ui.text("Nights recorded", 13f, bold = true))
+                    ui.add(tile, ui.text("Nights without a sleep record are excluded.", 12f, LensColors.muted))
+                },
+            )
+        }
         val order =
             if (prefs.getString("sleep-source", "both") == "health")
                 listOf(DataSource.HEALTH_CONNECT, DataSource.WHOOP)
@@ -1151,7 +1517,7 @@ class MainActivity : ComponentActivity() {
         }
         metricCard(root, "performance", "Sleep performance", DataSource.WHOOP)
         ui.card(root) { c ->
-            ui.heading(c, "14-night history")
+            ui.heading(c, "Two-week history")
             val p =
                 chartSlots(
                     snapshot?.whoop?.series?.get("sleep").orEmpty(),
@@ -1205,7 +1571,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun vitals(root: LinearLayout) {
-        ui.card(root) { c ->
+        ui.card(root, dashed = true) { c ->
             ui.chip(c, DataSource.HEALTH_CONNECT)
             ui.heading(c, "Heart rate · today")
             val p =
@@ -1223,6 +1589,17 @@ class MainActivity : ComponentActivity() {
                 ),
             )
             chart(c, p, DataSource.HEALTH_CONNECT)
+            val latest = p.lastOrNull { it.value != null }?.value
+            ui.add(
+                c,
+                ui.text(
+                    "Vs your baseline " +
+                        baselineDelta(latest, personalBaseline(p, System.currentTimeMillis())),
+                    12f,
+                    LensColors.muted,
+                    role = TextRole.MONO,
+                ),
+            )
             ui.button(c, "Heart-rate measurements") {
                 detail = "heart"
                 detailSource = DataSource.HEALTH_CONNECT
@@ -1260,7 +1637,7 @@ class MainActivity : ComponentActivity() {
             }
         val missing = extra.filter { metric(it, DataSource.HEALTH_CONNECT)?.value == null }
         if (missing.isNotEmpty())
-            ui.card(root) { c ->
+            ui.card(root, dashed = true) { c ->
                 ui.chip(c, DataSource.HEALTH_CONNECT)
                 ui.add(c, ui.text("Not shared", 17f, bold = true))
                 ui.add(
@@ -1355,7 +1732,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun health(root: LinearLayout) {
-        ui.card(root) { c ->
+        ui.card(root, dashed = true) { c ->
             ui.heading(
                 c,
                 if (HealthConnectClient.getSdkStatus(this) == HealthConnectClient.SDK_AVAILABLE)
@@ -1375,7 +1752,7 @@ class MainActivity : ComponentActivity() {
             )
             ui.add(c, ui.text("Read only · choose categories individually", 12f, LensColors.sand))
         }
-        ui.card(root) { c ->
+        ui.card(root, dashed = true) { c ->
             ui.heading(c, "Data categories")
             healthCategories.forEach { cat ->
                 ui.add(
@@ -1394,7 +1771,7 @@ class MainActivity : ComponentActivity() {
             ui.button(c, "Review permissions", true) { permissionFlow() }
             ui.button(c, "Open Health Connect settings") { healthSettings() }
         }
-        ui.card(root) { c ->
+        ui.card(root, dashed = true) { c ->
             ui.heading(c, "Preview on this phone")
             ui.button(c, "Refresh permitted local records", true, !loading) { refresh(true) }
             freshness(c, snapshot?.health)
@@ -1410,7 +1787,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-        ui.card(root) { c ->
+        ui.card(root, dashed = true) { c ->
             ui.heading(c, "Refresh & sync")
             toggle(c, "Automatic foreground refresh", prefs.getBoolean("local-refresh", true)) {
                 prefs.edit().putBoolean("local-refresh", it).apply()
@@ -1442,6 +1819,7 @@ class MainActivity : ComponentActivity() {
         onChange: (Boolean) -> Unit,
     ) {
         val row = ui.row()
+        row.minimumHeight = ui.dp(48)
         row.addView(ui.text(title), LinearLayout.LayoutParams(0, -2, 1f))
         row.addView(
             Switch(this).apply {
@@ -1578,13 +1956,52 @@ class MainActivity : ComponentActivity() {
         }
         ui.card(root) { c ->
             ui.heading(c, "Appearance")
-            ui.add(c, ui.text("Theme · Premium dark"))
+            val choice = prefs.getString("appearance", "AUTO") ?: "AUTO"
+            val state = ui.appearance
+            listOf(
+                    "AUTO" to ("Glass" to "Translucent surfaces over a calm aurora. Yields to battery saver or when blur is off."),
+                    "REDUCED_TRANSPARENCY" to ("Reduced transparency" to "Solid surfaces. Same layout and labels."),
+                    "BATTERY_SAVER" to ("Battery saver" to "Frosted look without live blur. Also follows Android battery saver."),
+                )
+                .forEach { (id, copy) ->
+                    val on = choice == id || (id == "AUTO" && choice !in setOf("REDUCED_TRANSPARENCY", "BATTERY_SAVER"))
+                    val row = ui.row()
+                    row.minimumHeight = ui.dp(56)
+                    row.isClickable = true
+                    row.isFocusable = true
+                    row.contentDescription = copy.first + ". " + copy.second
+                    row.setOnClickListener {
+                        prefs.edit().putString("appearance", id).apply()
+                        render()
+                    }
+                    row.addView(
+                        ui.text(if (on) "●" else "○", 16f, if (on) LensColors.teal else LensColors.muted, role = TextRole.BODY),
+                        LinearLayout.LayoutParams(ui.dp(32), -2),
+                    )
+                    val labels = ui.column()
+                    labels.addView(ui.text(copy.first, 15f, bold = true))
+                    labels.addView(ui.text(copy.second, 12f, LensColors.muted))
+                    row.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+                    ui.add(c, row, 4)
+                }
+            val reason =
+                when (state.reason) {
+                    AppearanceReason.POWER_SAVE -> "Battery saver is on."
+                    AppearanceReason.BLUR_UNAVAILABLE -> "Your phone turned off blur."
+                    else -> null
+                }
+            if (reason != null) ui.add(c, ui.text(reason, 12f, LensColors.amber))
             toggle(c, "Reduced motion", prefs.getBoolean("reduced-motion", false)) {
                 prefs.edit().putBoolean("reduced-motion", it).apply()
+                render()
             }
             ui.add(
                 c,
-                ui.text("Static charts and rings avoid sweeps and pulses.", 12f, LensColors.muted),
+                ui.text(
+                    "Text size follows Android, up to 200%. Motion also follows Remove animations.",
+                    12f,
+                    LensColors.muted,
+                ),
             )
         }
         ui.card(root) { c ->
@@ -1650,6 +2067,39 @@ class MainActivity : ComponentActivity() {
                     .setNegativeButton("Cancel", null)
                     .show()
             }
+        }
+        ui.card(root) { c ->
+            ui.heading(c, "At a glance")
+            ui.add(c, ui.text(GLANCE_PENDING_COPY, 13f, LensColors.muted))
+            val selected = glanceLevel()
+            tabs(c, listOf("Hidden", "Summary", "Detailed"), selected.ordinal) { n ->
+                chooseGlance(LockLevel.entries[n])
+            }
+            val decision = glanceDecision()
+            ui.add(
+                c,
+                ui.text(
+                    "Chosen " +
+                        selected.name.lowercase() +
+                        ". Effective " +
+                        decision.level.name.lowercase() +
+                        " · " +
+                        decision.fallback.name.lowercase().replace('_', ' ') +
+                        ".",
+                    12f,
+                    LensColors.amber,
+                ),
+            )
+            ui.add(
+                c,
+                ui.text(
+                    "Hidden shows the mark and Unlock to view. Summary and Detailed need an explicit opt-in in the unlocked app and still do not appear until issue #102 is verified.",
+                    12f,
+                    LensColors.muted,
+                ),
+            )
+            if (selected == LockLevel.DETAILED && prefs.getBoolean("glance-confirmed", false))
+                ui.button(c, "Choose stored measurements") { chooseGlanceMetrics() }
         }
         ui.card(root) { c ->
             ui.heading(c, "Cloud synchronization · prepared only")
@@ -1746,19 +2196,19 @@ class MainActivity : ComponentActivity() {
         ui.add(
             root,
             ui.text(
-                "Drag a card, or use arrows. Hidden cards stay one tap away.",
+                "Drag a card, or use arrows. Hidden cards stay one tap away. Done saves this order on the phone.",
                 14f,
                 LensColors.muted,
             ),
         )
-        val order = cardOrder().toMutableList()
-        val hidden = prefs.getStringSet("home-hidden", emptySet()).orEmpty().toMutableSet()
-        fun save() {
-            prefs
-                .edit()
-                .putString("home-order", order.joinToString(","))
-                .putStringSet("home-hidden", hidden)
-                .apply()
+        val draft =
+            arrangeDraft
+                ?: (cardOrder().toMutableList() to
+                        prefs.getStringSet("home-hidden", emptySet()).orEmpty().toMutableSet())
+                    .also { arrangeDraft = it }
+        val order = draft.first
+        val hidden = draft.second
+        fun refresh() {
             render()
         }
         order.forEachIndexed { i, name ->
@@ -1767,13 +2217,13 @@ class MainActivity : ComponentActivity() {
                     ui.add(c, ui.text(name, 17f, bold = true))
                     toggle(c, "Show " + name, name !in hidden) {
                         if (it) hidden.remove(name) else hidden.add(name)
-                        save()
+                        refresh()
                     }
                     tabs(c, listOf("↑ Move up", "↓ Move down"), -1) { n ->
                         val j = if (n == 0) i - 1 else i + 1
                         if (j in order.indices) {
                             java.util.Collections.swap(order, i, j)
-                            save()
+                            refresh()
                         }
                     }
                 }
@@ -1794,7 +2244,7 @@ class MainActivity : ComponentActivity() {
                         if (from >= 0) {
                             val v = order.removeAt(from)
                             order.add(i.coerceAtMost(order.size), v)
-                            save()
+                            refresh()
                         }
                         true
                     }
@@ -1802,7 +2252,24 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        ui.button(root, "Reset to default order") {
+            order.clear()
+            order.addAll(defaultCards)
+            hidden.clear()
+            refresh()
+        }
+        ui.button(root, "Cancel") {
+            arrangeDraft = null
+            page = "Home"
+            render()
+        }
         ui.button(root, "Done", true) {
+            prefs
+                .edit()
+                .putString("home-order", order.joinToString(","))
+                .putStringSet("home-hidden", hidden)
+                .apply()
+            arrangeDraft = null
             page = "Home"
             render()
         }
@@ -1814,12 +2281,13 @@ class MainActivity : ComponentActivity() {
                 setBackgroundColor(0x99000000.toInt())
                 setOnClickListener { closeDrawer() }
             }
-        frame.getChildAt(0).importantForAccessibility =
-            View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        val behind = frame.getChildAt(0) ?: return
+        behind.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+        ui.blurBehind(behind, true)
         val scroll = ScrollView(this).apply { isFillViewport = true }
         val panel =
             ui.column(24).apply {
-                background = ui.shape(LensColors.top, 28)
+                background = ui.glassBackground(GlassRole.DRAWER)
                 isClickable = true
             }
         scroll.addView(panel)
@@ -1839,7 +2307,7 @@ class MainActivity : ComponentActivity() {
             },
             LinearLayout.LayoutParams(ui.dp(64), ui.dp(64)).apply { bottomMargin = ui.dp(12) },
         )
-        ui.add(panel, ui.text("WhoopLens", 25f, LensColors.text, true))
+        ui.add(panel, ui.text("WhoopLens", 28f, role = TextRole.HAND))
         ui.add(panel, ui.text("Signed in · Cloudflare", 12f, LensColors.muted))
         ui.chip(panel, DataSource.WHOOP)
         ui.chip(panel, DataSource.HEALTH_CONNECT)
@@ -1856,10 +2324,9 @@ class MainActivity : ComponentActivity() {
             item.gravity = Gravity.CENTER_VERTICAL
             item.setPadding(ui.dp(16), 0, ui.dp(16), 0)
             item.background =
-                ui.shape(
-                    if (destination == page) android.graphics.Color.rgb(25, 58, 62)
-                    else LensColors.top,
-                    14,
+                ui.glassBackground(
+                    GlassRole.CHIP,
+                    edgeColor = if (destination == page) LensColors.teal else null,
                 )
             item.isFocusable = true
             item.isClickable = true
@@ -1886,6 +2353,9 @@ class MainActivity : ComponentActivity() {
     private fun closeDrawer() {
         drawer?.let { frame.removeView(it) }
         drawer = null
-        frame.getChildAt(0)?.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+        frame.getChildAt(0)?.let {
+            it.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_AUTO
+            ui.blurBehind(it, false)
+        }
     }
 }

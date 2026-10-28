@@ -15,6 +15,12 @@ is authorized by this work. PRs #84/#85 remain open and unmerged.
   only after validation and owner approval. Both use the same application ID and
   certificate. They replace one another; they are not side-by-side installations.
 
+The published `0.3.0-beta.1` record above stays as released. The next candidate,
+not published by this change, is `0.4.0-beta.1` with Android `versionCode=6`,
+the same application ID `io.github.astrasler.whooplens`, and the same certificate
+fingerprint. Do not dispatch the release workflow for that candidate from the
+design branch.
+
 Every published Android update must increase versionCode across **both** channels.
 Semantic version sorting does not substitute for this rule. Switching back to an
 older stable APK cannot bypass Android's downgrade restrictions; do not uninstall

@@ -7,6 +7,6 @@
         android:contentDescription="@string/widget_preview_description"
         android:textColor="#EEF6F5" android:textSize="18sp" android:fontFamily="@font/jetbrains_mono"
         android:maxLines="1" android:ellipsize="end" android:includeFontPadding="false"
-        android:autoSizeTextType="uniform" android:autoSizeMinTextSize="8sp" android:autoSizeMaxTextSize="18sp"
+        android:autoSizeTextType="uniform" android:autoSizeMinTextSize="18sp" android:autoSizeMaxTextSize="18sp"
         android:autoSizeStepGranularity="1sp" />
 </LinearLayout>
