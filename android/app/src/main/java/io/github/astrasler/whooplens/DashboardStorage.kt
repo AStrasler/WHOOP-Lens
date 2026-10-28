@@ -32,10 +32,11 @@ internal object DashboardCodec {
             )
             val s = JSONObject()
             b.series.forEach { (key, points) ->
+                val bounded = if (key == HEART_RATE_DAILY) boundedHeartRateDays(points, b.fetchedAt) else points
                 s.put(
                     key,
                     JSONArray(
-                        points.takeLast(500).map {
+                        bounded.takeLast(500).map {
                             JSONArray()
                                 .put(it.time)
                                 .put(it.value ?: JSONObject.NULL)
@@ -106,7 +107,7 @@ internal object DashboardCodec {
                 val points =
                     series.keys().asSequence().associateWith { k ->
                         val a = series.getJSONArray(k)
-                        (0 until a.length()).map { n ->
+                        val decoded = (0 until a.length()).map { n ->
                             val p = a.getJSONArray(n)
                             Point(
                                 p.getLong(0),
@@ -114,6 +115,7 @@ internal object DashboardCodec {
                                 p.optString(2).takeIf { it != "null" && it.isNotBlank() },
                             )
                         }
+                        if (k == HEART_RATE_DAILY) boundedHeartRateDays(decoded, b.getLong("time")) else decoded
                     }
                 val sleeps =
                     b.getJSONArray("sleeps").objects().map { s ->

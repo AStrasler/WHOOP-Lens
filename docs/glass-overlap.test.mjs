@@ -4,6 +4,29 @@ import { readFileSync, existsSync } from "node:fs";
 
 const read = path => readFileSync(new URL(path, import.meta.url), "utf8");
 
+test("Vitals baseline uses history while its chart stays limited to today", () => {
+  const activity = read("../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt");
+  const vitals = activity.split("private fun vitals(root: LinearLayout)")[1].split('for (k in listOf')[0];
+  assert.match(vitals, /val history = snapshot\?\.health\?\.series\?\.get\("heart"\)\.orEmpty\(\)/);
+  assert.match(vitals, /history\.filter\s*\{\s*it\.time > now - 86400000/);
+  assert.match(vitals, /chart\(c, p, DataSource\.HEALTH_CONNECT\)/);
+  assert.match(vitals, /baselineDelta\(latest, personalBaseline\(snapshot\?\.health\?\.baselineSeries\("heart"\)\.orEmpty\(\), now\)\)/);
+  assert.match(activity, /personalBaseline\(b\?\.baselineSeries\(k\)\.orEmpty\(\)/);
+  assert.match(activity, /snapshot\?\.health\?\.baselineSeries\(key\)\.orEmpty\(\)/);
+  const health = read("../android/app/src/main/java/io/github/astrasler/whooplens/HealthDashboard.kt");
+  assert.match(health, /heartPoints\.takeLast\(2000\)/);
+  assert.match(health, /series\[HEART_RATE_DAILY\] = emptyList\(\)/);
+  assert.match(health, /readHeartRateDailyHistory\(now, zone, allowed\)/);
+  assert.match(health, /setOf\(HeartRateRecord\.BPM_AVG\)/);
+});
+
+test("Strain track and progress use the tested upper semicircle geometry", () => {
+  const ui = read("../android/app/src/main/java/io/github/astrasler/whooplens/LensUi.kt");
+  const strain = ui.split("internal class StrainArc")[1].split("internal class TrendChart")[0];
+  assert.match(strain, /drawArc\(oval, 180f, strainArcSweep\(21\.0\), false, paint\)/);
+  assert.match(strain, /drawArc\(oval, 180f, strainArcSweep\(it\), false, paint\)/);
+});
+
 test("Liquid glass keeps the merged repair contracts", () => {
   const activity = read("../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt");
   const widgets = read("../android/app/src/main/java/io/github/astrasler/whooplens/LensWidgets.kt");

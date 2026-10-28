@@ -60,9 +60,17 @@ internal fun sleepTiming(
         return min(d, 1440 - d)
     }
     fun median(values: List<Int>): Int {
-        val sorted = values.sorted()
-        return if (sorted.size % 2 == 1) sorted[sorted.size / 2]
+        // Cut the clock at its largest empty interval so nearby times on either
+        // side of midnight stay adjacent before taking the ordinary median.
+        val clock = values.sorted()
+        val gap = clock.indices.maxByOrNull { i ->
+            (if (i == clock.lastIndex) clock.first() + 1440 else clock[i + 1]) - clock[i]
+        }!!
+        val reference = clock[(gap + 1) % clock.size]
+        val sorted = values.map { (it - reference + 1440) % 1440 }.sorted()
+        val middle = if (sorted.size % 2 == 1) sorted[sorted.size / 2]
         else (sorted[sorted.size / 2 - 1] + sorted[sorted.size / 2]) / 2
+        return (reference + middle) % 1440
     }
     val beds = recorded.map { minute(it.start) }
     val wakes = recorded.map { minute(it.end) }
@@ -81,6 +89,10 @@ internal fun baselineDelta(value: Double?, baseline: Triple<Double, Double, Doub
     val formatted = java.text.DecimalFormat("0.#").format(abs(delta))
     return if (delta > 0) "+$formatted" else "\u2212$formatted"
 }
+
+/** Android's positive sweep from the left endpoint follows the upper half. */
+internal fun strainArcSweep(value: Double): Float =
+    (180.0 * (value / 21.0).coerceIn(0.0, 1.0)).toFloat()
 
 internal fun effectiveLockContent(inputs: LockInputs): LockDecision =
     decideLockContent(

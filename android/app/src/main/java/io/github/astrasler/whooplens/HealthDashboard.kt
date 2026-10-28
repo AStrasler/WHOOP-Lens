@@ -118,6 +118,8 @@ internal class HealthDashboard(
         val range = TimeRangeFilter.between(start, end)
         val metrics = mutableListOf<Metric>()
         val series = mutableMapOf<String, List<Point>>()
+        // Always replace cached daily history, including on denial/read failure.
+        series[HEART_RATE_DAILY] = emptyList()
         val sleeps = mutableListOf<SleepDetail>()
         val exercises = mutableListOf<ExerciseDetail>()
         val notices = mutableListOf<String>()
@@ -311,6 +313,27 @@ internal class HealthDashboard(
             sleeps.map { Point(it.end, it.asleepMinutes) },
             sleeps.maxByOrNull { it.end }?.origin,
         )
+        if (allowed(HeartRateRecord::class)) {
+            try {
+                series[HEART_RATE_DAILY] = readHeartRateDailyHistory(now, zone, allowed) { from, to ->
+                    hc.aggregateGroupByPeriod(
+                        AggregateGroupByPeriodRequest(
+                            setOf(HeartRateRecord.BPM_AVG),
+                            TimeRangeFilter.between(from, to),
+                            Period.ofDays(1),
+                        )
+                    ).map { bucket ->
+                        Point(
+                            bucket.startTime.atZone(zone).toInstant().toEpochMilli(),
+                            bucket.result[HeartRateRecord.BPM_AVG]?.toDouble(),
+                        )
+                    }
+                }
+            } catch (_: Exception) {
+                notices.add("Heart-rate baseline unavailable. Check permission and retry.")
+                complete = false
+            }
+        }
         val heart = records(HeartRateRecord::class)
         val heartPoints =
             heart

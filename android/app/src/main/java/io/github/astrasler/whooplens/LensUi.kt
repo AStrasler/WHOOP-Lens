@@ -337,10 +337,10 @@ internal class StrainArc(context: Context, private val value: Double?, private v
         paint.strokeCap = Paint.Cap.ROUND
         paint.strokeWidth = 9f
         paint.color = GlassTokens.edge
-        canvas.drawArc(oval, 180f, -180f, false, paint)
+        canvas.drawArc(oval, 180f, strainArcSweep(21.0), false, paint)
         value?.takeIf { it.isFinite() && it >= 0 }?.let {
             paint.color = GlassTokens.teal
-            canvas.drawArc(oval, 180f, (-180f * (it / 21.0).coerceIn(0.0, 1.0)).toFloat(), false, paint)
+            canvas.drawArc(oval, 180f, strainArcSweep(it), false, paint)
         }
         canvas.restore()
     }

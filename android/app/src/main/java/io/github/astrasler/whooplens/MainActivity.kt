@@ -961,8 +961,8 @@ class MainActivity : ComponentActivity() {
                 render()
             }
         val series =
-            if (source == DataSource.WHOOP) snapshot?.whoop?.series?.get(key).orEmpty()
-            else snapshot?.health?.series?.get(key).orEmpty()
+            if (source == DataSource.WHOOP) snapshot?.whoop?.baselineSeries(key).orEmpty()
+            else snapshot?.health?.baselineSeries(key).orEmpty()
         ui.add(
             card,
             ui.text(
@@ -1574,9 +1574,11 @@ class MainActivity : ComponentActivity() {
         ui.card(root, dashed = true) { c ->
             ui.chip(c, DataSource.HEALTH_CONNECT)
             ui.heading(c, "Heart rate · today")
+            val history = snapshot?.health?.series?.get("heart").orEmpty()
+            val now = System.currentTimeMillis()
             val p =
-                snapshot?.health?.series?.get("heart").orEmpty().filter {
-                    it.time > System.currentTimeMillis() - 86400000
+                history.filter {
+                    it.time > now - 86400000
                 }
             val s = statistics(p)
             ui.add(
@@ -1594,7 +1596,7 @@ class MainActivity : ComponentActivity() {
                 c,
                 ui.text(
                     "Vs your baseline " +
-                        baselineDelta(latest, personalBaseline(p, System.currentTimeMillis())),
+                        baselineDelta(latest, personalBaseline(snapshot?.health?.baselineSeries("heart").orEmpty(), now)),
                     12f,
                     LensColors.muted,
                     role = TextRole.MONO,
@@ -1670,13 +1672,15 @@ class MainActivity : ComponentActivity() {
         ui.metric(root, metric(k, detailSource), metric(k, detailSource)?.title ?: k, detailSource)
         val p = chartSlots(b?.series?.get(k).orEmpty(), rangeDays, System.currentTimeMillis())
         ui.card(root) { c ->
-            val baseline = personalBaseline(b?.series?.get(k).orEmpty(), System.currentTimeMillis())
+            val baseline = personalBaseline(b?.baselineSeries(k).orEmpty(), System.currentTimeMillis())
             chart(c, p, detailSource, baseline = baseline)
             ui.add(
                 c,
                 ui.text(
                     if (baseline == null)
                         "Baseline unavailable: at least 14 recorded days are needed."
+                    else if (detailSource == DataSource.HEALTH_CONNECT && k == "heart")
+                        "Shaded: 30-day mean ± standard deviation of recorded daily heart-rate averages. Observed variation, not a medical range."
                     else
                         "Shaded: personal 30-day mean ± standard deviation. Observed variation, not a medical range.",
                     12f,
