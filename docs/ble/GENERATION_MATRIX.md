@@ -65,7 +65,7 @@ connected to GATT.
 | WHOOP 5.0 | standard heart-rate parser | completed code; simulated or unit-tested | Same parser. Not evidence that a 5.0 strap notifies. |
 | WHOOP MG | standard heart-rate parser | completed code; simulated or unit-tested | Same parser. Not evidence that an MG strap notifies. |
 | WHOOP 4.0 | standard heart-rate notifications on a strap | pending physical verification | whoop4-ble reports live 180D/2A37 on that author's 4.0. WHOOP Lens has not confirmed it. |
-| WHOOP 5.0 | standard heart-rate notifications on a strap | pending physical verification | NOOP claims unbonded 180D/2A37. Vestigator part 7 saw that fail on an MG, not on a cited 5.0. Unresolved for 5.0. |
+| WHOOP 5.0 | standard heart-rate notifications on a strap | pending physical verification | NOOP claims unbonded 180D/2A37. Vestigator part 7 reports on an MG that 2A37 was not the data path; no 5.0 is cited. Unresolved for 5.0. |
 | WHOOP MG | standard heart-rate notifications on a strap | pending physical verification | Same public conflict. Vestigator's session was an MG. Unresolved for MG until that strap is tested. |
 | WHOOP 4.0 | optional R-R intervals | completed code; simulated or unit-tested; pending physical verification | Parser keeps 1/1024 s ticks when the standard flag is set. Whether a 4.0 strap sets it is unverified. |
 | WHOOP 5.0 | optional R-R intervals | completed code; simulated or unit-tested; pending physical verification | No 5.0 capture in this repo shows 2A37 R-R. Absence must stay absent. |

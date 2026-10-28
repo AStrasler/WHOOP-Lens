@@ -570,7 +570,9 @@ class BleTest {
                     it.topic == "standard heart-rate notifications on a strap"
             }
         assertFalse(fiveHeartRate.finding.contains("5.0/MG"))
-        assertTrue(fiveHeartRate.finding.contains("an MG"))
+        assertTrue(fiveHeartRate.finding.contains("on an MG"))
+        assertTrue(fiveHeartRate.finding.contains("was not the data path"))
+        assertTrue(fiveHeartRate.finding.contains("no 5.0 is cited"))
         val doc = repoFile("docs/ble/GENERATION_MATRIX.md")
         val start = doc.indexOf("<!-- matrix-start -->")
         val end = doc.indexOf("<!-- matrix-end -->")
@@ -614,7 +616,9 @@ class BleTest {
         assertTrue(sources.contains("getCharacteristic(UUID.fromString(HR_CHARACTERISTIC))"))
         val lower = sources.lowercase()
         assertFalse(lower.contains("e671230191"))
-        assertFalse(Regex("""0xe6\s*,\s*0x71""").containsMatchIn(lower))
+        assertFalse(Regex("""0xe6(\.tobyte\(\))?\s*,\s*0x71""").containsMatchIn(lower))
+        assertFalse(Regex("""-26\s*,\s*113""").containsMatchIn(lower))
+        assertFalse(Regex("""-0x1a\s*,\s*0x71""").containsMatchIn(lower))
     }
 
     private fun hex(value: String) = value.chunked(2).map { it.toInt(16).toByte() }.toByteArray()

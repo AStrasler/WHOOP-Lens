@@ -338,7 +338,7 @@ internal object GenerationMatrix {
                 "standard heart-rate notifications on a strap",
                 physical,
                 "whoop4-ble reports live 180D/2A37 on that author's 4.0. WHOOP Lens has not confirmed it.",
-                "NOOP claims unbonded 180D/2A37. Vestigator part 7 saw that fail on an MG, not on a cited 5.0. Unresolved for 5.0.",
+                "NOOP claims unbonded 180D/2A37. Vestigator part 7 reports on an MG that 2A37 was not the data path; no 5.0 is cited. Unresolved for 5.0.",
                 "Same public conflict. Vestigator's session was an MG. Unresolved for MG until that strap is tested.",
                 ),
             )
