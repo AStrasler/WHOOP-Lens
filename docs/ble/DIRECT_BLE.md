@@ -9,9 +9,13 @@ PR is modified or merged by this branch.
 
 Account & Settings -> Direct BLE opens a native LensUi screen. Nearby Devices
 is requested only after Scan. A user-started 12-second scan retains at most 30
-WHOOP service/name candidates; it never automatically selects one. Labels
-distinguish observed 4.0 vs 5.0/MG service families from a name-only match. Model,
-firmware and generation-specific measurement support remain unverified.
+WHOOP service/name candidates; it never automatically selects one. Labels distinguish an observed 4.0 service from the shared 5.0/MG service
+family, and either of those from a name-only match. A shared-family label is
+not an identification of WHOOP 5.0 or of WHOOP MG. Model, firmware and
+generation-specific measurement support remain unverified. The per-generation
+matrix and the strap procedure are [GENERATION_MATRIX.md](GENERATION_MATRIX.md)
+and [PHYSICAL_STRAP_TEST.md](PHYSICAL_STRAP_TEST.md). Issue #100 tracks that
+work. Nothing in those documents is a hardware result.
 
 Explicit selection connects through Android GATT, discovers services, checks
 standard Heart Rate Service `180D` / Measurement `2A37`, requires the notify

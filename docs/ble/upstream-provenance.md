@@ -16,8 +16,13 @@ transport, schema, decoder or fixture is translated or copied.
 the Direct BLE screen are WHOOP Lens implementations. UUID/protocol facts do not
 justify copying another project's implementation. Tests use newly authored
 synthetic standard-profile packets and injectable fake transports, not upstream
-golden fixtures. The existing WHOOP/Health Connect source enum, dashboard codec,
-widget routing and official API security remain separate from BLE observations.
+golden fixtures. `StrapChecksum`, `StrapEnvelope`, `BatteryLevelMeasurement` and
+`StrapObservation` are the same kind of independent code: public layout facts
+only, with synthetic frames computed for the tests. They do not include NOOP,
+Wearable or Goose source, schemas, captured packets, or the published
+`CLIENT_HELLO` command. The existing WHOOP/Health Connect source enum, dashboard
+codec, widget routing and official API security remain separate from BLE
+observations.
 
 No upstream repository or fork source was modified. No new upstream dependency
 is imported: the selected function adaptation uses Kotlin and platform APIs
