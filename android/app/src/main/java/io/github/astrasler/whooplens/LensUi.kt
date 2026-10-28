@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
 import android.view.MotionEvent
 import android.view.View
@@ -139,6 +140,55 @@ internal class LensUi(val context: Context) {
         parent.addView(t, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(8) })
     }
 
+    /**
+     * Frosted, raised pills with a restrained highlight. Rendered natively so no
+     * React/Framer runtime or continuous animation is needed on Android.
+     */
+    private fun liquidButtonBackground(primary: Boolean): android.graphics.drawable.Drawable {
+        val fill = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            if (primary) intArrayOf(Color.rgb(195, 255, 246), Color.rgb(112, 228, 218), Color.rgb(61, 188, 184))
+            else if (appearance.mode == LensAppearance.REDUCED_TRANSPARENCY)
+                intArrayOf(GlassTokens.solidReduced, GlassTokens.solidReduced)
+            else intArrayOf(Color.argb(224, 70, 90, 103), Color.argb(208, 28, 45, 55)),
+        ).apply {
+            cornerRadius = dp(22).toFloat()
+            setStroke(dp(1), if (primary) Color.argb(196, 255, 255, 255) else GlassTokens.edgeReduced)
+        }
+        if (appearance.mode != LensAppearance.GLASS) return fill
+        val highlight = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.argb(72, 255, 255, 255), Color.argb(8, 255, 255, 255), Color.TRANSPARENT),
+        ).apply { cornerRadius = dp(22).toFloat() }
+        return LayerDrawable(arrayOf(fill, highlight))
+    }
+
+    /** A one-time lift on pointer/press; respects Android reduced motion and saver mode. */
+    private fun liftOnInteraction(view: View, amountDp: Int) {
+        if (appearance.reduceMotion || appearance.mode != LensAppearance.GLASS) return
+        fun move(raised: Boolean) {
+            view.animate().cancel()
+            view.animate()
+                .translationY(if (raised) -dp(amountDp).toFloat() else 0f)
+                .setDuration(if (raised) 120L else 160L)
+                .start()
+        }
+        view.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> move(true)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> move(false)
+            }
+            false // Preserve normal clicks, accessibility activation and focus.
+        }
+        view.setOnHoverListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_HOVER_ENTER -> move(true)
+                MotionEvent.ACTION_HOVER_EXIT -> move(false)
+            }
+            false
+        }
+    }
+
     fun button(
         parent: LinearLayout,
         title: String,
@@ -155,16 +205,15 @@ internal class LensUi(val context: Context) {
                 isEnabled = enabled
                 isFocusable = true
                 isClickable = true
-                val bg =
-                    if (primary)
-                        GradientDrawable(
-                                GradientDrawable.Orientation.TOP_BOTTOM,
-                                intArrayOf(Color.rgb(166, 246, 238), Color.rgb(79, 216, 207)),
-                            )
-                            .apply { cornerRadius = dp(18).toFloat() }
-                    else shape(Color.TRANSPARENT, 18, !enabled)
-                background = RippleDrawable(ColorStateList.valueOf(0x334FD8CF), bg, null)
-                if (!enabled) setTextColor(LensColors.muted)
+                background = RippleDrawable(
+                    ColorStateList.valueOf(0x334FD8CF),
+                    liquidButtonBackground(primary),
+                    null,
+                )
+                if (!enabled) {
+                    alpha = 0.65f
+                    setTextColor(LensColors.muted)
+                } else liftOnInteraction(this, 2)
                 setOnClickListener { action() }
             }
         ViewCompat.setAccessibilityDelegate(
@@ -181,6 +230,42 @@ internal class LensUi(val context: Context) {
         )
         add(parent, b, 8)
         return b
+    }
+
+    /**
+     * Native counterpart of a glass StatsCard: title, real measurement,
+     * source-specific icon and an optional, explicitly calculated baseline trend.
+     */
+    fun statsCard(
+        parent: LinearLayout,
+        title: String,
+        value: String,
+        icon: String,
+        trend: String?,
+        source: DataSource,
+        action: () -> Unit,
+    ): LinearLayout {
+        val surface = card(parent, dashed = source == DataSource.HEALTH_CONNECT) { inner ->
+            val heading = row()
+            heading.addView(
+                text(title, 12f, LensColors.muted, bold = true),
+                LinearLayout.LayoutParams(0, -2, 1f),
+            )
+            heading.addView(text(icon, 19f, if (source == DataSource.WHOOP) LensColors.teal else LensColors.sand))
+            add(inner, heading, 5)
+            add(inner, text(value, 22f, bold = true, role = TextRole.MONO), 5)
+            add(
+                inner,
+                text(trend ?: "Baseline unavailable", 12f, if (trend != null) LensColors.teal else LensColors.muted),
+                0,
+            )
+        }
+        surface.contentDescription = "$title, $value. ${trend ?: "Baseline unavailable"}. ${source.label}. Open details."
+        surface.isClickable = true
+        surface.isFocusable = true
+        surface.setOnClickListener { action() }
+        liftOnInteraction(surface, 5)
+        return surface
     }
 
     fun metric(
