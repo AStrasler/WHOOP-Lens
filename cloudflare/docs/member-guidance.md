@@ -13,6 +13,16 @@ Status reads are for the signed-in account only: counts and timestamps, never re
 
 Synthetic scenarios (owner, a member whose phone data arrives, a member whose token is issued but whose delivery stores nothing) are in `test/member-guidance.test.mjs`.
 
+## Member-first interpretation (all members and health metrics)
+
+WhoopLens considers each person an individual with their own physiology, chronotype, circumstances, goals and preferences. Population averages may provide context but are not imposed as universal targets. A sleep-consistency score is descriptive, not a judgment. In particular, environmental obligations can constrain wake times independently of what the member wants or when they naturally thrive; the host should not infer laziness, motivation, or chronotype from sleep timing alone.
+
+**Current implementation:** The seven immutable rules in `PERSONALIZATION_PRINCIPLES` (`src/member-guidance.mjs`) are included immediately after source hierarchy in every MCP `initialize.instructions` variant, returned in `get_capabilities.personalization_principles`, and summarized in the WHOOP read tool descriptions and `serverInfo.description`. The deterministic AI summaries already calculate within-person historical baselines when sufficient records exist; they do not receive a default generic bedtime target or prescribe sleep behavior. Incomplete baselines must remain labeled as incomplete. No new database tables, personal profiles, setting writes, background tasks or third-party data sharing are introduced.
+
+**Enforcement boundary:** Server-returned fields, read-only tool behavior, data provenance and computed baselines are controlled by WhoopLens. Advice, tone, and whether a host follows the MCP instructions depend on the consuming AI host; the MCP protocol cannot force a model to honor them. Do not describe these rules as a verified change to all AI platforms. User-supplied preferences and experiments are conversational context only unless a separately approved feature explicitly stores them.
+
+**Regression coverage:** `test/source-hierarchy.test.mjs` and its shared `host-instructions-main.txt` snapshot verify every flag and protocol variant, the capability surface, and member-first guidance. These tests use synthetic data and do not expose member health records.
+
 ## Source hierarchy (client-facing contract)
 Every client of the Cloudflare MCP server (`whoop-lens`) gets the same eight rules, with no custom instructions of its own: `SOURCE_HIERARCHY` in `src/member-guidance.mjs`. They come first in every `initialize` `instructions` variant, so a host that truncates instructions keeps them. `get_capabilities` also returns them as `source_hierarchy`, and short versions appear in the `serverInfo.description` and in tool descriptions.
 
