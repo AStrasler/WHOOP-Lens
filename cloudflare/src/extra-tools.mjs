@@ -3,7 +3,7 @@
 import manifest from './capabilities.json' with {type:'json'};
 import {activeMembership} from './storage.mjs';
 import {ISSUE_CONSENT,REVOKE_CONFIRM} from './health-connect-webhook.mjs';
-import {featureStates,accountStatus,SOURCE_HIERARCHY} from './member-guidance.mjs';
+import {featureStates,accountStatus,SOURCE_HIERARCHY,PERSONALIZATION_PRINCIPLES} from './member-guidance.mjs';
 export const SAMSUNG_METRICS=['sleep','heart_rate','spo2','steps','activity','exercise','body_composition','skin_temperature','energy_score','blood_pressure','profile'];
 export const HC_METRICS=['steps_daily','sleep_session','heart_rate','exercise_session'];
 const categories=['whoop','optional','explore','advocacy','planned','unsupported'];
@@ -12,7 +12,7 @@ const definitions=[
   ['get_samsung_health','Read the signed-in account’s uploaded Samsung Health records, separately attributed from WHOOP. Supplementary: cite them as Samsung Health, never as WHOOP data or a substitute for missing WHOOP measurements.',{...paging,metric:{type:'string',enum:SAMSUNG_METRICS}}],
   ['get_health_connect','Read the signed-in account’s stored Health Connect records from a file import or phone ingest. This tool does not sync a phone. Supplementary: cite them as Health Connect, never as WHOOP data or a substitute for missing WHOOP measurements.',{...paging,metric:{type:'string',enum:HC_METRICS}}],
   ['get_medical_context','Read only explicitly reviewed, source-labeled medical context belonging to the signed-in account. Use only when the user asks for it; never as a substitute for WHOOP measurements.',paging],
-  ['get_capabilities','Describe registered tools, server feature states (enabled, disabled, not configured), this account\'s seat role and data status, and limitations.',{
+  ['get_capabilities','Describe registered tools, server feature states (enabled, disabled, not configured), this account\'s seat role and data status, member-first interpretation principles, and limitations.',{
     category:{type:'string',enum:categories},limit:{type:'integer',minimum:1,maximum:25},
     offset:{type:'integer',minimum:0,maximum:1000},include_planned:{type:'boolean'}}],
   ['connect_whoop','Create a short-lived WHOOP consent link for the signed-in account. Requires user completion.',{}],
@@ -164,6 +164,7 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
   }).filter(item=>(!category||item.category===category)&&(include_planned||!['planned','unsupported'].includes(item.status)));
   return {schema_version:manifest.schema_version,registry_version:'cloudflare-1.3',source:'bundled_cloudflare_catalog',
     source_hierarchy:SOURCE_HIERARCHY,
+    personalization_principles:PERSONALIZATION_PRINCIPLES,
     server_features:featureStates(env),account,
     global_limitations:[...manifest.global_limitations.filter(s=>!s.startsWith('Android Health Connect')),
       'Local record tools read stored records for the signed-in account.',
