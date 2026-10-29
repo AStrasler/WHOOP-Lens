@@ -8,7 +8,7 @@ import {readFileSync,readdirSync} from 'node:fs';
 import {d1Database} from './d1-sqlite.mjs';
 import {connect} from './audit-fixtures.mjs';
 import {handleMcpRpc,validateMcpTransport} from '../src/mcp.mjs';
-import {SOURCE_HIERARCHY} from '../src/member-guidance.mjs';
+import {SOURCE_HIERARCHY,PERSONALIZATION_PRINCIPLES,sourceHierarchyGuidance,personalizationGuidance} from '../src/member-guidance.mjs';
 import {hostInstructions,memberGuidance} from '../src/host-instructions.mjs';
 
 const MEMBER='0b0b0b0b-0000-4000-8000-00000000000b';
@@ -46,6 +46,8 @@ for(const version of ['2025-11-25','2025-06-18']){
         const text=init.result.instructions;
         assert.ok(text.startsWith('Source hierarchy (required): (1) WHOOP measurements are authoritative'),'first 512 characters carry the hierarchy');
         for(const rule of SOURCE_HIERARCHY)assert.ok(text.includes(rule));
+        for(const principle of PERSONALIZATION_PRINCIPLES)assert.ok(text.includes(principle));
+        assert.ok(text.startsWith(sourceHierarchyGuidance+' '+personalizationGuidance));
         for(const re of RULE_WORDS)assert.match(text,re);
         assert.doesNotMatch(text,SUBSTITUTION);
         // External sources (ChatGPT Health) are consulted only when the user asks.
@@ -65,6 +67,7 @@ for(const version of ['2025-11-25','2025-06-18']){
       for(const n of ['get_profile','get_body_measurements','get_recovery','get_sleep','get_workouts','get_cycles']){
         assert.match(by[n].description,/Authoritative WHOOP measurements \(source "whoop"\); if they are missing or stale, say so and never fill the gap from another source\./);
         assert.match(by[n].description,/Every record is returned exactly as WHOOP provides it and is an authoritative WHOOP record whatever its origin; WHOOP does not say which records the person entered, so keep entry_origin unknown unless the person says so\./);
+        assert.match(by[n].description,/Interpret this member.s measurements against their own dated baseline/);
         // Naps are never presented as user-entered.
         assert.doesNotMatch(by[n].description,/user-entered[^.;]*nap|nap[^.;]*user-entered/i);
         assert.equal(by[n].annotations.readOnlyHint,true);
@@ -149,6 +152,7 @@ for(const version of ['2025-11-25','2025-06-18']){
       assert.equal(mc.source_authority,'user_directed');
       const cap=out(await rpc(db,'tools/call',{name:'get_capabilities',arguments:{}})).text;
       assert.deepEqual(cap.source_hierarchy,[...SOURCE_HIERARCHY]);
+      assert.deepEqual(cap.personalization_principles,[...PERSONALIZATION_PRINCIPLES]);
     }finally{db.close();}
   });
 }
@@ -156,7 +160,14 @@ for(const version of ['2025-11-25','2025-06-18']){
 test('guidance text contains each rule once and never recommends substituting sources',()=>{
   assert.equal(SOURCE_HIERARCHY.length,8);
   for(const re of RULE_WORDS)assert.equal(SOURCE_HIERARCHY.filter(r=>re.test(r)).length,1);
-  for(const text of [hostInstructions,memberGuidance,...SOURCE_HIERARCHY])assert.doesNotMatch(text,SUBSTITUTION);
+  for(const text of [hostInstructions,memberGuidance,...SOURCE_HIERARCHY,...PERSONALIZATION_PRINCIPLES])assert.doesNotMatch(text,SUBSTITUTION);
+  assert.equal(PERSONALIZATION_PRINCIPLES.length,7);
+  assert.match(personalizationGuidance,/Member-first interpretation \(required\)/);
+  assert.match(personalizationGuidance,/chronotype/);
+  assert.match(personalizationGuidance,/Wake times may be externally constrained/);
+  assert.match(personalizationGuidance,/member proposes a goal or an experiment/);
+  assert.match(personalizationGuidance,/Do not persist, change, or share/);
+  assert.doesNotMatch(personalizationGuidance,/everyone must (sleep|wake)|one bedtime for everyone/i);
 });
 
 // Edge cases in attributeWhoop (final review of PR #72).

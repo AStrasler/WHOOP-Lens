@@ -90,7 +90,7 @@ export function attributeWhoop(data,name,firstPage,now=Date.now()){
   return out;
 }
 export const mcpTools=Object.freeze([...Object.keys(toolToResource).map(name=>({
-  name,description:toolLabels[name]+WHOOP_NOTE,
+  name,description:toolLabels[name]+WHOOP_NOTE+" Interpret this member’s measurements against their own dated baseline and stated context. Do not impose a universal target or infer chronotype, ability or personal motivation.",
   inputSchema:historyTools.has(name)?schemaHistory:schemaNoArgs,
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
 })),...extraTools]);
