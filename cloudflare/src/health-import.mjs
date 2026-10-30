@@ -2,7 +2,8 @@ import {readBounded} from './bounded-body.mjs';
 // Web file import for Health Connect v2 JSON. Not a phone sync and not an
 // Android companion. Ownership comes only from the verified caller.
 import {parseLocalImport} from '../../docs/web-import.mjs';
-import {activeMembership} from './storage.mjs';
+import {healthImportAdmission,advanceHealthFence,HEALTH_WRITE_SQL} from './health-consent-fence.mjs';
+import {ACTIVE_MEMBER_SQL,activeMembership} from './storage.mjs';
 
 export const IMPORT_CONSENT='store-health-connect-file';
 export const WITHDRAW_CONSENT='delete-my-health-connect-records';
@@ -24,34 +25,35 @@ export function publicImportError(error){
 }
 function recordId(){return crypto.randomUUID();}
 
-export async function importHealthConnectFile(db,userId,file,consent,{now=Date.now()}={}){
+export async function importHealthConnectFile(db,userId,file,consent,{now=Date.now(),generation}={}){
   const id=await requireMember(db,userId);
   if(consent!==IMPORT_CONSENT)throw Error('Consent required');
   const text=typeof file==='string'?file:JSON.stringify(file);
   const parsed=parseLocalImport(text,now);
   if(parsed.kind!=='health_connect_preview')
     throw Error('Only a Health Connect v2 file can be stored. FHIR bundles stay a local preview.');
+  const epoch=generation??await healthImportAdmission(db,id);
   const granted=new Date(now).toISOString();
   // One D1 batch (single transaction): consent and every row land together,
   // or nothing does. A mid-file failure must not leave a partial import.
   const statements=[db.prepare(
-    'INSERT INTO health_import_consent(user_id,purpose,granted_at,withdrawn_at) VALUES(?1,?2,?3,NULL) '+
+    'INSERT INTO health_import_consent(user_id,purpose,granted_at,withdrawn_at) SELECT ?1,?2,?3,NULL WHERE '+HEALTH_WRITE_SQL+' '+
     'ON CONFLICT(user_id) DO UPDATE SET purpose=excluded.purpose,granted_at=excluded.granted_at,withdrawn_at=NULL'
-  ).bind(id,'health_connect_file',granted)];
+  ).bind(id,'health_connect_file',granted,epoch)];
   for(const row of parsed.records){
     statements.push(db.prepare(
       'INSERT INTO health_connect_records(id,user_id,metric,record_key,origin_package,observed_at,ended_at,local_date,unit,payload_json) '+
-      'VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) '+
+      'SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10 WHERE EXISTS ('+ACTIVE_MEMBER_SQL.replaceAll('?1','?2')+') AND EXISTS (SELECT 1 FROM health_import_fences WHERE user_id=?2 AND generation=?11) '+
       'ON CONFLICT(user_id,metric,record_key) DO UPDATE SET origin_package=excluded.origin_package,'+
       'observed_at=excluded.observed_at,ended_at=excluded.ended_at,local_date=excluded.local_date,'+
       'unit=excluded.unit,payload_json=excluded.payload_json,updated_at=CURRENT_TIMESTAMP'
     ).bind(recordId(),id,row.metric,row.record_key,row.origin_package,row.observed_at,row.ended_at,
-      row.local_date,row.unit,JSON.stringify(row.payload)));
+      row.local_date,row.unit,JSON.stringify(row.payload),epoch));
   }
   let results;
   try{results=await db.batch(statements);}catch{throw Error('Import unavailable');}
   if(!Array.isArray(results)||results.length!==statements.length||
-     results.some((r,i)=>!r?.success||(i>0&&r.meta?.changes!==1)))
+     results.some(r=>!r?.success||r.meta?.changes!==1))
     throw Error('Import unavailable');
   const stored=results.length-1;
   return {stored,source:'health_connect',transport:'web_file_import',consent:'granted'};
@@ -62,11 +64,12 @@ export async function withdrawHealthConnectImport(db,userId,consent){
   if(consent!==WITHDRAW_CONSENT)throw Error('Consent required');
   // Delete, withdrawal, and ingest-token revocation land together so a phone
   // token cannot keep writing after the member removes stored records.
-  let results;
+  let results,hasTokenTable=false;
   try{
     const tokenTable=await db.prepare(
       "SELECT name FROM sqlite_master WHERE type='table' AND name='health_connect_ingest_tokens'"
     ).first();
+    hasTokenTable=!!tokenTable?.name;
     const statements=[
       db.prepare('DELETE FROM health_connect_records WHERE user_id=?1').bind(id),
       db.prepare('UPDATE health_import_consent SET withdrawn_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND purpose=?2')
@@ -75,11 +78,12 @@ export async function withdrawHealthConnectImport(db,userId,consent){
     if(tokenTable?.name) statements.push(db.prepare(
       'UPDATE health_connect_ingest_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND revoked_at IS NULL'
     ).bind(id));
+    statements.push(advanceHealthFence(db,id));
     results=await db.batch(statements);
   }catch{throw Error('Import unavailable');}
   if(!Array.isArray(results)||results.some(r=>!r?.success))throw Error('Import unavailable');
   return {deleted:results[0].meta?.changes??0,consent:'withdrawn',source:'health_connect',
-    ingest_tokens_revoked:results[2]?.meta?.changes??0};
+    ingest_tokens_revoked:hasTokenTable?(results[2]?.meta?.changes??0):0};
 }
 
 export async function healthConnectStatus(db,userId){
@@ -128,8 +132,9 @@ export async function healthConnectHttp(request,env,userId){
       return httpJson(await withdrawHealthConnectImport(env.DB,userId,body?.consent));
     }
     if(request.method==='POST'&&url.pathname==='/v1/health-connect/import'){
+      const generation=await healthImportAdmission(env.DB,userId);
       const body=await readJson(request,512000);
-      return httpJson(await importHealthConnectFile(env.DB,userId,body?.file,body?.consent));
+      return httpJson(await importHealthConnectFile(env.DB,userId,body?.file,body?.consent,{generation}));
     }
     return httpJson({error:'Not found'},request.method==='GET'||request.method==='POST'||request.method==='DELETE'?404:405);
   }catch(error){

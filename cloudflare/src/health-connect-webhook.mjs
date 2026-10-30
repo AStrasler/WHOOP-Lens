@@ -1,6 +1,7 @@
 import {readBounded} from './bounded-body.mjs';
 // HC Webhook (com.hcwebhook.app) JSON ingest. The phone authenticates with a
 // per-user bearer. The owner is the token's member, never a field in the body.
+import {healthImportAdmission,advanceHealthFence,HEALTH_WRITE_SQL} from './health-consent-fence.mjs';
 import {activeMembership} from './storage.mjs';
 import {ISSUE_GUIDANCE} from './member-guidance.mjs';
 
@@ -261,17 +262,18 @@ function bearer(request){
 export async function issueIngestToken(db,userId,consent){
   const id=await requireMember(db,userId);
   if(consent!==ISSUE_CONSENT) throw Error('Consent required');
+  const epoch=await healthImportAdmission(db,id);
   const token='hct_'+base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const hash=await sha256Hex(token);
   const granted=new Date().toISOString();
   let results;
   try{results=await db.batch([
-    db.prepare('UPDATE health_connect_ingest_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND revoked_at IS NULL').bind(id),
-    db.prepare('INSERT INTO health_connect_ingest_tokens(token_hash,user_id) VALUES(?1,?2)').bind(hash,id),
+    db.prepare('UPDATE health_connect_ingest_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND revoked_at IS NULL AND '+HEALTH_WRITE_SQL).bind(id,null,null,epoch),
+    db.prepare('INSERT INTO health_connect_ingest_tokens(token_hash,user_id) SELECT ?2,?1 WHERE '+HEALTH_WRITE_SQL).bind(id,hash,null,epoch),
     db.prepare(
-      'INSERT INTO health_import_consent(user_id,purpose,granted_at,withdrawn_at) VALUES(?1,?2,?3,NULL) '+
+      'INSERT INTO health_import_consent(user_id,purpose,granted_at,withdrawn_at) SELECT ?1,?2,?3,NULL WHERE '+HEALTH_WRITE_SQL+' '+
       'ON CONFLICT(user_id) DO UPDATE SET purpose=excluded.purpose,granted_at=excluded.granted_at,withdrawn_at=NULL'
-    ).bind(id,CONSENT_PURPOSE,granted)
+    ).bind(id,CONSENT_PURPOSE,granted,epoch)
   ]);}catch{throw Error('Import unavailable');}
   if(!Array.isArray(results)||results.length!==3||results.some(r=>!r?.success)||results[1].meta?.changes!==1)
     throw Error('Import unavailable');
@@ -288,9 +290,13 @@ export async function revokeIngestTokens(db,userId,confirm){
   const id=await requireMember(db,userId);
   if(confirm!==REVOKE_CONFIRM) throw Error('Consent required');
   let result;
-  try{result=await db.prepare(
-    'UPDATE health_connect_ingest_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND revoked_at IS NULL'
-  ).bind(id).run();}catch{throw Error('Import unavailable');}
+  try{
+    const results=await db.batch([
+      db.prepare('UPDATE health_connect_ingest_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND revoked_at IS NULL').bind(id),
+      advanceHealthFence(db,id)
+    ]);
+    result=results[0];
+  }catch{throw Error('Import unavailable');}
   if(!result?.success) throw Error('Import unavailable');
   return {revoked:result.meta?.changes??0};
 }
