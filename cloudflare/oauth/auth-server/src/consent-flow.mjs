@@ -1,3 +1,4 @@
+import {rejectEarlyData} from '../../../src/early-data.mjs';
 import {consentPage,noStoreHeaders,unavailable} from '../../consent.mjs';
 import {createVerifier,checkUpstreamConfig,upstreamAuthorizationUrl,verifyUpstreamCode} from './upstream.mjs';
 import {logOAuthStage,logAuthorizationFailure} from './oauth-diagnostics.mjs';
@@ -42,6 +43,7 @@ export function makeConsentFlow({
   if(typeof getOAuth!=='function')throw Error('Official OAuth provider required');
 
   async function authorize(request,env){
+    const early=rejectEarlyData(request);if(early)return early;
     if(env?.OAUTH_SERVER_ENABLED!=='true'||env?.OAUTH_CONSENT_ENABLED!=='true')
       return unavailable();
     if(new URL(request.url).origin!==ORIGIN)return oauthError(403);
@@ -113,6 +115,7 @@ export function makeConsentFlow({
   }
 
   async function callback(request,env){
+    const early=rejectEarlyData(request);if(early)return early;
     if(env?.OAUTH_SERVER_ENABLED!=='true'||env?.OAUTH_CONSENT_ENABLED!=='true')
       return unavailable();
     const url=new URL(request.url);

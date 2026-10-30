@@ -276,7 +276,7 @@ test("audit cursors: internal WHOOP walks (summary baseline, stress window) acce
 
 function hcFixture(){
   const s=new DatabaseSync(":memory:");
-  for(const n of ["0001_initial.sql","0004_medical_context_review.sql","0006_health_import_consent.sql","0007_health_connect_ingest.sql"])
+  for(const n of ["0001_initial.sql","0004_medical_context_review.sql","0006_health_import_consent.sql","0022_health_import_fences.sql","0007_health_connect_ingest.sql"])
     s.exec(readFileSync(new URL("../migrations/"+n,import.meta.url),"utf8"));
   for(const id of [A,B]){
     s.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);
