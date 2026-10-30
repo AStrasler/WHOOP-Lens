@@ -11,11 +11,13 @@ The local reproducers establish three boundary failures: a delayed refresh can r
 - GET/HEAD/OPTIONS marked Early-Data: 1 receive 425 before auth/resource bindings are accessed. This is an application guard; manually supplying the header does not prove TLS 0-RTT.
 - Migration 0022 adds per-member Health Connect withdrawal/revocation generation nonces. File import and ingest-token issuance bind to the admitted generation and active membership in each write. Withdrawal/revocation advances the generation atomically. HTTP import snapshots admission before body transfer; a later deliberate import can regrant consent.
 
+- Migration 0023 advances the Health Connect fence and permanently revokes phone tokens on membership deactivation or deletion, so an old admitted request cannot regain authorization after reactivation. The former-member runbook covers health fences and both OAuth stores; full D1 deletion retains revision-advancing revocation tombstones.
+
 ## Approval and cutover gates
 
 This branch has not deployed anything. Do not enable d1, apply migrations remotely, or merge as an automatic production cutover.
 
-1. Approve and stage both additive migrations. Migration 0022 is required before deploying the changed Health Connect code; absent schema fails closed.
+1. Approve and stage migrations 0021, 0022 and 0023. Migration 0022 supplies the required Health Connect schema; migration 0023 supplies the membership removal/reactivation barrier. Do not release without both protections.
 2. Choose a deliberate OAuth reconnect cutover or a separately designed offline migration of existing registrations/grants. Empty D1 does not import KV; switching it on will invalidate existing KV-only credentials and registrations. Do not silently copy/fall back to KV.
 3. Cut over all authorization traffic and token-validation RPC consistently; prevent old versions from continuing to issue or validate KV credentials. Mixed modes do not provide revocation guarantees.
 4. Keep revoked grant tombstones. Define bounded retention for expired non-grant state before large-scale use; never remove tombstones while stale writers can exist.

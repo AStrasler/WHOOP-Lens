@@ -9,7 +9,7 @@ function deferred(){let resolve;const promise=new Promise(r=>resolve=r);return {
 async function fixture(){
  const mf=new Miniflare({cf:false,modules:true,script:'export default {fetch(){return new Response("")}}',compatibilityDate:'2026-07-29',d1Databases:{DB:'synthetic-health-replay'}});
  const db=await mf.getD1Database('DB');
- for(const name of ['0001_initial.sql','0006_health_import_consent.sql','0022_health_import_fences.sql','0007_health_connect_ingest.sql'])
+ for(const name of ['0001_initial.sql','0006_health_import_consent.sql','0022_health_import_fences.sql','0007_health_connect_ingest.sql','0023_health_membership_lifecycle.sql'])
   await db.exec(readFileSync(new URL('../../migrations/'+name,import.meta.url),'utf8').replace(/--[^\n]*/g,'').replace(/\n/g,' '));
  for(const [id,active] of [[A,1],[B,1],[C,0]]){
   await db.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?1,'cloudflare_access',?1)").bind(id).run();
@@ -109,3 +109,35 @@ test('real D1 web HTTP: withdrawal during body transfer cancels import; a later 
   assert.equal(fresh.stored,1);assert.equal(await f.count(A),1);
  }finally{release.resolve();await f.mf.dispose();}
 });
+
+for(const removal of ['deactivate','delete']){
+ for(const kind of ['file','webhook','issuance']){
+  test('membership '+removal+' then reactivation rejects pending Health Connect '+kind,async()=>{
+   const f=await fixture(),entered=deferred(),release=deferred();try{
+    const {importHealthConnectFile,IMPORT_CONSENT}=await import('../../src/health-import.mjs');
+    const old=await f.issue(A),other=await f.issue(B);assert.equal((await f.post(other,77)).status,200);
+    const paused={prepare:f.db.prepare.bind(f.db),async batch(statements){entered.resolve();await release.promise;return f.db.batch(statements);}};
+    const operation=kind==='file'?importHealthConnectFile(paused,A,webFile,IMPORT_CONSENT,{now:Date.parse('2026-10-13T03:00:00Z')}):
+     kind==='webhook'?f.post(old,42,paused):issueIngestToken(paused,A,ISSUE_CONSENT);
+    const pending=operation.then(value=>({value}),error=>({error}));await entered.promise;
+    if(removal==='deactivate'){
+     await f.db.prepare('UPDATE whoop_members SET active=0 WHERE user_id=?1').bind(A).run();
+     await f.db.prepare('UPDATE whoop_members SET active=1 WHERE user_id=?1').bind(A).run();
+    }else{
+     await f.db.prepare('DELETE FROM whoop_members WHERE user_id=?1').bind(A).run();
+     await f.db.prepare('INSERT INTO whoop_members(user_id,active) VALUES(?1,1)').bind(A).run();
+    }
+    release.resolve();const result=await pending;
+    if(kind==='webhook')assert.equal(result.value?.status,403);
+    else assert.ok(result.error,'old admission must not become valid after reactivation');
+    assert.equal(await f.count(A),0);
+    const active=await f.db.prepare('SELECT count(*) n FROM health_connect_ingest_tokens WHERE user_id=?1 AND revoked_at IS NULL').bind(A).first();
+    assert.equal(active.n,0,'membership removal permanently revokes pre-removal tokens');
+    assert.equal((await f.post(old)).status,401);
+    const fresh=await f.issue(A);assert.equal((await f.post(fresh,99)).status,200);
+    assert.equal(await f.count(A),1);assert.equal(await f.count(B),1);
+    const row=await f.db.prepare('SELECT payload_json FROM health_connect_records WHERE user_id=?1').bind(B).first();assert.equal(JSON.parse(row.payload_json).count,77);
+   }finally{release.resolve();await f.mf.dispose();}
+  });
+ }
+}

@@ -48,12 +48,29 @@ email, or any health data into a public place.
    settings. WhoopLens never deletes Notion pages.
 3. **Health Connect phone ingest:** deleting `health_connect_ingest_tokens`
    (step 4) stops the webhook accepting their phone's uploads.
-4. **MCP OAuth grants (auth worker, `OAUTH_KV`), full account deletion only:** list the user's grants with
+4. **MCP OAuth grants, full account deletion only:** determine which state store
+   the deployed auth worker uses. In legacy KV mode, list the user's grants with
    the provider's `listUserGrants(userId)` and revoke each with
-   `revokeGrant(grantId, userId)` from an owner-run script, or delete the KV keys
-   prefixed `grant:<user_id>:` and `token:<user_id>:`. Count first, then delete.
-   In health-data-only mode keep the grants: they hold no health data and the
-   member's assistant connection must keep working.
+   `revokeGrant(grantId, userId)` from an owner-run script. In D1 mode
+   (`OAUTH_STATE_STORE=d1`), grants and tokens are in `oauth_security_state`;
+   the full-deletion block below invalidates them by clearing their payloads and
+   advancing revisions. **Never DELETE D1 OAuth rows or existing tombstones.**
+   The retained keys/revisions contain no usable credentials or health payloads
+   and prevent delayed writers from restoring revoked grants/tokens. Account
+   deletion therefore retains only these minimal security revocation markers.
+   Do not fall back to old KV credentials after a D1 cutover. If multiple stores
+   or versions still serve traffic, stop and resolve that cutover before deletion.
+   In health-data-only mode keep the grants and tokens in either store: they
+   hold no health data and the member's assistant connection must keep working.
+5. **Full-deletion ordering:** disable the target's membership and Access mapping
+   before deletion. Drain the target's in-flight authorization/credential writers
+   across all serving versions before the final counts and transaction. An
+   already identity-verified callback must not be allowed to publish a new grant
+   after the deletion snapshot. These are owner-controlled prerequisites, not
+   changes performed by this runbook automatically. Do not reactivate the
+   member during deletion. Migration 0023 invalidates Health Connect admission
+   generations and revokes phone tokens on membership deactivation/removal,
+   including direct operator SQL.
 
 ## 3. Dry run (counts only)
 
@@ -77,8 +94,27 @@ UNION ALL SELECT 'service_announcement_targets', COUNT(*) FROM service_announcem
 
 Keep only the counts in the private note.
 
+### 3b. OAuth D1 counts (separate from health-data counts)
+
+When migrations 0021-0023 are present, count the exact target prefixes without
+printing keys or payloads:
+
+```sql
+SELECT 'oauth_d1_payloads', COUNT(*) FROM oauth_security_state
+WHERE value IS NOT NULL AND
+  (substr(key,1,length('grant::U:'))='grant::U:' OR
+   substr(key,1,length('token::U:'))='token::U:');
+```
+
+For health-data-only mode this count is unchanged. For full deletion it must
+be zero afterward. Tombstones remain and are not counted as credential payloads.
+Do not delete shared client registrations or opaque uncompleted transactions by
+guessing ownership from their contents.
+
 ## 4. Delete (owner approval per request)
 
+Requires the reviewed schema through migrations 0021-0023; do not run against
+an earlier schema or apply migrations as an incidental deletion step.
 Two modes. Each is one D1 transaction, children before parents (most tables
 reference `identity_links` without `ON DELETE CASCADE`).
 
@@ -91,7 +127,8 @@ for this member is removed. It **keeps** the rows sign-in needs:
 `access_identity_links` (the auth worker maps the Access subject to the user
 here, `enabled=1`), `identity_links` and `whoop_members` (active-membership
 check), plus `whoop_waitlist`, `whoop_member_request_budget` and the
-`OAUTH_KV` grants. The member can sign in again and reconnect WHOOP.
+OAuth grants/tokens in either `OAUTH_KV` or `oauth_security_state`. The member
+can sign in again and reconnect WHOOP.
 
 ```sql
 DELETE FROM notion_update_previews WHERE user_id=':U';
@@ -106,6 +143,7 @@ DELETE FROM whoop_sleep WHERE user_id=':U';
 DELETE FROM health_connect_ingest_tokens WHERE user_id=':U';
 DELETE FROM health_connect_records WHERE user_id=':U';
 DELETE FROM health_import_consent WHERE user_id=':U';
+DELETE FROM health_import_fences WHERE user_id=':U';
 DELETE FROM samsung_health_records WHERE user_id=':U';
 DELETE FROM medical_context WHERE user_id=':U';
 DELETE FROM flare_journal WHERE user_id=':U';
@@ -120,19 +158,32 @@ DELETE FROM ai_usage WHERE scope='user::U';
 
 ### 4b. Full account deletion
 
-Run the 4a block, then this block, then remove the `OAUTH_KV` grants (step 2.4).
+Run the 4a block, then this block in the same transaction, and complete legacy
+KV revocation if that is the active store (step 2.4).
 Deleting `identity_links` and `whoop_members` frees the seat; the person must
 request a new seat to return.
 
 ```sql
+UPDATE oauth_security_state
+SET value=NULL, revision=revision+1, expires_at=NULL, metadata_json=NULL
+WHERE substr(key,1,length('grant::U:'))='grant::U:'
+   OR substr(key,1,length('token::U:'))='token::U:';
 DELETE FROM whoop_member_request_budget WHERE user_id=':U';
 DELETE FROM whoop_waitlist WHERE user_id=':U';
 DELETE FROM access_identity_links WHERE user_id=':U';
 DELETE FROM whoop_members WHERE user_id=':U';
+DELETE FROM health_import_fences WHERE user_id=':U';
 DELETE FROM identity_links WHERE user_id=':U';
 ```
 
-Re-run the step 3 counts; every count must be 0 in either mode. For 4b also
+The membership-delete trigger refreshes the Health Connect fence, so 4b removes
+that fence again after deleting the membership and before the identity parent.
+The OAuth tombstones have no identity foreign key and must remain. A fresh
+Health Connect admission for a subsequently approved account gets a new random
+generation; an old request must never reuse its deleted generation.
+
+Re-run the step 3 health-data counts; every count must be 0 in either mode.
+Re-run 3b separately: D1 OAuth payloads must be zero only for full deletion. For 4b also
 confirm zero rows in `access_identity_links`, `whoop_members` and
 `identity_links` for the id. For 4a confirm those three still have their rows.
 `seat_request_delivery` holds only an email hash with a short expiry and is
