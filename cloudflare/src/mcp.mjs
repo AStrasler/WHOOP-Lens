@@ -1,10 +1,12 @@
+import {lifeScheduleEnabled} from './life-schedule.mjs';
+import {contextualLifeSchedule} from './life-schedule-insights.mjs';
 import {flareTools,flareEnabled,flareArguments,runFlareTool} from './flare-journal.mjs';
 import {notionTools,isNotionTool,notionArguments,runNotionTool,publicNotionError} from './notion.mjs';
 import {notionEnabled} from './notion-client.mjs';
 import {errorReportToolsFor,isErrorReportTool,errorReportArguments,runErrorReportTool} from './error-reports.mjs';
 import {activeMembership,connectionStatus} from './storage.mjs';
 import {extraTools,extraArguments,readExtraTool} from './extra-tools.mjs';
-import {aiSummaryEnabled,attachSummary,summaryTools} from './ai-summary.mjs';
+import {aiSummaryEnabled,attachSummary,summaryTools,collectHistoryPages} from './ai-summary.mjs';
 import {buildWeeklyDigest,parseWeekEnding,weeklyDigestEnabled} from './ai-digest.mjs';
 import {readOwnUsage,utcDay} from './ai-quota.mjs';
 import {disconnectWhoop} from './whoop-disconnect.mjs';
@@ -111,10 +113,17 @@ const weeklyDigestTool=Object.freeze({
   },additionalProperties:false},
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
 });
+const lifeScheduleTool=Object.freeze({
+  name:'get_life_schedule_insights',
+  description:'Read schedule-aware sleep, recovery and activity context with rolling 7, 14 and 30 day observations. Reads the authenticated member only. Never changes the Life Schedule preference; only explicit user settings actions can do that. Missing data and correlation limits are reported.',
+  inputSchema:{type:'object',properties:{},additionalProperties:false},
+  annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
+});
 function listedTools(env,userId){
   const issueTools=[...issueToolsFor(env,userId),...errorReportToolsFor(env,userId)];
   const notices=announcementToolsFor(env,userId);
   let tools=baseListedTools(env);
+  if(lifeScheduleEnabled(env))tools=[...tools,lifeScheduleTool];
   if(issueTools.length)tools=[...tools,...issueTools];
   if(notices.length)tools=[...tools,...notices];
   return notionEnabled(env)?[...tools,...notionTools]:tools;
@@ -133,6 +142,7 @@ function baseListedTools(env){
   return tools;
 }
 function optionalTool(name,env,userId){
+  if(name==='get_life_schedule_insights')return lifeScheduleEnabled(env);
   if(isAnnouncementTool(name))return announcementToolsFor(env,userId).some(t=>t.name===name);
   if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name);
   if(isNotionTool(name))return notionEnabled(env);
@@ -161,6 +171,7 @@ function toolError(id,message,modern) {
 }
 function checkArguments(name,args,env,userId) {
   if(!isObject(args))return null;
+  if(name==='get_life_schedule_insights')return lifeScheduleEnabled(env)&&Object.keys(args).length===0?{}:null;
   if(isAnnouncementTool(name))return announcementToolsFor(env,userId).some(t=>t.name===name)?announcementArguments(name,args):null;
   if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name)?errorReportArguments(name,args):null;
   if(isNotionTool(name))return notionEnabled(env)?notionArguments(name,args):null;
@@ -280,7 +291,19 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   try {
     const resource=toolToResource[name];
     let data;
-    if(isErrorReportTool(name)){
+    if(name==='get_life_schedule_insights'){
+      if(!await activeMembership(db,userId))throw Error('inactive membership');
+      const now=Date.now(),start=new Date(now-30*86400000).toISOString().slice(0,10),end=new Date(now).toISOString().slice(0,10);
+      const records=[];let complete=true;
+      // Bounded existing paginator and member request budgets remain authoritative.
+      for(const resource of ['sleep','recovery','cycles','workouts']){
+        try{
+          const page=await collectHistoryPages(whoopRequest,{db,userId,env},resource,{start,end,maxPages:4});
+          records.push(...page.records);complete=complete&&page.complete;
+        }catch{complete=false;}
+      }
+      data=await contextualLifeSchedule({db,userId,env,now},records,complete);
+    }else if(isErrorReportTool(name)){
       data=await runErrorReportTool(name,args,{db,userId,env,requestId});
     }else if(isNotionTool(name)){
       data=await runNotionTool(name,args,{db,userId,env});
@@ -324,7 +347,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       if(!digest.ok||!(await connectionStatus(db,userId)).connected||!await activeMembership(db,userId))throw Error("digest");
       data={kind:digest.kind,week_ending:digest.week_ending,period:digest.period,
         text:digest.text,chart_data:digest.chart_data,insights:digest.insights,
-        status:digest.status,cached:digest.cached===true};
+        status:digest.status,cached:digest.cached===true,...(digest.life_schedule?{life_schedule:digest.life_schedule}:{})};
     }else if(isAnnouncementTool(name)){
       data=await runAnnouncementTool(name,args,{db,userId,env});
     }else if(name==="report_issue"){

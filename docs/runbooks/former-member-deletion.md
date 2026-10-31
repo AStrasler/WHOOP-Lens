@@ -118,6 +118,10 @@ an earlier schema or apply migrations as an incidental deletion step.
 Two modes. Each is one D1 transaction, children before parents (most tables
 reference `identity_links` without `ON DELETE CASCADE`).
 
+Migration 0024 adds `member_life_schedule`. Health-data-only deletion preserves
+that explicit account preference. Full identity deletion removes it through its
+`ON DELETE CASCADE` foreign key; do not reset it from analysis or retention jobs.
+
 ### 4a. Health-data-only (account stays usable)
 
 Removes WHOOP, Health Connect, Samsung, medical context, journal, Notion,

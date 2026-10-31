@@ -1,62 +1,33 @@
-# Proposal: Life Schedule Awareness
+# Life Schedule Awareness
 
-> **Status:** Draft proposal only. No implementation, migration, API, configuration, or deployment is authorized by this document.
+Development implementation for PR #118. Production activation is separate; no production migration or deployment was performed.
 
-## Goal
+## Preferences → Life Schedule
 
-Enable WhoopLens insights to accommodate actual everyday life without presuming that a consistent daily schedule is practical or desirable. Sleep consistency remains an observed metric, not automatically an improvement target.
+- **Fixed:** My daily routine generally follows predictable times.
+- **Flexible:** I have a general routine, but it changes when needed.
+- **Unpredictable (Default):** My schedule varies significantly depending on what life requires.
 
-## User-facing preference
+The native Android Account & Settings screen includes Preferences → Life Schedule. Loading reads the signed-in account's server preference. Choosing an option opens an explicit confirmation dialog, then sends an authenticated PUT. Selection persists on the server between sessions. Account changes and late signed-out responses cannot expose a previous account's selection.
 
-Location: **Preferences → Life Schedule**
+## Storage and authorization
 
-Prompt: **How predictable is your everyday schedule?**
+`GET /v1/preferences/life-schedule` returns an effective value, explicit-selection indicator and opaque revision. Missing/invalid values resolve to `unpredictable` without creating or repairing a row. Storage or authentication failures are errors, not invented successful defaults.
 
-| Value | Label | Description |
-| --- | --- | --- |
-| `fixed` | Fixed | My daily routine generally follows predictable times. |
-| `flexible` | Flexible | I have a general routine, but it changes when needed. |
-| `unpredictable` | Unpredictable (default) | My schedule varies significantly depending on what life requires. |
+`PUT /v1/preferences/life-schedule` accepts exactly `life_schedule` (one of the three values) and `confirmation="user_selected_life_schedule"`. The normal resource-scoped OAuth wrapper and active-membership checks apply. Identity comes from verified authentication, never request parameters. The parameterized write rechecks membership in SQL. Browser origins must match the resource origin. There is no MCP write tool, inferred preference writer, scheduled reclassification or AI setter.
 
-- **Default effective value:** `unpredictable`, for every user when no explicit preference exists.
-- **Change authority:** Only an explicit action by the authenticated user may change their Life Schedule preference.
-- **Persistence:** A user-selected preference must survive subsequent sessions and must be scoped to that user's account.
-- **Observation is not preference:** Inferred routine regularity may inform descriptive analysis, but it must never create or modify the setting, including when measured behavior contradicts the user's selection.
-- **Unset/invalid value:** Resolve to `unpredictable` without recording a new explicit user selection.
+Migration `0024_life_schedule.sql` adds a per-user D1 table with a constrained value, revision and update time. Reads never write. Full identity deletion cascades to this preference; health-data-only deletion preserves the explicit account selection.
 
-## Insight interpretation
+## Analysis
 
-The preference applies to relevant sleep, recovery, and activity insights. The engine should:
+`get_life_schedule_insights` is a read-only MCP tool using the existing bounded WHOOP paginator and per-member request budget. It reads sleep, recovery, cycles and workouts for rolling 7/14/30 UTC calendar-day windows (including today's partial day), reporting observed/missing days. Available fields cover duration and variability, local timing variability with an explicit timezone offset, efficiency, consistency, measured sleep debt, estimated sleep deficit, HRV, resting heart rate, recovery, daily strain and workout energy. Missing required sleep-need components suppress a computed deficit. Sleep debt is a balance, not summed repeated daily debt. Naps are excluded from main-sleep comparison. Workout energy is summed per observed day; independent resource ids are deduplicated. Missing/truncated/rate-limited history remains explicitly incomplete.
 
-1. Separate *sleep timing variability* from *sleep sufficiency, sleep debt, and physiological recovery*.
-2. Use available sleep duration, sleep debt, HRV, resting heart rate, strain and recovery data, including rolling 7-, 14-, and 30-day context where coverage permits.
-3. Refrain from recommending rigid bedtimes solely because a consistency metric is low, especially under `unpredictable`.
-4. Continue surfacing meaningful deficits, trends, and potential tradeoffs even for an unpredictable schedule.
-5. Distinguish measured associations from demonstrated causes. Do not assert that irregular timing alone caused a recovery dip without supporting evidence.
-6. Generate advice that accommodates the selected context rather than assuming the user should reorganize life around a metric.
-7. Make missing or limited historical coverage apparent rather than claiming an unsupported correlation.
+Existing optional server summaries and weekly digests include deterministic Life Schedule context and recommendations over their available input records. A short input sample does not become a complete 30-day history; longer windows retain missing-day counts. The dedicated tool retrieves broader context. Digest cache keys include the explicit preference revision, so changing the setting cannot replay advice from the previous selection.
 
-**Illustrative outcome:** "Your sleep timing varied substantially this week. Recent recovery and HRV improved despite that variability. Short sleep periods and cumulative sleep debt remain useful to monitor. The available data does not establish that schedule regularity is the main issue."
+Fixed context supports the chosen routine without demanding tighter timing; Flexible accommodates adjustments; Unpredictable focuses on feasible sleep opportunity without requiring fixed bedtimes. Low consistency or irregular timing alone never generates fixed-schedule advice. Meaningful measured deficits, debt and physiological changes remain visible. Recommendations distinguish association from causation and state coverage limits. The model still only selects grounded measurement statements; it does not generate or persist preferences or free-form recommendations.
 
-## Proposed implementation path — not started
+## Verification and production gates
 
-- Review the current account preference storage and insight-generation paths.
-- Add a per-user `life_schedule` preference with the effective default `unpredictable` and explicit-user-only writes.
-- Apply the setting in the server-side contextual recommendation layer.
-- Expose the three options in user preferences when the relevant client work is planned.
-- Add regression coverage before enabling behavior in production.
+Server regression tests cover all options, defaults without writes, invalid legacy data, account isolation, membership revocation during writes, authentication failures, prohibited AI writes, 7/14/30 observations, variability-only cases, sparse/future/nap data, summary read-only behavior, revision-separated digest caching and rollback. Android unit tests cover explicit confirmation, authenticated payloads, no default writes, other-account requests, error responses and late responses after sign-out.
 
-## Acceptance criteria for a future implementation
-
-- New/unset accounts receive the effective `unpredictable` context.
-- Only authenticated, explicit user actions change or persist a selection.
-- Scheduled jobs, analytics and generated insights cannot silently reclassify users.
-- Selection persists between sessions and is isolated by member.
-- `fixed`, `flexible`, and `unpredictable` each influence interpretation as specified.
-- Low sleep-consistency data alone does not produce an automatic rigid-bedtime recommendation.
-- Material short sleep, sleep debt, or unfavorable recovery signals remain visible regardless of selected schedule.
-- Missing history does not produce overconfident causal conclusions.
-
-## Out of scope for this proposal PR
-
-No runtime code, schema migration, tests, settings UI, feature flags, production configuration, or deployment changes. Work begins only after separate owner approval.
+`LIFE_SCHEDULE_ENABLED` defaults false in both committed Worker configurations. Before a separately approved production release: review/apply 0024 to the intended database, deploy reviewed code, then enable the flag. Disabling the flag closes preference endpoints/tool discovery; it does not overwrite saved choices. For schema rollback disable the flag and release compatible code before dropping the preference table using the reviewed down migration. No migration, flag change or release is authorized merely by merging this PR. Migration 0023 and service-announcement activation remain separate operations.
