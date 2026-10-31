@@ -12,7 +12,7 @@ android {
     minSdk = 34
     targetSdk = 35
     versionCode = 8
-    versionName = "0.5.0-beta.2"
+    versionName = "0.6.0-beta.1"
     testInstrumentationRunner = providers.gradleProperty("lensTestRunner")
       .getOrElse("io.github.astrasler.whooplens.DesignReviewInstrumentation")
   }
