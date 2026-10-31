@@ -25,8 +25,11 @@ function observed(record){
   const parts=[stage.total_light_sleep_time_milli,stage.total_slow_wave_sleep_time_milli,stage.total_rem_sleep_time_milli];
   if(parts.every(x=>number(x)!=null)){
     values.sleep_duration_minutes=parts.reduce((a,b)=>a+b,0)/60000;
-    if([need.baseline_milli,need.need_from_sleep_debt_milli,need.need_from_recent_strain_milli,need.need_from_recent_nap_milli].every(x=>number(x)!=null)){
-      const required=(need.baseline_milli+need.need_from_sleep_debt_milli+need.need_from_recent_strain_milli-need.need_from_recent_nap_milli)/60000;
+    // WHOOP documents nap contribution as negative or zero, not a positive credit.
+    // https://developer.whoop.com/docs/developing/user-data/sleep/
+    const nap=need.need_from_recent_nap_milli;
+    if(stage.total_no_data_time_milli===0&&[need.baseline_milli,need.need_from_sleep_debt_milli,need.need_from_recent_strain_milli].every(x=>number(x)!=null)&&typeof nap==='number'&&Number.isFinite(nap)&&nap<=0){
+      const required=(need.baseline_milli+need.need_from_sleep_debt_milli+need.need_from_recent_strain_milli+nap)/60000;
       values.sleep_deficit_minutes=Math.max(0,required-values.sleep_duration_minutes);
     }
     // Local wall time only when WHOOP supplies the offset. Never infer a timezone.
@@ -53,7 +56,7 @@ export function buildLifeScheduleInsights({schedule,records=[],now=Date.now(),co
   const today=new Date(now).toISOString().slice(0,10);
   const byMetric=new Map(),seen=new Set();
   for(const record of records.slice(0,2000)){
-    if(!record||typeof record!=='object'||record.nap===true)continue;
+    if(!record||typeof record!=='object'||record.nap===true||(record.score_state!=null&&record.score_state!=='SCORED'))continue;
     const time=dateOf(record);
     if(time==null||time>now||time<now-31*DAY)continue;
     // Resource prefixes avoid collisions between WHOOP's independent id spaces.
@@ -94,7 +97,7 @@ export function buildLifeScheduleInsights({schedule,records=[],now=Date.now(),co
     recommendations.push('Recovery-related measurements changed over the observed window. Compare sleep sufficiency and activity alongside those changes; timing alone does not establish their cause.');
   return {life_schedule:preference,interpretation,windows,recommendations,
     limitations:[complete?'History retrieval completed; missing observations still limit interpretation.':'History is incomplete; window statistics describe only available observations.',
-      'Windows use UTC calendar dates, including the current partial day. Local sleep timing requires an explicit timezone offset; naps are excluded.',
+      'Windows use UTC calendar dates, including the current partial day. Sleep duration sums recorded stages; a computed deficit requires complete sleep-need components and zero unrecorded time. Local sleep timing requires an explicit timezone offset; naps are excluded.',
       'Observed associations do not establish causation. Irregular timing or low consistency alone does not justify adopting a fixed schedule. No preference is inferred or changed.']};
 }
 export async function contextualLifeSchedule(ctx,records,complete=false){

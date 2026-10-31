@@ -35,7 +35,7 @@ function records(){
  const out=[];
  for(let i=0;i<30;i++){
   const end=new Date(NOW-i*86400000).toISOString();
-  out.push({id:'sleep-'+i,start:new Date(NOW-i*86400000-6*3600000).toISOString(),end,timezone_offset:'-04:00',score:{sleep_efficiency_percentage:85,sleep_consistency_percentage:20,stage_summary:{total_light_sleep_time_milli:3*3600000,total_slow_wave_sleep_time_milli:3600000,total_rem_sleep_time_milli:2*3600000},sleep_needed:{baseline_milli:8*3600000,need_from_sleep_debt_milli:3600000,need_from_recent_strain_milli:0,need_from_recent_nap_milli:0}}});
+  out.push({id:'sleep-'+i,start:new Date(NOW-i*86400000-6*3600000).toISOString(),end,timezone_offset:'-04:00',score:{sleep_efficiency_percentage:85,sleep_consistency_percentage:20,stage_summary:{total_no_data_time_milli:0,total_light_sleep_time_milli:3*3600000,total_slow_wave_sleep_time_milli:3600000,total_rem_sleep_time_milli:2*3600000},sleep_needed:{baseline_milli:8*3600000,need_from_sleep_debt_milli:3600000,need_from_recent_strain_milli:0,need_from_recent_nap_milli:0}}});
   out.push({id:'recovery-'+i,created_at:end,score:{recovery_score:50+i,hrv_rmssd_milli:40+i,resting_heart_rate:60-i/10}});
   out.push({id:'cycle-'+i,end,score:{strain:10+i/10}});
   out.push({id:'workout-'+i,end,sport_id:1,score:{kilojoule:500}});
@@ -187,4 +187,14 @@ test('both committed Worker configurations keep production activation off',()=>{
   const source=readFileSync(new URL(path,import.meta.url),'utf8');
   assert.match(source,/"LIFE_SCHEDULE_ENABLED"\s*:\s*"false"/);
  }
+});
+
+test('signed WHOOP nap credit reduces estimated need and missing stages suppress deficits',()=>{
+ const sleep=records()[0];
+ const napAdjusted={...sleep,score:{...sleep.score,sleep_needed:{...sleep.score.sleep_needed,need_from_recent_nap_milli:-3600000}}};
+ const metric=data=>buildLifeScheduleInsights({records:[data],now:NOW}).windows[0].metrics.sleep_deficit_minutes;
+ assert.equal(metric(napAdjusted).latest,120);
+ assert.equal(metric({...sleep,score:{...sleep.score,stage_summary:{...sleep.score.stage_summary,total_no_data_time_milli:60000}}}),undefined);
+ assert.equal(metric({...sleep,score:{...sleep.score,sleep_needed:{...sleep.score.sleep_needed,need_from_recent_nap_milli:3600000}}}),undefined);
+ assert.deepEqual(buildLifeScheduleInsights({records:[{...sleep,score_state:'PENDING_SCORE'}],now:NOW}).windows[0].metrics,{});
 });
