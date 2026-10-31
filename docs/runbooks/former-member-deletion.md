@@ -172,6 +172,8 @@ UPDATE oauth_security_state
 SET value=NULL, revision=revision+1, expires_at=NULL, metadata_json=NULL
 WHERE substr(key,1,length('grant::U:'))='grant::U:'
    OR substr(key,1,length('token::U:'))='token::U:';
+-- If migration 0024 is present; skip only after verifying the table is absent.
+DELETE FROM member_life_schedule WHERE user_id=':U';
 DELETE FROM whoop_member_request_budget WHERE user_id=':U';
 DELETE FROM whoop_waitlist WHERE user_id=':U';
 DELETE FROM access_identity_links WHERE user_id=':U';
