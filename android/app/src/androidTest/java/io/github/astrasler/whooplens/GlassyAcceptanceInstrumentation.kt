@@ -20,6 +20,22 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
         runOnMainSync { try { block() } catch (error: Throwable) { failure=error } }
         failure?.let { throw it }
     }
+    // Tile long detail/settings pages rather than allocating two full-page bitmaps.
+    // Every scroll region is still captured and compared, with bounded memory use.
+    private fun captureTiles(content: View, directory: File, name: String, compare: Boolean) {
+        for (top in 0 until content.height step 3072) {
+            val height=minOf(3072,content.height-top)
+            fun image(): Bitmap {
+                val bitmap=Bitmap.createBitmap(content.width,height,Bitmap.Config.ARGB_8888)
+                val canvas=Canvas(bitmap);canvas.drawColor(LensColors.background);canvas.translate(0f,-top.toFloat());content.draw(canvas)
+                return bitmap
+            }
+            val first=image()
+            if (compare) { val second=image();check(first.sameAs(second)) { "$name has unstable repeated rendering at $top" };second.recycle() }
+            File(directory,"$name-part${top/3072}.png").outputStream().use { first.compress(Bitmap.CompressFormat.PNG,100,it) }
+            first.recycle()
+        }
+    }
     override fun onStart() {
         val result = Bundle()
         try {
@@ -128,10 +144,8 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                     val content = scroll.getChildAt(0)
                     content.measure(View.MeasureSpec.makeMeasureSpec(frame.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                     content.layout(0, 0, frame.width, content.measuredHeight)
-                    val bitmap = Bitmap.createBitmap(content.width, content.height, Bitmap.Config.ARGB_8888)
-                    val canvas = Canvas(bitmap); canvas.drawColor(LensColors.background); content.draw(canvas)
-                    File(directory, "Settings-${(font*100).toInt()}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }
-                    bitmap.recycle()
+                    captureTiles(content,directory,"Settings-${(font*100).toInt()}",false)
+
                 }
             }
             // Application-wide fixture: deliberately clustered HR timestamps reproduce #112.
@@ -182,13 +196,8 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) inspect(view.getChildAt(i))
                         }
                         inspect(content)
-                        fun image(): Bitmap {
-                            val bitmap=Bitmap.createBitmap(content.width,content.height,Bitmap.Config.ARGB_8888)
-                            val canvas=Canvas(bitmap);canvas.drawColor(LensColors.background);content.draw(canvas)
-                            return bitmap
-                        }
-                        val first=image();val second=image()
-                        check(first.sameAs(second)) { "$screen has unstable repeated rendering" };second.recycle()
+                        val name=(screen+"-"+(metric?:"screen")).replace(" ","-").replace("&", "and")
+                        captureTiles(content,directory,"App-$name-${(font*100).toInt()}",true)
                         fun charts(view: View) {
                             if (view is TrendChart) {
                                 view.axisLabels.zipWithNext().forEach { (a,b) -> check(a.left+a.width < b.left) }
@@ -197,9 +206,7 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) charts(view.getChildAt(i))
                         }
                         charts(content)
-                        val name=(screen+"-"+(metric?:"screen")).replace(" ","-").replace("&", "and")
-                        File(directory,"App-$name-${(font*100).toInt()}.png").outputStream().use { first.compress(Bitmap.CompressFormat.PNG,100,it) }
-                        first.recycle();screenRenders++
+                        screenRenders++
                     }
                 }
             }
