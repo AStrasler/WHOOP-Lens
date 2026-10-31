@@ -99,3 +99,36 @@ test('empty previews cannot manufacture a successful sync timestamp',async()=>{
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM companion_sync_status').get().n,0);
  }finally{db.sqlite.close();}
 });
+
+test('disabled uploads preserve authenticated pause and withdrawal, isolation and in-flight fences',async()=>{
+ const db=fixture();try{
+  for(const id of [A,B]){
+   assert.equal((await http(db,id,'POST','/v1/health-connect/sync',{consent:'store-health-connect-file',file:file()})).status,200);
+   db.sqlite.prepare('INSERT INTO health_connect_ingest_tokens(token_hash,user_id) VALUES(?,?)').run((id===A?'a':'b').repeat(64),id);
+  }
+  const off={WEB_HEALTH_IMPORT_ENABLED:'false'};
+  for(const [method,path,consent] of [['POST','/v1/health-connect/pause','pause-my-health-connect-sync'],['DELETE','/v1/health-connect','delete-my-health-connect-records']]){
+   assert.equal((await http(db,null,method,path,{consent},off)).status,401);
+   assert.equal((await http(db,A,method,path,{consent:'wrong'},off)).status,400);
+  }
+  const beforePause=await healthImportAdmission(db,A);
+  assert.equal((await http(db,A,'POST','/v1/health-connect/pause',{consent:'pause-my-health-connect-sync',user_id:B},off)).status,200);
+  await assert.rejects(()=>importHealthConnectFile(db,A,file(),'store-health-connect-file',{generation:beforePause}));
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records WHERE user_id=?').get(A).n,4);
+  assert.ok(db.sqlite.prepare('SELECT revoked_at FROM health_connect_ingest_tokens WHERE user_id=?').get(A).revoked_at);
+  assert.equal(db.sqlite.prepare('SELECT revoked_at FROM health_connect_ingest_tokens WHERE user_id=?').get(B).revoked_at,null);
+  const beforeWithdrawal=await healthImportAdmission(db,A);
+  assert.equal((await http(db,A,'DELETE','/v1/health-connect',{consent:'delete-my-health-connect-records',user_id:B},off)).status,200);
+  await assert.rejects(()=>importHealthConnectFile(db,A,file(),'store-health-connect-file',{generation:beforeWithdrawal}));
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records WHERE user_id=?').get(A).n,0);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM companion_sync_status WHERE user_id=?').get(A).n,0);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records WHERE user_id=?').get(B).n,4);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM companion_sync_status WHERE user_id=?').get(B).n,1);
+  assert.equal(db.sqlite.prepare('SELECT withdrawn_at FROM health_import_consent WHERE user_id=?').get(B).withdrawn_at,null);
+  assert.equal((await http(db,A,'POST','/v1/health-connect/sync',{consent:'store-health-connect-file',file:file()},off)).status,503);
+  assert.equal((await http(db,A,'GET','/v1/health-connect/sync-status',undefined,off)).status,503);
+  db.sqlite.prepare('UPDATE whoop_members SET active=0 WHERE user_id=?').run(A);
+  assert.equal((await http(db,A,'POST','/v1/health-connect/pause',{consent:'pause-my-health-connect-sync'},off)).status,403);
+  assert.equal((await http(db,A,'DELETE','/v1/health-connect',{consent:'delete-my-health-connect-records'},off)).status,403);
+ }finally{db.sqlite.close();}
+});
