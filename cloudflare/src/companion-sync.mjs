@@ -5,7 +5,7 @@ import {healthConnectStatus,importHealthConnectFile} from './health-import.mjs';
 import {advanceHealthFence,healthImportAdmission} from './health-consent-fence.mjs';
 import {readBounded} from './bounded-body.mjs';
 
-const REQUIRED=['health_connect_records','health_import_consent','health_import_fences','health_connect_ingest_tokens','health_connect_member_deactivated','health_connect_member_removed'];
+const REQUIRED=['companion_sync_status','health_connect_records','health_import_consent','health_import_fences','health_connect_ingest_tokens','health_connect_member_deactivated','health_connect_member_removed'];
 export class CompanionSyncRejected extends Error{
  constructor(status,code){super(code);this.status=status;this.code=code;}
 }
@@ -18,8 +18,8 @@ export async function requireSyncReady(db,userId,env){
 export async function companionSyncStatus(db,userId,env){
  await requireSyncReady(db,userId,env);
  const status=await healthConnectStatus(db,userId);
- const consent=await db.prepare('SELECT granted_at FROM health_import_consent WHERE user_id=?1 AND purpose=?2').bind(userId,'health_connect_file').first();
- return {...status,sync_protocol:1,enabled:true,manual_only:true,paused:status.consent!=='granted',last_sync_at:consent?.granted_at??null,
+ const synced=await db.prepare('SELECT last_sync_at FROM companion_sync_status WHERE user_id=?1').bind(userId).first();
+ return {...status,sync_protocol:1,enabled:true,manual_only:true,paused:status.consent!=='granted',last_sync_at:synced?.last_sync_at??null,
    categories:['steps','heart','sleep','exercise']};
 }
 export async function pauseCompanionSync(db,userId,env,consent){
@@ -50,7 +50,7 @@ export async function companionSyncHttp(request,env,userId){
   if(path.endsWith('/pause'))return json(await pauseCompanionSync(env.DB,userId,env,body?.consent));
   if(body?.consent!=='store-health-connect-file')throw new CompanionSyncRejected(400,'consent_required');
   const now=Date.now();
-  const saved=await importHealthConnectFile(env.DB,userId,body.file,body.consent,{generation,now});
+  const saved=await importHealthConnectFile(env.DB,userId,body.file,body.consent,{generation,now,manualSync:true});
   return json({...saved,sync_protocol:1,synced_at:new Date(now).toISOString()});
  }catch(error){
   if(error instanceof CompanionSyncRejected)return json({error:'Cloud sync is not available for this request.',code:error.code},error.status);

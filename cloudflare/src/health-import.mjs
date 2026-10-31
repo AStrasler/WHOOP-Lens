@@ -25,7 +25,7 @@ export function publicImportError(error){
 }
 function recordId(){return crypto.randomUUID();}
 
-export async function importHealthConnectFile(db,userId,file,consent,{now=Date.now(),generation}={}){
+export async function importHealthConnectFile(db,userId,file,consent,{now=Date.now(),generation,manualSync=false}={}){
   const id=await requireMember(db,userId);
   if(consent!==IMPORT_CONSENT)throw Error('Consent required');
   const text=typeof file==='string'?file:JSON.stringify(file);
@@ -50,12 +50,17 @@ export async function importHealthConnectFile(db,userId,file,consent,{now=Date.n
     ).bind(recordId(),id,row.metric,row.record_key,row.origin_package,row.observed_at,row.ended_at,
       row.local_date,row.unit,JSON.stringify(row.payload),epoch));
   }
+  if(manualSync)statements.push(db.prepare(
+    'INSERT INTO companion_sync_status(user_id,last_sync_at) SELECT ?1,?2 WHERE EXISTS ('+ACTIVE_MEMBER_SQL+') '+
+    'AND EXISTS (SELECT 1 FROM health_import_fences WHERE user_id=?1 AND generation=?3) '+
+    'ON CONFLICT(user_id) DO UPDATE SET last_sync_at=excluded.last_sync_at'
+  ).bind(id,granted,epoch));
   let results;
   try{results=await db.batch(statements);}catch{throw Error('Import unavailable');}
   if(!Array.isArray(results)||results.length!==statements.length||
      results.some(r=>!r?.success||r.meta?.changes!==1))
     throw Error('Import unavailable');
-  const stored=results.length-1;
+  const stored=parsed.records.length;
   return {stored,source:'health_connect',transport:'web_file_import',consent:'granted'};
 }
 
@@ -78,6 +83,8 @@ export async function withdrawHealthConnectImport(db,userId,consent){
     if(tokenTable?.name) statements.push(db.prepare(
       'UPDATE health_connect_ingest_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE user_id=?1 AND revoked_at IS NULL'
     ).bind(id));
+    const statusTable=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='companion_sync_status'").first();
+    if(statusTable?.name)statements.push(db.prepare('DELETE FROM companion_sync_status WHERE user_id=?1').bind(id));
     statements.push(advanceHealthFence(db,id));
     results=await db.batch(statements);
   }catch{throw Error('Import unavailable');}

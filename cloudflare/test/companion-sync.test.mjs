@@ -67,3 +67,27 @@ test('Life Schedule reports disabled activation and missing storage distinctly',
   const missing=await http(db,A,'GET','/v1/preferences/life-schedule');assert.equal(missing.status,503);assert.equal((await missing.json()).code,'migration_required');
  }finally{db.sqlite.close();}
 });
+
+test('token consent grants cannot invent or overwrite a successful companion sync time',async()=>{
+ const db=fixture();try{
+  db.sqlite.prepare("INSERT INTO health_import_consent VALUES(?,'health_connect_file','2026-10-31T01:00:00Z',NULL)").run(A);
+  const state=async()=> (await http(db,A,'GET','/v1/health-connect/sync-status')).json();
+  assert.equal((await state()).last_sync_at,null);
+  assert.equal((await http(db,A,'POST','/v1/health-connect/sync',{consent:'store-health-connect-file',file:file()})).status,200);
+  const synced=(await state()).last_sync_at;assert.ok(synced);
+  // This is the consent update performed during webhook-token issuance/rotation.
+  db.sqlite.prepare("UPDATE health_import_consent SET granted_at='2026-10-31T23:59:00Z' WHERE user_id=?").run(A);
+  assert.equal((await state()).last_sync_at,synced);
+  await pauseCompanionSync(db,A,env,'pause-my-health-connect-sync');assert.equal((await state()).last_sync_at,synced);
+  await http(db,A,'DELETE','/v1/health-connect',{consent:'delete-my-health-connect-records'});
+  assert.equal((await state()).last_sync_at,null);
+ }finally{db.sqlite.close();}
+});
+test('failed import rolls back the sync timestamp and rows together',async()=>{
+ const db=fixture();try{
+  db.sqlite.exec("CREATE TRIGGER reject_synthetic_import BEFORE INSERT ON health_connect_records BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+  assert.equal((await http(db,A,'POST','/v1/health-connect/sync',{consent:'store-health-connect-file',file:file()})).status,503);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM companion_sync_status').get().n,0);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records').get().n,0);
+ }finally{db.sqlite.close();}
+});
