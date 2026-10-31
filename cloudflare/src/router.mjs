@@ -1,3 +1,4 @@
+import {companionSyncHttp} from './companion-sync.mjs';
 import {lifeScheduleHttp} from './life-schedule.mjs';
 import {readBounded} from './bounded-body.mjs';
 import {notionOAuthHttp,NOTION_CALLBACK,NOTION_START} from './notion-oauth.mjs';
@@ -112,6 +113,12 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       const event=webhookEvent(response.status,observe);
       if(event)await capture(env,env?.DB,{...event,subsystem:"hc_webhook",requestId});
       return response;
+    }
+    if(['/v1/health-connect/sync-status','/v1/health-connect/sync','/v1/health-connect/pause'].includes(preliminaryUrl.pathname)){
+      try{
+        const userId=await verifyIdentity(request,env);
+        return companionSyncHttp(request,env,userId);
+      }catch(error){return json({error:"Cloud sync unavailable"},error instanceof AccessDenied?error.status:503);}
     }
     if(preliminaryUrl.pathname==="/v1/health-connect"||
        preliminaryUrl.pathname==="/v1/health-connect/import"||
