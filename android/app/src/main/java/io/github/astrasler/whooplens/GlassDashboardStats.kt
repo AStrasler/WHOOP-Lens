@@ -174,7 +174,7 @@ internal object GlassDashboardStats {
         silenceChildren(tile)
         tile.setOnClickListener { onClick() }
         tile.setOnTouchListener { v: View, event: MotionEvent ->
-            if (ui.appearance.reduceMotion) {
+            if (ui.appearance.reduceMotion || ui.appearance.mode != LensAppearance.GLASS) {
                 v.animate().cancel()
                 v.translationY = 0f
             } else {

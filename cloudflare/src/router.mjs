@@ -1,3 +1,4 @@
+import {lifeScheduleHttp} from './life-schedule.mjs';
 import {readBounded} from './bounded-body.mjs';
 import {notionOAuthHttp,NOTION_CALLBACK,NOTION_START} from './notion-oauth.mjs';
 import { resolveSecrets } from "./secrets.mjs";
@@ -128,6 +129,14 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
         return json({error:"Health Connect import unavailable"},503);
       }
     }
+    if(preliminaryUrl.pathname==="/v1/preferences/life-schedule"){
+      if(!env?.DB)return json({error:"Service unavailable"},503);
+      try{
+        const userId=await verifyIdentity(request,env);
+        if(!await activeMembership(env.DB,userId))return json({error:"Not authorized"},403);
+        return lifeScheduleHttp(request,env,userId);
+      }catch(error){return json({error:"Life Schedule unavailable"},error instanceof AccessDenied?error.status:503);}
+    }
     if(preliminaryUrl.pathname==="/v1/announcements"||
        preliminaryUrl.pathname==="/v1/announcements/manage"||
        preliminaryUrl.pathname==="/v1/announcements/update"){
@@ -236,3 +245,4 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
     }
   };
 }
+

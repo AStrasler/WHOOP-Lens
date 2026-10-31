@@ -70,7 +70,67 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                         bitmap.recycle(); renders++
                     }
                 }
-            result.putString("result", "PASS: $renders synthetic width/font/appearance renders; independent clicks, text fit, contrast, touch targets, accessibility roles and remove-animations. Not Samsung hardware approval.")
+            val activity = startActivitySync(android.content.Intent(targetContext, MainActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+            waitForIdleSync()
+            Thread.sleep(600)
+            waitForIdleSync()
+            val original = Configuration(activity.resources.configuration)
+            fun field(name: String) = activity.javaClass.getDeclaredField(name).apply { isAccessible = true }
+            fun render() = activity.javaClass.getDeclaredMethod("render").apply { isAccessible = true }.invoke(activity)
+            fun find(view: View, predicate: (View) -> Boolean): View? {
+                if (predicate(view)) return view
+                if (view is android.view.ViewGroup) for (i in 0 until view.childCount) {
+                    val child = find(view.getChildAt(i), predicate)
+                    if (child != null) return child
+                }
+                return null
+            }
+            for (font in listOf(1f, 2f)) {
+                runOnMainSync {
+                    activity.resources.updateConfiguration(Configuration(original).apply { fontScale = font }, activity.resources.displayMetrics)
+                    field("account").set(activity, "visual-test")
+                    field("snapshot").set(activity, null)
+                    field("lifeSchedule").set(activity, LifeSchedulePreference("visual-test", LifeSchedule.FLEXIBLE, true))
+                    field("page").set(activity, "Home")
+                    field("detail").set(activity, null)
+                    render()
+                }
+                waitForIdleSync()
+                runOnMainSync {
+                    val hrv = find(activity.window.decorView) { it.contentDescription?.startsWith("HRV,") == true }
+                    check(hrv != null && hrv.performClick())
+                    check(field("detail").get(activity) == "hrv")
+                    field("detail").set(activity, null); render()
+                }
+                waitForIdleSync()
+                runOnMainSync {
+                    val recovery = find(activity.window.decorView) { it is TextView && it.text.toString() == "Open recovery measurements" }
+                    check(recovery != null && recovery.performClick())
+                    check(field("detail").get(activity) == "recovery")
+                    field("detail").set(activity, null); render()
+                    activity.javaClass.getDeclaredMethod("showDrawer").apply { isAccessible = true }.invoke(activity)
+                }
+                waitForIdleSync()
+                runOnMainSync {
+                    val navigation = find(activity.window.decorView) { it.contentDescription?.toString() == "Account & Settings, open page" }
+                    check(navigation != null && navigation.performClick())
+                    check(field("page").get(activity) == "Account & Settings")
+                }
+                waitForIdleSync()
+                runOnMainSync {
+                    val frame = field("frame").get(activity) as android.widget.FrameLayout
+                    val scroll = frame.getChildAt(0) as android.widget.ScrollView
+                    val content = scroll.getChildAt(0)
+                    content.measure(View.MeasureSpec.makeMeasureSpec(frame.width, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
+                    content.layout(0, 0, frame.width, content.measuredHeight)
+                    val bitmap = Bitmap.createBitmap(content.width, content.height, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(bitmap); canvas.drawColor(LensColors.background); content.draw(canvas)
+                    File(directory, "Settings-${(font*100).toInt()}.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG,100,it) }
+                    bitmap.recycle()
+                }
+            }
+            runOnMainSync { activity.resources.updateConfiguration(original, activity.resources.displayMetrics); activity.finish() }
+            result.putString("result", "PASS: $renders synthetic width/font/appearance renders; independent clicks, text fit, contrast, touch targets, accessibility roles and remove-animations. Actual Home HRV/recovery navigation and drawer-to-settings exercised at both fonts on a 1440x3120 emulator. Not Samsung hardware approval.")
             finish(Activity.RESULT_OK, result)
         } catch (error: Throwable) {
             result.putString("failure", error.toString()); finish(Activity.RESULT_CANCELED, result)

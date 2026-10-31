@@ -68,8 +68,13 @@ jobs:
           api-level: ${{ matrix.api }}
           arch: x86_64
           disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -skin 1440x3120
           script: |
             gradle -p android --no-daemon -PlensTestRunner=io.github.astrasler.whooplens.GlassyAcceptanceInstrumentation :app:installDebug :app:installDebugAndroidTest
+            adb shell wm size 1440x3120
+            adb shell wm density 560
+            adb shell wm size
+            adb shell wm density
             adb shell am instrument -w io.github.astrasler.whooplens.test/io.github.astrasler.whooplens.GlassyAcceptanceInstrumentation | tee /tmp/glassy-results.txt
             grep -q 'PASS: 18 synthetic' /tmp/glassy-results.txt
             adb pull /sdcard/Android/data/io.github.astrasler.whooplens/files/glassy-acceptance /tmp/glassy-acceptance

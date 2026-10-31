@@ -62,7 +62,7 @@ function seed(db,u,n){
 const countFor=(db,t,u)=>{const c=owner(db,t);return db.prepare(`SELECT COUNT(*) n FROM ${t} WHERE ${c}=?`).get(ownerValue(c,u)).n;};
 
 const U='0b0b0b0b-0000-4000-8000-00000000000b',OTHER='0c0c0c0c-0000-4000-8000-00000000000c';
-const ACCOUNT=['identity_links','whoop_members','access_identity_links','whoop_waitlist','whoop_member_request_budget'];
+const ACCOUNT=['member_life_schedule','identity_links','whoop_members','access_identity_links','whoop_waitlist','whoop_member_request_budget'];
 const block=name=>runbook.split(name)[1].match(/```sql\n([\s\S]*?)```/)[1].replaceAll(':U',U);
 function seeded(active){
   const db=migrated();
@@ -82,7 +82,7 @@ function seeded(active){
 const canSignIn=(db,u)=>!!db.prepare('SELECT user_id FROM access_identity_links WHERE user_id=?1 AND enabled=1').get(u)&&
   !!db.prepare("SELECT m.user_id FROM whoop_members m INNER JOIN identity_links i ON i.user_id=m.user_id WHERE m.user_id=?1 AND m.active=1 AND i.identity_provider='cloudflare_access' AND length(i.provider_subject)>0").get(u);
 
-test('health-data-only mode removes member data but keeps sign-in mappings (foreign keys on)',()=>{
+test('health-data-only mode removes health data but keeps sign-in mappings and explicit preferences (foreign keys on)',()=>{
   const {db,keyed}=seeded(1);
   assert.ok(canSignIn(db,U));
   db.exec('BEGIN');db.exec(block('### 4a.'));db.exec('COMMIT');

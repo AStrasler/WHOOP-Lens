@@ -1,3 +1,4 @@
+import {lifeScheduleEnabled,readLifeSchedule} from './life-schedule.mjs';
 // Pulled weekly digest for the signed-in user. No send, no schedule.
 // Cache keys are per account/week/output mode. Switching a feature off cannot
 // replay an earlier digest containing experimental stress results.
@@ -73,7 +74,8 @@ function digestView(summary,period,weekEnding){
     text:summary.text,
     chart_data:summary.chart_data,
     insights:summary.insights,
-    status:summary.status
+    status:summary.status,
+    ...(summary.life_schedule?{life_schedule:summary.life_schedule}:{})
   };
 }
 function readyDigest(row,weekEnding){
@@ -144,7 +146,14 @@ export async function buildWeeklyDigest({db,userId,env,whoopRequest,now,weekEndi
   const day=weekEnding==null?mostRecentCompleteWeekEnding(weekClock(now,env)):parseWeekEnding(weekEnding);
   if(!day||!validUser(userId)||!db||typeof db.prepare!=="function")return {ok:false};
   const period=digestPeriod(day);
-  const scope=digestCacheScope(userId,env);
+  let scope=digestCacheScope(userId,env);
+  if(lifeScheduleEnabled(env)){
+    try{
+      const preference=await readLifeSchedule(db,userId,{env});
+      // A changed explicit selection cannot reuse a digest from the prior context.
+      scope+=':life-v1:'+preference.life_schedule+':'+(preference.revision??'unset');
+    }catch(error){return {ok:false,error};}
+  }
   const clock=weekClock(now,env);
   let owned=false,saved=false,lease=null;
   try{

@@ -366,3 +366,54 @@ test('instructions and the default flag stay off, including both Worker configs'
     assert.match(text,/"ANNOUNCEMENTS_ENABLED"\s*:\s*"false"/);
   }
 });
+
+
+// This verification uses in-memory SQLite and synthetic identities only. No
+// network delivery, production flag, or real announcement is involved.
+test('ABC 123 authenticated workflow, targeting and flag rollback',async()=>{
+  const db=database();
+  try{
+    const starts_at=new Date(Date.now()-1000).toISOString();
+    const expires_at=new Date(Date.now()+3600000).toISOString();
+    const input=notice({kind:'update',title:'Test notice',body:'ABC 123',audience:'members',member_ids:[AMY],starts_at,expires_at,status:'draft'});
+    assert.equal((await http(db,null,'POST','/v1/announcements',input)).status,401);
+    assert.equal((await http(db,OUTSIDER,'POST','/v1/announcements',input)).status,403);
+    assert.equal((await http(db,AMY,'POST','/v1/announcements',input)).status,403);
+    const created=await http(db,OWNER,'POST','/v1/announcements',input);
+    assert.equal(created.status,201);
+    const id=created.body.id;
+    assert.deepEqual((await http(db,AMY,'GET','/v1/announcements')).body.announcements,[]);
+    assert.equal((await http(db,OWNER,'POST','/v1/announcements/update',{id,action:'publish'})).status,200);
+    const visible=(await http(db,AMY,'GET','/v1/announcements')).body;
+    assert.equal(visible.announcements[0].body,'ABC 123');
+    assertPrivateMemberView(visible);
+    assert.deepEqual((await http(db,KIM,'GET','/v1/announcements')).body.announcements,[]);
+    const pulled=await mcp(db,AMY,'tools/call',{name:'list_service_announcements',arguments:{}});
+    assert.match(JSON.stringify(pulled.body),/ABC 123/);
+    assert.equal((await http(db,AMY,'GET','/v1/announcements',undefined,OFF)).body.enabled,false);
+    assert.equal(notices(db),1); // flag rollback hides rather than mutating data
+    assert.equal((await http(db,OWNER,'POST','/v1/announcements/update',{id,action:'cancel'})).status,200);
+    assert.deepEqual((await http(db,AMY,'GET','/v1/announcements')).body.announcements,[]);
+  }finally{db.close();}
+});
+
+test('announcement service itself rejects inactive callers, including the owner',async()=>{
+  const db=database();
+  try{
+    await assert.rejects(()=>listMemberAnnouncements(db,OUTSIDER,{env:ON,now:NOW}),e=>e.reason==='forbidden');
+    db.sqlite.prepare('UPDATE whoop_members SET active=0 WHERE user_id=?').run(OWNER);
+    await assert.rejects(()=>createAnnouncement(db,OWNER,notice(),{env:ON,now:NOW}),e=>e.reason==='forbidden');
+    await assert.rejects(()=>manageAnnouncements(db,OWNER,{env:ON}),e=>e.reason==='forbidden');
+    assert.equal(notices(db),0);
+  }finally{db.close();}
+});
+
+test('failed target write atomically rolls back the notice',async()=>{
+  const db=database();
+  try{
+    db.sqlite.exec("CREATE TRIGGER reject_target BEFORE INSERT ON service_announcement_targets BEGIN SELECT RAISE(ABORT,'synthetic failure'); END");
+    await assert.rejects(()=>createAnnouncement(db,OWNER,notice({audience:'members',member_ids:[AMY]}),{env:ON,now:NOW}),e=>e.reason==='unavailable');
+    assert.equal(notices(db),0);
+    assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM service_announcement_targets').get().n,0);
+  }finally{db.close();}
+});

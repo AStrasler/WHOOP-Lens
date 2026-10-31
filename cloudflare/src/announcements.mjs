@@ -220,6 +220,13 @@ async function guardOwner(db,userId,env){
   if(!announcementsEnabled(env))throw new AnnouncementRejected('disabled');
   if(!isAnnouncementOwner(env,userId))throw new AnnouncementRejected('forbidden');
   if(!db)throw new AnnouncementRejected('unavailable');
+  await requireActiveMember(db,userId);
+}
+async function requireActiveMember(db,userId){
+  let active;
+  try{active=await activeMembership(db,userId);}
+  catch{throw new AnnouncementRejected('unavailable');}
+  if(!active)throw new AnnouncementRejected('forbidden');
 }
 export async function createAnnouncement(db,userId,input,{env,now=Date.now()}={}){
   await guardOwner(db,userId,env);
@@ -263,6 +270,7 @@ const VISIBLE_SQL='SELECT id,kind,title,body,starts_at,expires_at FROM service_a
 export async function listMemberAnnouncements(db,userId,{env,now=Date.now()}={}){
   if(!announcementsEnabled(env))return {enabled:false,announcements:[]};
   if(!db)throw new AnnouncementRejected('unavailable');
+  await requireActiveMember(db,userId);
   try{
     const rows=(await db.prepare(VISIBLE_SQL).bind(iso(now),userId).all())?.results??[];
     return {enabled:true,announcements:rows.map(memberView),
@@ -392,3 +400,4 @@ export async function announcementsHttp(request,env,userId){
 }
 export const MEMBER_NOTICE_FIELDS=MEMBER_FIELDS;
 export const ANNOUNCEMENT_STATUSES=STATUSES;
+
