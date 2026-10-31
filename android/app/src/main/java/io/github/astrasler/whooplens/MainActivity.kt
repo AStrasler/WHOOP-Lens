@@ -42,6 +42,8 @@ class MainActivity : ComponentActivity() {
     private var rangeDays = 7
     private var activityDays = 7
     private var message = ""
+    private var lifeSchedule: LifeSchedulePreference? = null
+    private var lifeScheduleSaving = false
     private var notices = ServiceAnnouncements.empty("")
     private val dismissedNotices = mutableSetOf<String>()
     private var drawer: View? = null
@@ -275,6 +277,8 @@ class MainActivity : ComponentActivity() {
                     message = ""
                     notices = ServiceAnnouncements.empty(current ?: "")
                     dismissedNotices.clear()
+                    lifeSchedule = null
+                    lifeScheduleSaving = false
                     resetGlance()
                     arrangeDraft = null
                     if (page == "Arrange Home") page = "Home"
@@ -306,7 +310,10 @@ class MainActivity : ComponentActivity() {
                 render()
                 scheduleSession()
                 if (current != null && prefs.getBoolean("local-refresh", true)) refresh(false)
-                if (current != null) loadNotices(current)
+                if (current != null) {
+                    loadNotices(current)
+                    loadLifeSchedule(current)
+                }
             }
         }
     }
@@ -325,6 +332,24 @@ class MainActivity : ComponentActivity() {
             runOnUiThread {
                 if (attempt != uiGeneration || account != owner || isDestroyed) return@runOnUiThread
                 notices = parsed
+                if (drawer == null) render()
+            }
+        }
+    }
+
+    private fun loadLifeSchedule(owner: String, selection: LifeSchedule? = null) {
+        val attempt = uiGeneration
+        lifeScheduleSaving = true
+        io.execute {
+            val result = try {
+                val client = LifeScheduleClient(auth, owner)
+                if (selection == null) client.read() else client.select(selection, confirmedByUser = true)
+            } catch (_: Exception) { null }
+            runOnUiThread {
+                if (attempt != uiGeneration || account != owner || isDestroyed) return@runOnUiThread
+                lifeScheduleSaving = false
+                lifeSchedule = result
+                if (selection != null) message = if (result != null) "Life Schedule saved for this account." else "Life Schedule could not be saved. Retry to read the current selection."
                 if (drawer == null) render()
             }
         }
@@ -1941,6 +1966,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
             ui.button(c, "Retry saved connection") { resumeAccount() }
+        }
+        ui.heading(root, "Preferences")
+        ui.card(root) { c ->
+            ui.heading(c, "Life Schedule")
+            ui.add(c, ui.text("How predictable is your everyday schedule?"))
+            val preference = lifeSchedule?.takeIf { it.account == account }
+            ui.add(c, ui.text(if (preference == null) "Selection unavailable. Retry when connected; nothing has been changed."
+                else "Current: " + preference.selection.label + if (preference.explicit) "" else " (default)", 12f, LensColors.muted))
+            for (option in LifeSchedule.entries) {
+                ui.button(c, option.label + (if (option == LifeSchedule.UNPREDICTABLE) " (Default)" else "") + "\n" + option.description,
+                    primary = preference?.selection == option,
+                    enabled = preference != null && !lifeScheduleSaving) {
+                    val owner = account ?: return@button
+                    dialog("Change Life Schedule", "Save “${option.label}” for your signed-in account? Observed patterns and AI never change this selection.", "Save preference") {
+                        if (account == owner) {
+                            loadLifeSchedule(owner, option)
+                            render()
+                        }
+                    }
+                }
+            }
+            ui.button(c, if (lifeScheduleSaving) "Reading preference…" else "Retry Life Schedule", enabled = !lifeScheduleSaving) {
+                account?.let { loadLifeSchedule(it); render() }
+            }
         }
         ui.card(root) { c ->
             ui.heading(c, "When both sources have sleep")

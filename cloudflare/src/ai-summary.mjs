@@ -1,3 +1,5 @@
+import {lifeScheduleEnabled} from './life-schedule.mjs';
+import {contextualLifeSchedule} from './life-schedule-insights.mjs';
 import {validWhoopToken} from "./history-pagination.mjs";
 // Optional evidence-grounded summary. Off unless AI_SUMMARY_ENABLED is exactly "true".
 // Stats are computed here. The model sees aggregates and selected numbers only.
@@ -1332,7 +1334,7 @@ async function runOnce(ai,model,payload,ms){
     return await Promise.race([pending,timeout]);
   }finally{clearTimeout(timer);}
 }
-export async function attachSummary(data,ctx){
+async function attachBaseSummary(data,ctx){
   try{
     if(!data||typeof data!=="object"||Array.isArray(data))return data;
     const history=await loadBaselineHistory(ctx,recordsOf(data));
@@ -1403,4 +1405,13 @@ export async function attachSummary(data,ctx){
     }
     return failed?give(failed):text?give("filter",selectionFailure(text,payload.statements)):give("model_error","empty_output");
   }catch{return data;}
+}
+
+export async function attachSummary(data,ctx){
+  const result=await attachBaseSummary(data,ctx);
+  if(!lifeScheduleEnabled(ctx.env)||!result?.summary)return result;
+  try{
+    const life_schedule=await contextualLifeSchedule(ctx,recordsOf(data),data.complete===true);
+    return {...result,summary:{...result.summary,life_schedule,insights:[...result.summary.insights,...life_schedule.recommendations]}};
+  }catch{return {...result,summary:{...result.summary,life_schedule:{available:false,reason:'preference_unavailable'}}};}
 }

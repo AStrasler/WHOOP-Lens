@@ -24,6 +24,7 @@
     "WEEKLY_DIGEST_ENABLED": "false",
     "FLARE_JOURNAL_ENABLED": "false",
     "ANNOUNCEMENTS_ENABLED": "false",
+    "LIFE_SCHEDULE_ENABLED": "false",
     "WHOOP_REDIRECT_URI": "https://whooplens.tech/api/whoop/callback"
   },
   "ai": { "binding": "AI" },
@@ -33,3 +34,4 @@
     "database_id":"58250de2-cad7-4a8a-a061-d9b41c7b24d2"
   }]
 }
+
