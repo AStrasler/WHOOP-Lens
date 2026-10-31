@@ -6,16 +6,18 @@ export const lifeScheduleEnabled=env=>env?.LIFE_SCHEDULE_ENABLED==='true';
 export const effectiveLifeSchedule=value=>LIFE_SCHEDULES.includes(value)?value:'unpredictable';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export class LifeScheduleRejected extends Error {
-  constructor(status){super('Life Schedule is unavailable or the request is not allowed.');this.status=status;}
+  constructor(status,code='not_authorized'){super('Life Schedule is unavailable or the request is not allowed.');this.status=status;this.code=code;}
 }
 function verifiedId(userId){
   if(typeof userId!=='string'||!UUID.test(userId))throw new LifeScheduleRejected(403);
   return userId.toLowerCase();
 }
 async function guard(db,userId,env){
-  if(!lifeScheduleEnabled(env))throw new LifeScheduleRejected(503);
+  if(!lifeScheduleEnabled(env))throw new LifeScheduleRejected(503,'feature_disabled');
   const id=verifiedId(userId);
   if(!await activeMembership(db,id))throw new LifeScheduleRejected(403);
+  const table=await db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='member_life_schedule'").first();
+  if(!table)throw new LifeScheduleRejected(503,'migration_required');
   return id;
 }
 export async function readLifeSchedule(db,userId,{env}={}){
@@ -53,5 +55,5 @@ export async function lifeScheduleHttp(request,env,userId){
     if(body.error)return json({error:'Invalid preference'},400);
     let input;try{input=JSON.parse(body.text);}catch{return json({error:'Invalid preference'},400);}
     return json(await selectLifeSchedule(env.DB,userId,input,{env}));
-  }catch(error){return json({error:'Life Schedule is unavailable or the request is not allowed.'},error instanceof LifeScheduleRejected?error.status:503);}
+  }catch(error){return json({error:'Life Schedule is unavailable or the request is not allowed.',code:error instanceof LifeScheduleRejected?error.code:'service_unavailable'},error instanceof LifeScheduleRejected?error.status:503);}
 }

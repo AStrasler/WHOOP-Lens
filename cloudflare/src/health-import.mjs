@@ -123,6 +123,7 @@ async function readJson(request,limit){
   try{return JSON.parse(text);}catch{throw Error('This file is not valid JSON.');}
 }
 export async function healthConnectHttp(request,env,userId){
+  if(env?.WEB_HEALTH_IMPORT_ENABLED!=='true')return httpJson({error:'Health Connect import is not activated',code:'feature_disabled'},503);
   const url=new URL(request.url);
   try{
     if(request.method==='GET'&&url.pathname==='/v1/health-connect/status')
