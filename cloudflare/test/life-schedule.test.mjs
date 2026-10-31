@@ -181,3 +181,10 @@ test('weekly digest cache is isolated by explicit preference revision',async()=>
   assert.equal(changed.ok,true);assert.equal(changed.cached,false);assert.equal(changed.life_schedule.life_schedule,'flexible');
  }finally{db.sqlite.close();}
 });
+
+test('both committed Worker configurations keep production activation off',()=>{
+ for(const path of ['../wrangler.jsonc','../oauth/resource/wrangler.jsonc']){
+  const source=readFileSync(new URL(path,import.meta.url),'utf8');
+  assert.match(source,/"LIFE_SCHEDULE_ENABLED"\s*:\s*"false"/);
+ }
+});
