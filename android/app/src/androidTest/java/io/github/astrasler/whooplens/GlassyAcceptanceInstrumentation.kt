@@ -73,11 +73,12 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                             check(tile.translationY == 0f) // Remove animations is active in every render.
                         }
                         check(opened == 3)
+                        // getLineMax excludes non-drawing trailing whitespace at a wrap.
                         fun checkText(view: View) {
                             if (view is TextView) {
                                 val layout = view.layout
                                 check(layout != null && layout.height <= view.height - view.paddingTop - view.paddingBottom)
-                                for (line in 0 until layout.lineCount) check(layout.getLineWidth(line) <= layout.width + 1)
+                                for (line in 0 until layout.lineCount) check(layout.getLineMax(line) <= layout.width + 1)
                             }
                             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) checkText(view.getChildAt(i))
                         }
@@ -191,7 +192,7 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                             if (view is TextView && view.visibility==View.VISIBLE && view.width>0) {
                                 val layout=view.layout
                                 check(layout!=null && layout.height<=view.height-view.paddingTop-view.paddingBottom+1) { "$screen clipped height: ${view.text}" }
-                                for (line in 0 until layout.lineCount) check(layout.getLineWidth(line)<=layout.width+1) { "$screen clipped width: ${view.text}" }
+                                for (line in 0 until layout.lineCount) check(layout.getLineMax(line)<=layout.width+1) { "$screen clipped visible width ${layout.getLineMax(line)} > ${layout.width}: ${view.text}" }
                             }
                             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) inspect(view.getChildAt(i))
                         }

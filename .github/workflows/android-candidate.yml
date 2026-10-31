@@ -57,6 +57,15 @@ jobs:
           test -s android/app/build/outputs/apk/release/app-release-unsigned.apk
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging android/app/build/outputs/apk/release/app-release-unsigned.apk > candidate-apk-badging.txt
           if grep -q application-debuggable candidate-apk-badging.txt; then exit 1; fi
+          python - <<'PYCODE'
+          import json,re,sys
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          from android_release import PACKAGE
+          meta=json.loads(Path('candidate-metadata.json').read_text())
+          found=re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'",Path('candidate-apk-badging.txt').read_text())
+          if not found or found.groups()!=(PACKAGE,str(meta['code']),meta['version']): raise SystemExit('Unsigned APK identity/version mismatch')
+          PYCODE
           sha256sum android/app/build/outputs/apk/release/app-release-unsigned.apk > candidate-unsigned.sha256
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

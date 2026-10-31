@@ -1,45 +1,23 @@
-# WhoopLens Android companion (optional, unreleased)
+# WHOOP Lens Android companion
 
-The local `codex/android-approved-design` branch implements the native dashboard, WHOOP and Health Connect reads, encrypted caching, opt-in WorkManager refresh and six adaptive home widgets. The owner has verified sign-in, real measurements, widgets and screenshots on a Samsung Galaxy S26 Ultra. See [current verification and PR scope](../docs/android-companion-pr-verification-20261024.md) for exact results and remaining limits. The related auth Worker fix is already deployed; the Android branch remains unpublished. The beta.2 candidate adds explicitly reviewed manual Health Connect sync; production activation and release are separate gates. Background refresh and BLE never upload.
+Published beta: **0.6.0-beta.1** (versionCode 8). Current acceptance candidate: **0.6.0-beta.2** (versionCode 9) in PR #112. The owner has tested the existing glass design on a Galaxy S26 Ultra; changes in the new candidate still require their own device acceptance.
 
-## Historical preview baseline
+The companion provides native WHOOP and separately attributed Health Connect views, Keystore-encrypted sessions/cache, opt-in local background refresh, private widgets and experimental foreground Direct BLE. Current changes preserve the visual design and organize information throughout the app; detailed source context lives in Sources & Freshness. See [application-wide acceptance changes](../docs/android-beta2-acceptance.md).
 
-The notes below describe the earlier preview-only baseline, not the current dashboard. For current behavior, use the verification record above and the [design implementation report](../docs/android-design-implementation-20261024.md).
+## Explicit cloud synchronization
 
-> **Not required.** WhoopLens is now browser-first. This Android code is retained for an optional future Health Connect bridge. Users should not need to install an APK to access WhoopLens or review supported manual exports. See [browser workspace](../docs/WEB_WORKSPACE.md). Keep Android uploads and deletes disabled.
+`ManualSync.ENABLE_UPLOADS=true` enables the reviewed client, not consent or production activation. The client requires an authenticated protocol-1 readiness response, selected currently permitted categories, a fresh bounded exact-record preview and explicit upload confirmation. Supported categories match the existing server v2 contract: daily steps, heart-rate samples, sleep sessions and exercise sessions. Other categories remain local. No caller-selected user ID is trusted.
 
-**Historical status:** Debug APK compiled; not yet installed or tested on a phone. No production uploads, deletes, or migrations enabled.
+Each action is manual. Dashboard refresh, WorkManager jobs and Direct BLE never upload. Stable keys make retries/corrections idempotent. Last sync comes from a separate server row committed atomically with the successful import, not a consent or token-grant timestamp. Pause revokes ingestion while retaining the cloud copy; withdrawal deletes only the signed-in account's cloud Health Connect copy and sync metadata. Neither deletes phone records or WHOOP data.
 
-## Implemented on the draft branch
+Life Schedule retrieval/defaults and confirmed updates are per-account. Missing/invalid values resolve to Unpredictable without writing. AI, observation and background work have no preference setter. The app distinguishes service activation, sign-in and connection failures instead of claiming that every unavailable response is a network problem.
 
-- Android 14+ (minSdk 34, compileSdk 36) with Health Connect stable 1.1.0.
-- Cloudflare OAuth authorization-code + PKCE using the external browser, dynamic client registration and **Keystore-encrypted persistent access/refresh credentials**. Sessions survive process restarts, reboots after first unlock, and same-signer app updates. Refresh uses the existing Cloudflare OAuth flow with rotation and an expiry-based foreground schedule; Cloudflare Access and D1 enforce membership. Sign-out invalidates stale sign-in and preview callbacks. Native redirect and token exchange require real-device verification before release.
-- Explicit permission chooser. No background health reads.
-- Manual local previews: yesterday's **aggregate** steps, plus up to 50 sleep, heart-rate and exercise records each in the last 24 hours. Counts are capped, not guaranteed to represent full totals.
-- One-day aggregate steps prepared in a memory-only, five-minute-expiring snapshot. Separate Review control displays the date, count, mixed/unknown source origin, and destination. Actual Upload requires additional confirmation.
-- Account deletion options distinguish local sign-out, Health Connect permissions and server data. Both upload and server deletion remain disabled; nothing deletes phone records.
-- AES-256-GCM credentials use an Android Keystore key and an AtomicFile in noBackupFilesDir; cloud backup and device-transfer exclusions are explicit. One complete token pair is committed before use. Concurrent refreshes share one operation; sign-out/account changes reject stale completions.
-- Access refresh runs on foreground resume and near expiry while the app is active; background requests obtain a fresh access token before use. Offline failures retain encrypted credentials and back off, while invalid/revoked refresh grants erase them. Sign-out erases locally immediately and attempts server grant revocation; an offline revocation is reported as unconfirmed.
-- Pending PKCE/state is encrypted with a ten-minute lifetime and consumed durably before exchange. No tokens, codes or server error bodies are logged.
+Production activation is separate: reviewed migrations 0022 → 0023 → 0024 → 0025, resource code release preserving live configuration, and explicit flag enablement. Missing lifecycle/storage schema fails closed. See [exact activation gates](../cloudflare/docs/companion-beta2-activation.md). No activation or production migration is performed by an APK update.
 
-## Release gate remains OFF
+## Build and acceptance
 
-`ManualSync.ENABLE_UPLOADS=true` enables the beta.2 client workflow, not consent or production activation. Upload requires an authenticated protocol-1 readiness response, selected permitted categories, a fresh exact-record preview and explicit confirmation. Pause revokes ingestion without deleting cloud records; withdrawal deletes only the account's cloud Health Connect copy. The committed server flags remain off and missing lifecycle migrations fail closed. See [activation gates](../cloudflare/docs/companion-beta2-activation.md) and [candidate release notes](../docs/releases/0.6.0-beta.2.md).
+JDK 17, Gradle 8.11.1, SDK 36, minSdk 34, targetSdk 35 and existing dependencies/signing identity are preserved. CI runs Android unit tests/lint/debug build, unsigned release preparation, and API 34/36 instrumentation at 1440×3120 with logical density 560/640. Font/appearance component tests and every major app/detail destination are rendered with synthetic data; text/chart bounds and stable repeated screenshots are checked. Long screenshots are tiled without omitting scroll regions. Emulator evidence is not One UI/physical-device approval.
 
-Protocol v2 sends schema_version 2, source health_connect, metric steps_daily, record_key daily:YYYY-MM-DD:local and the aggregate value and dates. No user ID is trusted from the phone. Server must derive ownership from Cloudflare OAuth and D1 membership. Stable keys permit correction without duplicate rows.
+The unsigned candidate is not installable over the signed beta. Signing/publication uses the protected existing manual release workflow after explicit owner approval, verifies the established certificate/package/version and publishes the Obtainium-compatible APK/checksum as a prerelease. See [0.6.0-beta.2 release preparation](../docs/releases/0.6.0-beta.2.md). Update the existing app; never uninstall or clear data as a release step.
 
-## Build / validation
-
-JDK 17, Gradle 8.11.1, Android SDK 36, AGP 8.9.2. GitHub Actions runs Android unit tests, lint, and debug assembly. The PostgreSQL RLS test uses a disposable database, not production.
-
-## Still needed
-
-Real device installation and sign-in testing; verifying permission and revocation behavior; signed private package; approved backend deployment and end-to-end upload/deletion tests; Keystore/reboot/rotation/revocation verification on a real device; complete paged non-step previews and source-attributed exports; rollout/rollback, quotas and privacy review.
-
-Keep registration and distribution strictly owner-controlled. No public APK, automatic synchronization, or public registration.
-
-## Companion review (October 24, 2026)
-
-Restored sessions restore already-granted preview controls. Account state is separate from preview results; reconnect, sign-out and shared-session account changes clear old previews. Transient network failures offer Retry saved connection without discarding encrypted credentials. Both screens apply system-bar/cutout insets and accessibility headings. Health Connect settings and canonical www privacy links handle missing activities safely. Record-count previews mark additional pages and remain bounded.
-
-All three open PRs and the remaining device-only checks are tracked in [the PR and Android review](../docs/pr-and-android-review-20261024.md).
+Older preview reports remain historical evidence in [the October 24 verification record](../docs/android-companion-pr-verification-20261024.md), [design implementation](../docs/android-design-implementation-20261024.md), and [Direct BLE verification](../docs/ble/VERIFICATION-20261024.md). They do not establish acceptance or activation of beta.2.
