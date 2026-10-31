@@ -49,6 +49,7 @@ export async function companionSyncHttp(request,env,userId){
   let body;try{body=JSON.parse(bounded.text);}catch{return json({code:'invalid_request'},400);}
   if(path.endsWith('/pause'))return json(await pauseCompanionSync(env.DB,userId,env,body?.consent));
   if(body?.consent!=='store-health-connect-file')throw new CompanionSyncRejected(400,'consent_required');
+  if(!body.file||!Array.isArray(body.file.records)||body.file.records.length<1)return json({code:'empty_preview'},400);
   const now=Date.now();
   const saved=await importHealthConnectFile(env.DB,userId,body.file,body.consent,{generation,now,manualSync:true});
   return json({...saved,sync_protocol:1,synced_at:new Date(now).toISOString()});

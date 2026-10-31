@@ -91,3 +91,11 @@ test('failed import rolls back the sync timestamp and rows together',async()=>{
   assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM health_connect_records').get().n,0);
  }finally{db.sqlite.close();}
 });
+
+test('empty previews cannot manufacture a successful sync timestamp',async()=>{
+ const db=fixture();try{
+  const preview=file();preview.records=[];
+  assert.equal((await http(db,A,'POST','/v1/health-connect/sync',{consent:'store-health-connect-file',file:preview})).status,400);
+  assert.equal(db.sqlite.prepare('SELECT COUNT(*) n FROM companion_sync_status').get().n,0);
+ }finally{db.sqlite.close();}
+});
