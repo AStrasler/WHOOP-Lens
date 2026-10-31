@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.res.ColorStateList
 import android.graphics.*
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.graphics.drawable.RippleDrawable
 import android.view.MotionEvent
 import android.view.View
@@ -141,6 +142,56 @@ internal class LensUi(val context: Context) {
         parent.addView(t, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(8) })
     }
 
+    /**
+     * Frosted, raised pills with a restrained highlight. Rendered natively so no
+     * React/Framer runtime or continuous animation is needed on Android.
+     */
+    private fun liquidButtonBackground(primary: Boolean): android.graphics.drawable.Drawable {
+        val fill = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            if (primary) intArrayOf(Color.rgb(195, 255, 246), Color.rgb(112, 228, 218), Color.rgb(61, 188, 184))
+            else if (appearance.mode == LensAppearance.REDUCED_TRANSPARENCY)
+                intArrayOf(GlassTokens.solidReduced, GlassTokens.solidReduced)
+            else intArrayOf(Color.argb(224, 70, 90, 103), Color.argb(208, 28, 45, 55)),
+        ).apply {
+            cornerRadius = dp(22).toFloat()
+            setStroke(dp(1), if (primary) Color.argb(196, 255, 255, 255) else GlassTokens.edgeReduced)
+        }
+        if (appearance.mode != LensAppearance.GLASS) return fill
+        val highlight = GradientDrawable(
+            GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(Color.argb(72, 255, 255, 255), Color.argb(8, 255, 255, 255), Color.TRANSPARENT),
+        ).apply { cornerRadius = dp(22).toFloat() }
+        return LayerDrawable(arrayOf(fill, highlight))
+    }
+
+    /** A one-time lift on pointer/press; respects Android reduced motion and saver mode. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private fun liftOnInteraction(view: View, amountDp: Int) {
+        if (appearance.reduceMotion || appearance.mode != LensAppearance.GLASS) return
+        fun move(raised: Boolean) {
+            view.animate().cancel()
+            view.animate()
+                .translationY(if (raised) -dp(amountDp).toFloat() else 0f)
+                .setDuration(if (raised) 120L else 160L)
+                .start()
+        }
+        view.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> move(true)
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> move(false)
+            }
+            false // Preserve normal clicks, accessibility activation and focus.
+        }
+        view.setOnHoverListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_HOVER_ENTER -> move(true)
+                MotionEvent.ACTION_HOVER_EXIT -> move(false)
+            }
+            false
+        }
+    }
+
     fun button(
         parent: LinearLayout,
         title: String,
@@ -157,16 +208,15 @@ internal class LensUi(val context: Context) {
                 isEnabled = enabled
                 isFocusable = true
                 isClickable = true
-                val bg =
-                    if (primary)
-                        GradientDrawable(
-                                GradientDrawable.Orientation.TOP_BOTTOM,
-                                intArrayOf(Color.rgb(166, 246, 238), Color.rgb(79, 216, 207)),
-                            )
-                            .apply { cornerRadius = dp(18).toFloat() }
-                    else shape(Color.TRANSPARENT, 18, !enabled)
-                background = RippleDrawable(ColorStateList.valueOf(0x334FD8CF), bg, null)
-                if (!enabled) setTextColor(LensColors.muted)
+                background = RippleDrawable(
+                    ColorStateList.valueOf(0x334FD8CF),
+                    liquidButtonBackground(primary),
+                    null,
+                )
+                if (!enabled) {
+                    alpha = 0.65f
+                    setTextColor(LensColors.muted)
+                } else liftOnInteraction(this, 2)
                 setOnClickListener { action() }
             }
         ViewCompat.setAccessibilityDelegate(
@@ -185,18 +235,73 @@ internal class LensUi(val context: Context) {
         return b
     }
 
+    /**
+     * Native counterpart of a glass StatsCard: title, real measurement,
+     * source-specific icon and an optional, explicitly calculated baseline trend.
+     */
+    fun statsCard(
+        parent: LinearLayout,
+        title: String,
+        value: String,
+        icon: String,
+        trend: String?,
+        source: DataSource,
+        action: () -> Unit,
+    ): LinearLayout {
+        val surface = card(parent, dashed = source == DataSource.HEALTH_CONNECT) { inner ->
+            val heading = row()
+            heading.addView(
+                text(title, 12f, LensColors.muted, bold = true),
+                LinearLayout.LayoutParams(0, -2, 1f),
+            )
+            heading.addView(text(icon, 19f, if (source == DataSource.WHOOP) LensColors.teal else LensColors.sand))
+            add(inner, heading, 5)
+            add(inner, text(value, 22f, bold = true, role = TextRole.MONO), 5)
+            add(
+                inner,
+                text(trend ?: "Baseline unavailable", 12f, if (trend != null) LensColors.teal else LensColors.muted),
+                0,
+            )
+        }
+        surface.minimumHeight = dp(48)
+        surface.descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        fun silenceChildren(group: android.view.ViewGroup) {
+            for (i in 0 until group.childCount) {
+                val child = group.getChildAt(i)
+                child.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                if (child is android.view.ViewGroup) silenceChildren(child)
+            }
+        }
+        silenceChildren(surface)
+        surface.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        surface.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: android.view.accessibility.AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.className = android.widget.Button::class.java.name
+            }
+        }
+        surface.foreground = RippleDrawable(ColorStateList.valueOf(0x224FD8CF), null, shape())
+        surface.contentDescription = "$title, $value. ${trend ?: "Baseline unavailable"}. ${source.label}. Open details."
+        surface.isClickable = true
+        surface.isFocusable = true
+        surface.setOnClickListener { action() }
+        liftOnInteraction(surface, 5)
+        return surface
+    }
+
     fun metric(
         parent: LinearLayout,
         m: Metric?,
         title: String,
         source: DataSource,
+        showHeading: Boolean = true,
         onClick: (() -> Unit)? = null,
     ) =
         card(parent, dashed = source == DataSource.HEALTH_CONNECT) { c ->
             val stale =
                 m?.measuredAt?.let { System.currentTimeMillis() - it > 12 * 3600000L } == true
             val missing = m?.value == null
-            heading(c, title)
+            if (showHeading) heading(c, title)
             chip(c, source)
             add(
                 c,
@@ -350,12 +455,15 @@ internal class StrainArc(context: Context, private val value: Double?, private v
 
 internal class TrendChart(
     context: Context,
-    private val points: List<Point>,
+    points: List<Point>,
     private val source: DataSource,
     private val bars: Boolean = false,
     private val baseline: Triple<Double, Double, Double>? = null,
 ) : View(context) {
+    private val points = points.sortedBy { it.time }
     private val paint = Paint(3)
+    internal var axisLabels: List<AxisLabel> = emptyList()
+        private set
     private var selected: Int? = null
     private var touchSelection = false
 
@@ -380,7 +488,7 @@ internal class TrendChart(
         if (event.action == MotionEvent.ACTION_UP && points.isNotEmpty()) {
             val t =
                 points.first().time +
-                    (event.x / width).coerceIn(0f, 1f) * (points.last().time - points.first().time)
+                    ((event.x - 16 * resources.displayMetrics.density) / (width - 32 * resources.displayMetrics.density).coerceAtLeast(1f)).coerceIn(0f, 1f) * (points.last().time - points.first().time)
             selected = chartPointIndices(points).minByOrNull { abs(points[it].time - t) }
             touchSelection = true
             performClick()
@@ -401,14 +509,16 @@ internal class TrendChart(
         if (values.isEmpty()) {
             paint.color = LensColors.muted
             paint.textSize = 14 * resources.displayMetrics.scaledDensity
-            canvas.drawText("No shared measurements", 12f, height / 2f, paint)
+            canvas.drawText("Not shared", 16*resources.displayMetrics.density, height / 2f, paint)
             return
         }
         val low = if (bars) 0.0 else min(values.min(), baseline?.first ?: values.min()) * .95
         val high = max(max(values.max(), baseline?.third ?: values.max()) * 1.05, low + 1)
-        val inset = 16f
-        val w = width - 2 * inset
-        val h = height - 2 * inset - 16 * resources.displayMetrics.density
+        val inset = 16f * resources.displayMetrics.density
+        paint.textSize = 12f * resources.displayMetrics.scaledDensity
+        val labelHeight = paint.fontMetrics.bottom - paint.fontMetrics.top
+        val w = (width - 2 * inset).coerceAtLeast(1f)
+        val h = (height - 2 * inset - labelHeight - 8 * resources.displayMetrics.density).coerceAtLeast(1f)
         fun x(i: Int) =
             inset +
                 w * (points[i].time - points.first().time).toFloat() /
@@ -465,22 +575,20 @@ internal class TrendChart(
             java.time.format.DateTimeFormatter.ofPattern(
                 if (points.last().time - points.first().time < 2 * 86400000L) "HH:mm" else "MMM d"
             )
-        for ((index, align) in
-            listOf(
-                0 to Paint.Align.LEFT,
-                points.size / 2 to Paint.Align.CENTER,
-                points.lastIndex to Paint.Align.RIGHT,
-            )) {
-            paint.textAlign = align
-            canvas.drawText(
-                java.time.Instant.ofEpochMilli(points[index].time)
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .format(axisFormat),
-                x(index),
-                height - 4 * resources.displayMetrics.density,
-                paint,
-            )
+        // Time-spaced ticks avoid dense clusters at the beginning of the series.
+        // Measured text bounds, rather than sample indexes, decide which labels fit.
+        val from = points.first().time
+        val span = (points.last().time - from).coerceAtLeast(0L)
+        val ticks = if (span == 0L) listOf(from) else listOf(from, from + span/2, from + span)
+        val candidates = ticks.map { time ->
+            val text = java.time.Instant.ofEpochMilli(time).atZone(java.time.ZoneId.systemDefault()).format(axisFormat)
+            val anchor = if (span == 0L) inset + w/2 else inset + w*(time-from).toFloat()/span
+            AxisCandidate(text, anchor, paint.measureText(text))
         }
+        axisLabels = collisionFreeAxisLabels(candidates, inset, width-inset, 8*resources.displayMetrics.density)
+        paint.textAlign = Paint.Align.LEFT
+        val labelBaseline = height - 4*resources.displayMetrics.density - paint.fontMetrics.bottom
+        axisLabels.forEach { label -> canvas.drawText(label.text, label.left, labelBaseline, paint) }
         paint.pathEffect = null
         paint.style = Paint.Style.FILL
         selected?.let { i ->
@@ -504,9 +612,10 @@ internal class SleepTimeline(context: Context, private val sleep: SleepDetail) :
         super.onDraw(canvas)
         val labels = listOf("Awake", "REM", "Light", "Deep")
         val d = resources.displayMetrics.density
-        val left = 48 * d
-        val row = height / 4f
         paint.textSize = 12 * resources.displayMetrics.scaledDensity
+        paint.typeface = resources.getFont(R.font.jetbrains_mono)
+        val left = labels.maxOf { paint.measureText(it) } + 12*d
+        val row = height / 4f
         paint.typeface = resources.getFont(R.font.jetbrains_mono)
         labels.forEachIndexed { i, label ->
             paint.color = LensColors.label
@@ -545,3 +654,4 @@ internal class SleepTimeline(context: Context, private val sleep: SleepDetail) :
         }
     }
 }
+

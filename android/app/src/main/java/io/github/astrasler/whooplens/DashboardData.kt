@@ -192,7 +192,7 @@ internal fun widgetText(
             }
 }
 
-/** Future upload path. A local refresh can never opt in or call this sender. */
+/** Explicit per-account consent. A local refresh never opts in or calls the sender. */
 internal data class SyncConsent(
     val account: String,
     val categories: Set<String>,

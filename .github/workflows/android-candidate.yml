@@ -1,0 +1,79 @@
+name: Android unsigned release candidate
+on:
+  pull_request:
+    paths:
+      - 'android/**'
+      - 'scripts/android_release.py'
+      - 'scripts/test_android_release.py'
+      - 'docs/releases/**'
+      - '.github/workflows/android-candidate.yml'
+permissions:
+  contents: read
+jobs:
+  unsigned-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Validate candidate using established release gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$RUNNER_TEMP/releases.json"
+          python - <<'PY'
+          import json, os, re, sys, subprocess
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          from android_release import release_metadata
+          sha=os.environ['SOURCE_SHA']
+          assert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==sha
+          releases=[r for page in json.loads(Path(os.environ['RUNNER_TEMP']+'/releases.json').read_text()) for r in page]
+          minimum=4
+          for release in releases:
+              if not release['tag_name'].startswith('android-v'): continue
+              match=re.search(r'Android versionCode: ([0-9]+)',release.get('body') or '')
+              if not match: raise SystemExit('Published Android release lacks a version code')
+              minimum=max(minimum,int(match[1]))
+          gradle=Path('android/app/build.gradle.kts').read_text()
+          version=re.search(r'versionName\s*=\s*"([^"]+)"',gradle).group(1)
+          metadata=release_metadata(gradle,sha,'android-v'+version,'experimental',minimum)
+          if any(r['tag_name']==metadata['tag'] for r in releases): raise SystemExit('Candidate release tag already exists')
+          Path('candidate-metadata.json').write_text(json.dumps(metadata,indent=2))
+          PY
+          python -m unittest discover -s scripts -p 'test_android_release.py'
+      - name: Build unsigned candidate without signing secrets or publication
+        run: |
+          set -euo pipefail
+          bash android/gradlew -p android assembleRelease --no-daemon
+          test -s android/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging android/app/build/outputs/apk/release/app-release-unsigned.apk > candidate-apk-badging.txt
+          if grep -q application-debuggable candidate-apk-badging.txt; then exit 1; fi
+          python - <<'PYCODE'
+          import json,re,sys
+          from pathlib import Path
+          sys.path.insert(0,'scripts')
+          from android_release import PACKAGE
+          meta=json.loads(Path('candidate-metadata.json').read_text())
+          found=re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'",Path('candidate-apk-badging.txt').read_text())
+          if not found or found.groups()!=(PACKAGE,str(meta['code']),meta['version']): raise SystemExit('Unsigned APK identity/version mismatch')
+          PYCODE
+          sha256sum android/app/build/outputs/apk/release/app-release-unsigned.apk > candidate-unsigned.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: android-unsigned-candidate-${{ github.event.pull_request.head.sha }}
+          retention-days: 7
+          path: |
+            android/app/build/outputs/apk/release/app-release-unsigned.apk
+            candidate-metadata.json
+            candidate-apk-badging.txt
+            candidate-unsigned.sha256
+            docs/releases/0.6.0-beta.2.md

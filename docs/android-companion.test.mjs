@@ -46,10 +46,10 @@ test("Android dashboard requires private login, read permission and independentl
   assert.match(health,/hc\.readRecords\(\s*ReadRecordsRequest/);
   assert.doesNotMatch(source+health+worker,/insertRecords\(|deleteRecords\(|uploadApprovedSteps\(|deleteAccountData\(/);
   assert.doesNotMatch(manifest,/android\.permission\.health\.WRITE_/);
-  assert.match(source,/Nothing has been sent/i);
+  assert.match(source,/No upload authorized or sent|Nothing has been sent/i);
   assert.match(source,/AlertDialog\.Builder\(this\)/);
-  assert.match(source,/Review upload \(off\)/);
-  assert.match(source,/deletion is OFF/);
+  assert.match(source,/Review & sync now/);
+  assert.match(source,/cloud Health Connect withdrawal/);
   assert.match(worker,/PeriodicWorkRequestBuilder<DashboardRefreshWorker>/);
   assert.match(worker,/FEATURE_READ_HEALTH_DATA_IN_BACKGROUND/);
   assert.match(worker,/PERMISSION_READ_HEALTH_DATA_IN_BACKGROUND/);
@@ -59,20 +59,17 @@ test("Android dashboard requires private login, read permission and independentl
   assert.doesNotMatch(network,/getString\("user_id"\)|put\("user_id"/);
 });
 
-test("Private upload export remains disabled pending approved migrations", () => {
+test("Cloud upload requires verified protocol and explicit account-scoped consent", () => {
   const source=read("../android/app/src/main/java/io/github/astrasler/whooplens/ManualSync.kt");
-  assert.match(source,/const val ENABLE_UPLOADS = false/);
-  assert.match(source,/check\(ENABLE_UPLOADS && draft\.valid\(\)\)/);
-  assert.match(source,/if \(!ENABLE_UPLOADS\) return DeletionResult\.Disabled/);
-  assert.match(source,/schema_version", 2/);
-  assert.match(source,/source", "health_connect"/);
-  assert.match(source,/metric", "steps_daily"/);
-  assert.match(source,/record_key", "daily:/);
-  assert.doesNotMatch(source,/supabase\.co|functions\/v1\/samsung-health|sb_publishable_/);
-  assert.match(source,/preparedAtMs/);
-  assert.match(source,/fun deleteAccountData\(/);
-  assert.match(source,/fun uploadApprovedSteps\(/);
-  assert.doesNotMatch(source,/SERVICE_ROLE_KEY|sb_secret_|supabase_service_role/);
+  assert.match(source,/const val ENABLE_UPLOADS = true/);
+  assert.match(source,/if \(!status\(\)\.ready\) return false/);
+  assert.match(source,/consent\.account!=account/);
+  assert.match(source,/consent\.categories!=draft\.categories/);
+  assert.match(source,/granted\.containsAll\(draft\.categories\)/);
+  assert.match(source,/draft\.valid\(now\(\)\)/);
+  assert.match(source,/sync_protocol/);
+  assert.match(source,/instanceFollowRedirects=false/);
+  assert.doesNotMatch(source,/SERVICE_ROLE_KEY|sb_secret_|supabase_service_role|rrTicks|BleSession/);
 });
 
 test('Android production wiring persists sessions and excludes backup and transfer', () => {

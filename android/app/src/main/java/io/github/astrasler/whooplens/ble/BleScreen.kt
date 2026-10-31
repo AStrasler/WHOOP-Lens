@@ -31,6 +31,7 @@ internal class BleScreenBinding(
     private lateinit var rr: TextView
     private lateinit var energy: TextView
     private lateinit var details: TextView
+    private var detailsExpanded = false
     private val timestamp =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z").withZone(ZoneId.systemDefault())
 
@@ -67,7 +68,11 @@ internal class BleScreenBinding(
             contact = text(card, "", size = 14f, color = LensColors.text)
             rr = text(card, "", color = LensColors.text)
             energy = text(card, "", color = LensColors.text)
-            details = text(card, "")
+            details = text(card, "").apply { visibility = View.GONE }
+            ui.button(card, "Connection details") {
+                detailsExpanded = !detailsExpanded
+                details.visibility = if (detailsExpanded && details.text.isNotBlank()) View.VISIBLE else View.GONE
+            }
             text(
                 card,
                 "Direct observations stay separate from official WHOOP and Health Connect. No recovery, HRV, strain, sleep-stage or medical claims. Leaving this section or locking/backgrounding the app stops BLE.",
@@ -163,7 +168,7 @@ internal class BleScreenBinding(
                 ?.let { m ->
                     if (m.rrTicks.isEmpty()) "R-R intervals: not supplied"
                     else
-                        "R-R (1/1024 s ticks): ${m.rrTicks.joinToString()}\nR-R (ms): ${m.rrMilliseconds.joinToString { java.text.DecimalFormat("0.0").format(it) }}"
+                        "R-R (ms): ${m.rrMilliseconds.joinToString { java.text.DecimalFormat("0.0").format(it) }}"
                 }
                 .orEmpty(),
             sample != null,
@@ -172,7 +177,7 @@ internal class BleScreenBinding(
             "Energy: ${sample?.measurement?.energyKj?.let { "$it kJ (device counter)" } ?: "not supplied"}",
             sample != null,
         )
-        details.show(state.details, state.details.isNotBlank())
+        details.show(state.details, detailsExpanded && state.details.isNotBlank())
     }
 }
 

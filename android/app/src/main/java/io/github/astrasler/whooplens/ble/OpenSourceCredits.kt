@@ -36,38 +36,24 @@ internal fun renderOpenSourceCredits(ui: LensUi, root: LinearLayout) {
                 .apply { Linkify.addLinks(this, Linkify.WEB_URLS) },
         )
     }
-    listOf(
+    fun showAsset(title: String, path: String) {
+        val body = try { ui.context.assets.open(path).bufferedReader().use { it.readText() } }
+            catch (_: Exception) { "License asset unavailable. See THIRD_PARTY_NOTICES.md in the repository." }
+        val scroll = android.widget.ScrollView(ui.context)
+        scroll.addView(ui.text(body, 12f, LensColors.muted).apply { setPadding(ui.dp(16),ui.dp(12),ui.dp(16),ui.dp(12)); setTextIsSelectable(true) })
+        android.app.AlertDialog.Builder(ui.context).setTitle(title).setView(scroll).setPositiveButton("Done",null).show()
+    }
+    ui.card(root) { card ->
+        ui.heading(card, "License texts")
+        listOf(
             "whoop4-ble MIT" to "licenses/whoop4-ble-MIT.txt",
-            "AndroidX / Kotlin and Apache-licensed dependencies" to "licenses/Apache-2.0.txt",
-            "Checker Framework qualifiers · MIT" to "licenses/checker-qual-MIT.txt",
-            "Health Connect external protobuf · BSD" to "licenses/health-connect-protobuf-BSD.txt",
+            "AndroidX / Kotlin · Apache" to "licenses/Apache-2.0.txt",
+            "Checker Framework · MIT" to "licenses/checker-qual-MIT.txt",
+            "Health Connect protobuf · BSD" to "licenses/health-connect-protobuf-BSD.txt",
             "Inter font" to "INTER-OFL.txt",
             "JetBrains Mono font" to "JETBRAINS-MONO-OFL.txt",
             "Covered By Your Grace font" to "COVERED-BY-YOUR-GRACE-OFL.txt",
-        )
-        .forEach { (title, path) ->
-            ui.card(root) { card ->
-                ui.heading(card, title)
-                val text =
-                    try {
-                        ui.context.assets.open(path).bufferedReader().use { it.readText() }
-                    } catch (_: Exception) {
-                        "License asset unavailable. See THIRD_PARTY_NOTICES.md in the repository."
-                    }
-                ui.add(card, ui.text(text, 12f, LensColors.muted))
-            }
-        }
-    ui.card(root) { card ->
-        ui.heading(card, "Resolved dependency inventory")
-        ui.add(
-            card,
-            ui.text(
-                ui.context.assets.open("licenses/dependencies.json").bufferedReader().use {
-                    it.readText()
-                },
-                12f,
-                LensColors.muted,
-            ),
-        )
+            "Resolved dependency inventory" to "licenses/dependencies.json",
+        ).forEach { (title,path) -> ui.button(card,title) { showAsset(title,path) } }
     }
 }

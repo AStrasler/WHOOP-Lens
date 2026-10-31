@@ -67,9 +67,13 @@ test("Liquid glass keeps the merged repair contracts", () => {
   assert.match(ui, /size\.coerceAtLeast\(12f\)/);
   assert.match(credits, /COVERED-BY-YOUR-GRACE-OFL\.txt/);
   assert.match(gradle, /applicationId = "io\.github\.astrasler\.whooplens"/);
-  assert.match(gradle, /versionCode = 7/);
-  assert.match(gradle, /versionName = "0\.5\.0-beta\.1"/);
-  assert.match(uploads, /const val ENABLE_UPLOADS = false/);
+  // Release versions advance independently from the visual regression contract.
+  const code = gradle.match(/versionCode\s*=\s*(\d+)/);
+  const version = gradle.match(/versionName\s*=\s*"([^"]+)"/);
+  assert.ok(code && Number(code[1]) > 8, "Android versionCode must exceed the previous published build");
+  assert.ok(version, "Android versionName must exist");
+  assert.match(version[1], /^\d+\.\d+\.\d+-beta\.[1-9]\d*$/);
+  assert.match(uploads, /const val ENABLE_UPLOADS = true/);
   assert.match(manifest, /android:name="android\.permission\.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/);
   assert.match(manifest, /android:name="android\.permission\.USE_BIOMETRIC"/);
   const permissions = [...manifest.matchAll(/uses-permission android:name="([^"]+)"/g)].map(match => match[1]);

@@ -83,10 +83,14 @@ jobs:
           node --test docs/android-companion.test.mjs docs/android-ble.test.mjs
           bash android/gradlew -p android testDebugUnitTest lintDebug assembleRelease --no-daemon
           test -s android/app/build/outputs/apk/release/app-release-unsigned.apk
+          mkdir -p release-candidate
+          cp android/app/build/outputs/apk/release/app-release-unsigned.apk release-candidate/app-release-unsigned.apk
+          notes="docs/releases/${{ steps.meta.outputs.version }}.md"
+          if [ -f "$notes" ]; then cp "$notes" release-candidate/release-notes.md; else printf 'See the reviewed source documentation for this version.\n' > release-candidate/release-notes.md; fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: android-unsigned-${{ inputs.source_sha }}
-          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          path: release-candidate/*
           retention-days: 2
 
   sign-and-publish:
@@ -141,5 +145,7 @@ jobs:
           test -z "$existing"
           prerelease=()
           if [ "$CHANNEL" = experimental ]; then prerelease=(--prerelease --latest=false); fi
-          printf 'Source commit: %s\nAndroid versionCode: %s\n\nDirect BLE: standard HR and optional R-R only; foreground, local encrypted storage. No cloud uploads or proprietary device writes.\n\nHardware/firmware compatibility requires the owner device checklist. BLE is experimental; no generation is marked hardware-verified by this workflow. Existing official WHOOP, Health Connect and widgets remain separate.\n\nInstall over the current app; do not uninstall or clear data. Established signing certificate is verified.\n' "$SOURCE_SHA" "$CODE" > "$RUNNER_TEMP/release-notes.md"
+          printf 'Source commit: %s\nAndroid versionCode: %s\n\n' "$SOURCE_SHA" "$CODE" > "$RUNNER_TEMP/release-notes.md"
+          cat unsigned/release-notes.md >> "$RUNNER_TEMP/release-notes.md"
+          printf '\n\nInstall over the current app; do not uninstall or clear data. Established signing certificate, package and version were verified. Production feature activation remains separately approved.\n' >> "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG" "release/$FILE" "release/$FILE.sha256" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "WHOOP Lens Android $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" "${prerelease[@]}"

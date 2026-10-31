@@ -465,17 +465,17 @@ class DashboardTest {
     }
 
     @Test
-    fun cloudGatePrecedesTokenAndNetwork() {
+    fun cloudConsentPrecedesTokenAndNetwork() {
         var sent = false
         val engine = PreparedCloudSync { _, _ ->
             sent = true
             true
         }
         assertEquals(
-            "Off in this build",
+            "Paused",
             engine.transfer(
                 "A",
-                SyncConsent("A", setOf("steps"), true, false),
+                SyncConsent("A", setOf("steps")),
                 listOf(SyncRecord("A", "steps", "1", 1, "{}")),
                 setOf("steps"),
                 true,

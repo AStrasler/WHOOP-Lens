@@ -62,4 +62,15 @@ class LifeScheduleTest {
         }
         assertNull(client.read())
     }
+    @Test fun activationAuthenticationAndConnectionFailuresRemainDistinct() {
+        for (code in listOf("feature_disabled", "migration_required")) {
+            val client=LifeScheduleClient(session(),account) { _,_,_ -> 503 to JSONObject().put("code",code).toString() }
+            assertNull(client.read());assertEquals(code,client.lastFailure)
+        }
+        val legacy=LifeScheduleClient(session(),account) { _,_,_ -> 404 to "" }
+        assertNull(legacy.read());assertEquals("activation_required",legacy.lastFailure)
+        val unauthorized=LifeScheduleClient(session(),account) { _,_,_ -> 401 to "" }
+        assertNull(unauthorized.read());assertEquals("sign_in_required",unauthorized.lastFailure)
+    }
+
 }
