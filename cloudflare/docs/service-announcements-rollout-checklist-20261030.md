@@ -1,32 +1,17 @@
-# Service announcements activation — deferred rollout checklist
+# Service announcements — development and activation
 
-**Status: planning only.** This document opens a draft PR so work can resume later. It does not authorize applying migrations, changing Worker bindings, deploying, sending notices, or merging this PR.
+## Implemented and verified without production access
 
-## Starting point (October 30, 2026)
+The existing authenticated HTTP and MCP workflow supports owner-only creation, scheduling, publication, cancellation, expiry and targeting. Members receive only active notices addressed to them or everyone; payloads exclude target ids and account/health data. Delivery is a member-initiated pull (Android inbox/banner or MCP list), not push messaging.
 
-- The existing `cloudflare/src/announcements.mjs` code supports owner-only create/update/manage and member-visible notice listing via authenticated MCP and HTTP.
-- `cloudflare/migrations/0020_service_announcements.sql` defines `service_announcements` and `service_announcement_targets`.
-- The live D1 database was checked read-only: neither table existed. The authenticated WHOOP Lens connector did not advertise announcement tools or the announcement feature. The test notice **ABC 123 has not been published**.
-- The committed configuration defaults `ANNOUNCEMENTS_ENABLED` to `"false"`. A Git merge is not a deployment or feature activation.
-- Existing implementation reference: `cloudflare/docs/service-announcements.md`.
+The service now independently verifies active membership on owner actions and member reads, in addition to router/OAuth checks. Synthetic in-memory SQLite tests cover the exact `ABC 123` body through authenticated HTTP creation, hidden draft, owner publication, member read and MCP retrieval; unauthorized/inactive callers, target isolation, cancellation, flag rollback and failed-batch rollback are verified. No test creates a live notice.
 
-## Proposed work (not started)
+Run `node --test cloudflare/test/service-announcements.test.mjs`. The staging-isolation workflow runs this suite with all offline server tests; the OAuth workflow validates the production wrapper and dry-run bundles.
 
-- [ ] Confirm the production Worker version, live announcement flag, and current migration state; reconcile these with the repository.
-- [ ] Review the existing owner-only authorization, member visibility, time/status handling, text validation, privacy boundaries, and Android presentation; run announcement tests and applicable full CI.
-- [ ] Produce a release checklist, rollback sequence, and exact owner approval gates for applying **0020** to production D1, releasing the Worker through the existing code-only path, and then enabling `ANNOUNCEMENTS_ENABLED=true`.
-- [ ] **Only after explicit separate owner approval:** execute the migration and Worker rollout in the correct order, verifying availability and continued authentication. Do not activate this feature merely by merging a PR.
-- [ ] **Only after explicit separate owner approval and confirmed active feature:** publish a short-lived test announcement, using the approved owner-only route/tool, with `kind=update`, `audience=all`, `title=Test notice`, and **`body=ABC 123`**. Set `starts_at` to the actual publishing time; do not invent a past or future timestamp.
-- [ ] Read it back using `list_service_announcements` and the authenticated `GET /v1/announcements` route; confirm the id, body, visible audience, and timing. Record the result without personal data.
-- [ ] Discuss expiring/cancelling the test notice with the owner after verification; do not assume permission to retract it.
+## Separate production gates — not performed
 
-## Operational boundaries
+1. Owner approves a reviewed release/rollback plan and live-schema/configuration reconciliation. Migration `0020_service_announcements.sql` and `ANNOUNCEMENTS_ENABLED=true` remain separate production operations, not consequences of merging this code. Do not apply unrelated migrations 0021–0023 here.
+2. Only after explicit activation approval: apply the required schema, release the reviewed Worker and enable the existing feature flag. Verify authentication and owner-only management. Roll back visibility by setting the flag false; disabling hides notices without deleting them. Schema rollback must happen only after disabling and releasing code that no longer queries these tables.
+3. Only after separate explicit publication approval: create the short-lived `kind=update`, `audience=all`, `title=Test notice`, `body=ABC 123` notice with the actual publication time. Read it back through the authorized member HTTP/MCP paths. Discuss expiry/cancellation with the owner.
 
-- No Cloudflare D1 writes, migrations, flag changes, Worker deployment, account/seat modifications, or member notifications are part of this planning-only draft.
-- Do not touch WHOOP authorization, Health Connect records, unrelated OAuth cutover work, or migrations 0021–0023.
-- All owner actions must use existing authenticated endpoints; never bypass owner authorization by inserting a notice directly into D1.
-- No push notification delivery is requested or authorized.
-
-## Test success condition
-
-After a separately approved activation, the owner-only create action returns an id; the member-visible read endpoint returns the same active notice with body **ABC 123**. If the feature remains disabled or the table is missing, report that honestly rather than claiming a successful test.
+No live notice, production migration, feature activation, Worker deployment or member notification was performed during development. Production flag defaults remain false. See `service-announcements.md` for the endpoint and permission contracts.
