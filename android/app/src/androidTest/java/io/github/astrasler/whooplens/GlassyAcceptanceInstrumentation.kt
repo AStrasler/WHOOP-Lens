@@ -15,6 +15,11 @@ import java.io.File
 /** Synthetic component renders only; never signs in or reads health data. */
 class GlassyAcceptanceInstrumentation : Instrumentation() {
     override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    private fun onUi(block: () -> Unit) {
+        var failure: Throwable? = null
+        runOnMainSync { try { block() } catch (error: Throwable) { failure=error } }
+        failure?.let { throw it }
+    }
     override fun onStart() {
         val result = Bundle()
         try {
@@ -22,7 +27,7 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
             val directory = File(targetContext.getExternalFilesDir(null), "glassy-acceptance").apply { mkdirs() }
             for (width in listOf(360, 412, 480)) for (font in listOf(1f, 2f))
                 for (choice in listOf(AppearanceChoice.GLASS, AppearanceChoice.REDUCED_TRANSPARENCY, AppearanceChoice.BATTERY_SAVER)) {
-                    runOnMainSync {
+                    onUi {
                         val config = Configuration(targetContext.resources.configuration).apply {
                             fontScale = font; screenWidthDp = width
                         }
@@ -86,7 +91,7 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                 return null
             }
             for (font in listOf(1f, 2f)) {
-                runOnMainSync {
+                onUi {
                     activity.resources.updateConfiguration(Configuration(original).apply { fontScale = font }, activity.resources.displayMetrics)
                     field("account").set(activity, "visual-test")
                     field("snapshot").set(activity, null)
@@ -96,14 +101,14 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                     render()
                 }
                 waitForIdleSync()
-                runOnMainSync {
+                onUi {
                     val hrv = find(activity.window.decorView) { it.contentDescription?.startsWith("HRV,") == true }
                     check(hrv != null && hrv.performClick())
                     check(field("detail").get(activity) == "hrv")
                     field("detail").set(activity, null); render()
                 }
                 waitForIdleSync()
-                runOnMainSync {
+                onUi {
                     val recovery = find(activity.window.decorView) { it is TextView && it.text.toString() == "Open recovery measurements" }
                     check(recovery != null && recovery.performClick())
                     check(field("detail").get(activity) == "recovery")
@@ -111,13 +116,13 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                     activity.javaClass.getDeclaredMethod("showDrawer").apply { isAccessible = true }.invoke(activity)
                 }
                 waitForIdleSync()
-                runOnMainSync {
+                onUi {
                     val navigation = find(activity.window.decorView) { it.contentDescription?.toString() == "Account & Settings, open page" }
                     check(navigation != null && navigation.performClick())
                     check(field("page").get(activity) == "Account & Settings")
                 }
                 waitForIdleSync()
-                runOnMainSync {
+                onUi {
                     val frame = field("frame").get(activity) as android.widget.FrameLayout
                     val scroll = frame.getChildAt(0) as android.widget.ScrollView
                     val content = scroll.getChildAt(0)
@@ -149,7 +154,7 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                 for ((screen, metric) in listOf("Home" to null,"Activity" to null,"Sleep" to null,"Vitals" to null,
                     "Health Connect" to null,"Account & Settings" to null,"Sources & freshness" to null,"Arrange Home" to null,
                     "Direct BLE" to null,"Open Source Licenses & Credits" to null,"Home" to "recovery","Vitals" to "heart","Sleep" to "sleep","Vitals" to "hrv")) {
-                    runOnMainSync {
+                    onUi {
                         activity.resources.updateConfiguration(Configuration(original).apply { fontScale=font },activity.resources.displayMetrics)
                         field("account").set(activity,"visual-test")
                         field("snapshot").set(activity,DashboardSnapshot("visual-test",whoop,health))
@@ -163,7 +168,7 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                         render()
                     }
                     waitForIdleSync()
-                    runOnMainSync {
+                    onUi {
                         val frame=field("frame").get(activity) as android.widget.FrameLayout
                         val content=(frame.getChildAt(0) as android.widget.ScrollView).getChildAt(0)
                         content.measure(View.MeasureSpec.makeMeasureSpec(frame.width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
@@ -198,7 +203,7 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                     }
                 }
             }
-            runOnMainSync { activity.resources.updateConfiguration(original, activity.resources.displayMetrics); activity.finish() }
+            onUi { activity.resources.updateConfiguration(original, activity.resources.displayMetrics); activity.finish() }
 
             result.putString("result", "PASS: $renders synthetic width/font/appearance renders; independent clicks, text fit, contrast, touch targets, accessibility roles and remove-animations. $screenRenders application/detail renders with text bounds, chart label bounds and stable screenshot comparisons; actual Home HRV/recovery navigation and drawer-to-settings at both fonts on a 1440x3120 emulator. Not Samsung hardware approval.")
             finish(Activity.RESULT_OK, result)

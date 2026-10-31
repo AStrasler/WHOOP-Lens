@@ -89,4 +89,13 @@ class ManualSyncTest {
             assertFalse(unavailable.ready)
         }
     }
+    @Test fun permissionRevocationAfterReadinessPreventsTheUpload() {
+        val draft=ManualSync.draft(snapshot(),owner,setOf("steps"),all,now)
+        var permissions=all
+        val client=CloudSyncClient(session(),owner,transport=CloudSyncTransport { method,_,_,_ ->
+            assertEquals("GET",method);permissions=emptySet();200 to ready
+        },now={now},grantedNow={permissions})
+        assertThrows(IllegalStateException::class.java) { client.upload(draft,SyncConsent(owner,draft.categories,true,false),all) }
+    }
+
 }

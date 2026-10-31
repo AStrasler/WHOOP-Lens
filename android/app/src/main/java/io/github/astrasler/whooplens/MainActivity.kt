@@ -2288,7 +2288,7 @@ class MainActivity : ComponentActivity() {
         render()
         io.execute {
             val allowed = { generation == syncGeneration && session == uiGeneration && auth.accountKey() == owner && foreground && !locked() }
-            val client = CloudSyncClient(auth, owner, allowed = allowed)
+            val client = CloudSyncClient(auth, owner, allowed = allowed, grantedNow = { permittedSyncCategories() })
             val success = try {
                 when (action) {
                     "pause" -> client.pause()

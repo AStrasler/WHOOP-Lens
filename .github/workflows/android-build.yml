@@ -76,7 +76,9 @@ jobs:
             adb shell wm density ${{ matrix.density }}
             adb shell wm size
             adb shell wm density
+            adb logcat -c
             adb shell am instrument -w io.github.astrasler.whooplens.test/io.github.astrasler.whooplens.GlassyAcceptanceInstrumentation | tee /tmp/glassy-results.txt
+            adb logcat -d -v brief AndroidRuntime:E '*:S' | tee /tmp/glassy-logcat.txt
             grep -q 'PASS: 18 synthetic' /tmp/glassy-results.txt
             adb pull /sdcard/Android/data/io.github.astrasler.whooplens/files/glassy-acceptance /tmp/glassy-acceptance
       - uses: actions/upload-artifact@v4
@@ -85,4 +87,5 @@ jobs:
           name: glassy-evidence-api-${{ matrix.api }}-density-${{ matrix.density }}
           path: |
             /tmp/glassy-results.txt
+            /tmp/glassy-logcat.txt
             /tmp/glassy-acceptance/

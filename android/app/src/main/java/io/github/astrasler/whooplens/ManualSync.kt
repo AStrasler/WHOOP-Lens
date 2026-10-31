@@ -37,17 +37,18 @@ internal object ManualSync {
         fun add(category: String, metric: String, start: Long, end: Long?, origin: String?, unit: String, payload: JSONObject, stable: String) {
             if (category !in selected || start < now-7*86400000L || start > now || (end != null && (end < start || end > now))) return
             val key=MessageDigest.getInstance("SHA-256").digest(stable.toByteArray()).joinToString("") { "%02x".format(it) }
-            val row=JSONObject().put("metric", metric).put("record_key", "$category:$key").put("observed_at", Instant.ofEpochMilli(start).toString()).put("unit",unit).put("payload",payload)
+            val recordKey=if (category=="steps") stable else "$category:$key"
+            val row=JSONObject().put("metric", metric).put("record_key", recordKey).put("observed_at", Instant.ofEpochMilli(start).toString()).put("unit",unit).put("payload",payload)
             if (end != null) row.put("ended_at",Instant.ofEpochMilli(end).toString())
             if (origin != null && origin.matches(Regex("[A-Za-z0-9_.]+"))) row.put("origin_package",origin)
             if (category == "steps") row.put("local_date",Instant.ofEpochMilli(start).atZone(ZoneId.systemDefault()).toLocalDate().toString())
-            rows += SyncRecord(owner,category,"$category:$key",batch.fetchedAt,row.toString())
+            rows += SyncRecord(owner,category,recordKey,batch.fetchedAt,row.toString())
         }
         batch.series["steps"].orEmpty().forEach { point ->
             val count=point.value
             if (count != null && count.isFinite() && count in 0.0..10000000.0 && count == count.toLong().toDouble()) {
                 val day=Instant.ofEpochMilli(point.time).atZone(ZoneId.systemDefault()).toLocalDate()
-                val end=minOf(now,day.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli())
+                val end=minOf(batch.fetchedAt,day.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli())
                 add("steps","steps_daily",point.time,end,null,"steps",JSONObject().put("count",count.toLong()),"daily:$day:local")
             }
         }
@@ -70,11 +71,13 @@ internal object ManualSync {
 }
 internal class CloudSyncClient(private val auth: PrivateSession, private val account: String,
     private val allowed: () -> Boolean = { true }, private val transport: CloudSyncTransport = httpCloudSyncTransport(),
-    private val now: () -> Long = System::currentTimeMillis) {
-    private fun exchange(method: String,path: String,body: String?=null): Pair<Int,String> {
+    private val now: () -> Long = System::currentTimeMillis, private val grantedNow: (() -> Set<String>)? = null) {
+    private fun exchange(method: String,path: String,body: String?=null,required: Set<String> = emptySet()): Pair<Int,String> {
         check(allowed() && auth.accountKey()==account)
+        check(grantedNow == null || required.isEmpty() || grantedNow.invoke().containsAll(required))
         val token=auth.accessToken() ?: return 401 to ""
         check(allowed() && auth.accountKey()==account)
+        check(grantedNow == null || required.isEmpty() || grantedNow.invoke().containsAll(required))
         val result=transport.request(method,path,"Bearer $token",body)
         check(allowed() && auth.accountKey()==account)
         return result
@@ -96,7 +99,7 @@ internal class CloudSyncClient(private val auth: PrivateSession, private val acc
         val engine=PreparedCloudSync { _,rows ->
             val file=JSONObject().put("schema_version",2).put("source","health_connect").put("exported_at",Instant.ofEpochMilli(draft.preparedAtMs).toString()).put("records",JSONArray(rows.map { JSONObject(it.payload) }))
             val body=JSONObject().put("consent","store-health-connect-file").put("file",file)
-            val (code,text)=exchange("POST","/v1/health-connect/sync",body.toString())
+            val (code,text)=exchange("POST","/v1/health-connect/sync",body.toString(),required=draft.categories)
             val response=try { JSONObject(text) } catch (_: Exception) { return@PreparedCloudSync false }
             code==200 && response.optInt("sync_protocol")==1 && response.optInt("stored",-1)==rows.size && response.optString("source")=="health_connect" && response.optString("synced_at").let { runCatching { Instant.parse(it) }.isSuccess }
         }
