@@ -37,7 +37,6 @@ internal object GlassDashboardStats {
         onOpen: (String, DataSource) -> Unit,
     ) {
         ui.heading(root, "Overview")
-        ui.add(root, ui.text("Recent comparisons and refresh status · measurements in your Home cards", 12f, LensColors.muted))
         val columns = metricsPerRow(ui.context.resources.configuration.fontScale,
             ui.context.resources.configuration.screenWidthDp).coerceAtMost(2)
         val oneColumn = columns == 1
@@ -70,7 +69,7 @@ internal object GlassDashboardStats {
                 ui.heading(panel, "Recovery trend · 7 days")
                 panel.addView(
                     TrendChart(ui.context, recoveryPoints, DataSource.WHOOP),
-                    LinearLayout.LayoutParams(-1, ui.dp(150)),
+                    LinearLayout.LayoutParams(-1, ui.dp(chartHeightDp(ui.context.resources.configuration.fontScale))),
                 )
                 ui.add(
                     panel,
@@ -150,7 +149,7 @@ internal object GlassDashboardStats {
             ?: if (spec.key == "strain") "No cycle comparison" else if (spec.key == "steps") "Daily total · no percentage comparison" else "Prior record must be within 48 hours"
         ui.add(tile, ui.text(comparison, 12f, LensColors.muted), 4)
         val status = if (isStale) "Stale" else if (batch == null) "Not refreshed" else "Cached snapshot"
-        ui.add(tile, ui.text(spec.source.label + " · " + freshness + " · " + status,
+        ui.add(tile, ui.text(spec.source.label + " · " + if (isStale) "Stale · " + freshness else freshness,
             12f, if (isStale) LensColors.amber else LensColors.label), 0)
 
         tile.contentDescription = spec.label + ", " +

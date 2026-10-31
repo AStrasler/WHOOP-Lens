@@ -146,6 +146,8 @@ DELETE FROM whoop_recovery WHERE user_id=':U';
 DELETE FROM whoop_sleep WHERE user_id=':U';
 DELETE FROM health_connect_ingest_tokens WHERE user_id=':U';
 DELETE FROM health_connect_records WHERE user_id=':U';
+-- If migration 0025 is present; otherwise verify the table is absent.
+DELETE FROM companion_sync_status WHERE user_id=':U';
 DELETE FROM health_import_consent WHERE user_id=':U';
 DELETE FROM health_import_fences WHERE user_id=':U';
 DELETE FROM samsung_health_records WHERE user_id=':U';

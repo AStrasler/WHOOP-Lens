@@ -12,7 +12,7 @@ test('BLE only writes the standard CCCD and has no outbound data transport',()=>
     const source=read(base+file);
     assert.doesNotMatch(source,/HttpURLConnection|openConnection\(|OkHttp|Log\.(?:d|i|v|w|e)\(|println\(/,file);
   }
-  assert.match(read('android/app/src/main/java/io/github/astrasler/whooplens/ManualSync.kt'),/ENABLE_UPLOADS\s*=\s*false/);
+  assert.doesNotMatch(read('android/app/src/main/java/io/github/astrasler/whooplens/ManualSync.kt'),/rrTicks|BleSession|DirectBle/);
 });
 test('BLE has separate encrypted no-backup storage and does not add a dashboard source',()=>{
   const storage=read(base+'AndroidBleStorage.kt');

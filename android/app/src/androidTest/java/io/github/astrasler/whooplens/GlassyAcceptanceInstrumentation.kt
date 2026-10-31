@@ -129,8 +129,78 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                     bitmap.recycle()
                 }
             }
+            // Application-wide fixture: deliberately clustered HR timestamps reproduce #112.
+            val now = System.currentTimeMillis()
+            val whoop = DataBatch(DataSource.WHOOP, now, listOf(
+                Metric("recovery", "Recovery", 72.0, "%", DataSource.WHOOP, now),
+                Metric("hrv", "HRV", 64.0, "ms", DataSource.WHOOP, now),
+                Metric("rhr", "Resting HR", 52.0, "bpm", DataSource.WHOOP, now),
+                Metric("sleep", "Sleep", 420.0, "min", DataSource.WHOOP, now),
+                Metric("strain", "Strain", 11.0, "/21", DataSource.WHOOP, now)
+            ), mapOf("sleep" to (0..29).map { Point(now-it*86400000L,420.0) }, "recovery" to (0..29).map { Point(now-it*86400000L,72.0) }),
+                listOf(SleepDetail(now-8*3600000L,now,"WHOOP",emptyList(),420.0)))
+            val heart = (0..20).map { Point(now-23*3600000L+it*1000,60.0+it,"com.example.synthetic") } + Point(now,80.0,"com.example.synthetic")
+            val health = DataBatch(DataSource.HEALTH_CONNECT,now,listOf(Metric("steps","Steps",5000.0,"steps",DataSource.HEALTH_CONNECT,now)),
+                mapOf("heart" to heart,"steps" to listOf(Point(now-3600000,5000.0))),
+                listOf(SleepDetail(now-8*3600000L,now,"com.example.synthetic",listOf(SleepStage(now-7*3600000L,now-3600000L,"Light")),360.0)),
+                listOf(ExerciseDetail(now-3600000L,now-1800000L,"Synthetic walk","com.example.synthetic")))
+            var screenRenders = 0
+            for (font in listOf(1f,2f)) {
+                for ((screen, metric) in listOf("Home" to null,"Activity" to null,"Sleep" to null,"Vitals" to null,
+                    "Health Connect" to null,"Account & Settings" to null,"Sources & freshness" to null,"Arrange Home" to null,
+                    "Direct BLE" to null,"Open Source Licenses & Credits" to null,"Home" to "recovery","Vitals" to "heart","Sleep" to "sleep","Vitals" to "hrv")) {
+                    runOnMainSync {
+                        activity.resources.updateConfiguration(Configuration(original).apply { fontScale=font },activity.resources.displayMetrics)
+                        field("account").set(activity,"visual-test")
+                        field("snapshot").set(activity,DashboardSnapshot("visual-test",whoop,health))
+                        field("granted").set(activity,healthCategories.map { it.permission }.toSet())
+                        field("page").set(activity,screen)
+                        field("detail").set(activity,metric)
+                        field("detailSource").set(activity,if (metric=="heart") DataSource.HEALTH_CONNECT else DataSource.WHOOP)
+                        field("cloudStatus").set(activity,CloudSyncStatus("visual-test",true,"ready",4,now,true))
+                        field("lifeSchedule").set(activity,LifeSchedulePreference("visual-test",LifeSchedule.FLEXIBLE,true))
+                        field("message").set(activity,"SYNTHETIC TEST DATA · NOT A PHYSICAL DEVICE")
+                        render()
+                    }
+                    waitForIdleSync()
+                    runOnMainSync {
+                        val frame=field("frame").get(activity) as android.widget.FrameLayout
+                        val content=(frame.getChildAt(0) as android.widget.ScrollView).getChildAt(0)
+                        content.measure(View.MeasureSpec.makeMeasureSpec(frame.width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
+                        content.layout(0,0,frame.width,content.measuredHeight)
+                        fun inspect(view: View) {
+                            if (view is TextView && view.visibility==View.VISIBLE && view.width>0) {
+                                val layout=view.layout
+                                check(layout!=null && layout.height<=view.height-view.paddingTop-view.paddingBottom+1) { "$screen clipped height: ${view.text}" }
+                                for (line in 0 until layout.lineCount) check(layout.getLineWidth(line)<=layout.width+1) { "$screen clipped width: ${view.text}" }
+                            }
+                            if (view is android.view.ViewGroup) for (i in 0 until view.childCount) inspect(view.getChildAt(i))
+                        }
+                        inspect(content)
+                        fun image(): Bitmap {
+                            val bitmap=Bitmap.createBitmap(content.width,content.height,Bitmap.Config.ARGB_8888)
+                            val canvas=Canvas(bitmap);canvas.drawColor(LensColors.background);content.draw(canvas)
+                            return bitmap
+                        }
+                        val first=image();val second=image()
+                        check(first.sameAs(second)) { "$screen has unstable repeated rendering" };second.recycle()
+                        fun charts(view: View) {
+                            if (view is TrendChart) {
+                                view.axisLabels.zipWithNext().forEach { (a,b) -> check(a.left+a.width < b.left) }
+                                view.axisLabels.forEach { check(it.left>=0 && it.left+it.width<=view.width) }
+                            }
+                            if (view is android.view.ViewGroup) for (i in 0 until view.childCount) charts(view.getChildAt(i))
+                        }
+                        charts(content)
+                        val name=(screen+"-"+(metric?:"screen")).replace(" ","-").replace("&", "and")
+                        File(directory,"App-$name-${(font*100).toInt()}.png").outputStream().use { first.compress(Bitmap.CompressFormat.PNG,100,it) }
+                        first.recycle();screenRenders++
+                    }
+                }
+            }
             runOnMainSync { activity.resources.updateConfiguration(original, activity.resources.displayMetrics); activity.finish() }
-            result.putString("result", "PASS: $renders synthetic width/font/appearance renders; independent clicks, text fit, contrast, touch targets, accessibility roles and remove-animations. Actual Home HRV/recovery navigation and drawer-to-settings exercised at both fonts on a 1440x3120 emulator. Not Samsung hardware approval.")
+
+            result.putString("result", "PASS: $renders synthetic width/font/appearance renders; independent clicks, text fit, contrast, touch targets, accessibility roles and remove-animations. $screenRenders application/detail renders with text bounds, chart label bounds and stable screenshot comparisons; actual Home HRV/recovery navigation and drawer-to-settings at both fonts on a 1440x3120 emulator. Not Samsung hardware approval.")
             finish(Activity.RESULT_OK, result)
         } catch (error: Throwable) {
             result.putString("failure", error.toString()); finish(Activity.RESULT_CANCELED, result)

@@ -44,6 +44,10 @@ class MainActivity : ComponentActivity() {
     private var message = ""
     private var lifeSchedule: LifeSchedulePreference? = null
     private var lifeScheduleSaving = false
+    private var lifeScheduleIssue: String? = "loading"
+    private var cloudStatus: CloudSyncStatus? = null
+    private var cloudBusy = false
+    @Volatile private var syncGeneration = 0L
     private var notices = ServiceAnnouncements.empty("")
     private val dismissedNotices = mutableSetOf<String>()
     private var drawer: View? = null
@@ -278,7 +282,11 @@ class MainActivity : ComponentActivity() {
                     notices = ServiceAnnouncements.empty(current ?: "")
                     dismissedNotices.clear()
                     lifeSchedule = null
+                    lifeScheduleIssue = "loading"
                     lifeScheduleSaving = false
+                    cloudStatus = null
+                    cloudBusy = false
+                    ++syncGeneration
                     resetGlance()
                     arrangeDraft = null
                     if (page == "Arrange Home") page = "Home"
@@ -313,6 +321,7 @@ class MainActivity : ComponentActivity() {
                 if (current != null) {
                     loadNotices(current)
                     loadLifeSchedule(current)
+                    loadCloudStatus(current)
                 }
             }
         }
@@ -341,14 +350,15 @@ class MainActivity : ComponentActivity() {
         val attempt = uiGeneration
         lifeScheduleSaving = true
         io.execute {
+            val client = LifeScheduleClient(auth, owner)
             val result = try {
-                val client = LifeScheduleClient(auth, owner)
                 if (selection == null) client.read() else client.select(selection, confirmedByUser = true)
             } catch (_: Exception) { null }
             runOnUiThread {
                 if (attempt != uiGeneration || account != owner || isDestroyed) return@runOnUiThread
                 lifeScheduleSaving = false
                 lifeSchedule = result
+                lifeScheduleIssue = client.lastFailure ?: if (result == null) "connection_unavailable" else null
                 if (selection != null) message = if (result != null) "Life Schedule saved for this account." else "Life Schedule could not be saved. Retry to read the current selection."
                 if (drawer == null) render()
             }
@@ -419,7 +429,7 @@ class MainActivity : ComponentActivity() {
                 snapshot = cache
                 message =
                     if (!online(this)) "Offline · local reads only. Saved WHOOP values are dated."
-                    else "Refresh finished · no cloud uploads"
+                    else "Dashboard refreshed"
                 LensWidgets.updateAll(this)
                 if (foreground) render()
                 scheduleSession()
@@ -916,12 +926,14 @@ class MainActivity : ComponentActivity() {
             metricDetail(root)
             return
         }
+        if (page in setOf("Home", "Activity", "Sleep", "Vitals")) sourceWarnings(root)
         when (page) {
             "Home" -> home(root)
             "Activity" -> activity(root)
             "Sleep" -> sleep(root)
             "Vitals" -> vitals(root)
             "Health Connect" -> health(root)
+            "Sources & freshness" -> sources(root)
             "Arrange Home" -> customize(root)
             "Direct BLE" ->
                 bleScreen =
@@ -946,11 +958,12 @@ class MainActivity : ComponentActivity() {
             "Open Source Licenses & Credits" -> renderOpenSourceCredits(ui, root)
             else -> settings(root)
         }
+        if (page in setOf("Home", "Activity", "Sleep", "Vitals"))
+            ui.button(root, "Sources & freshness") { page = "Sources & freshness"; message = ""; render() }
     }
 
     private fun signedOut(root: LinearLayout) {
         ui.card(root) { c ->
-            ui.add(c, ui.text("WhoopLens", 30f, role = TextRole.HAND))
             ui.add(
                 c,
                 ui.text(
@@ -1028,6 +1041,29 @@ class MainActivity : ComponentActivity() {
         b.notices.forEach { ui.add(root, ui.text(it, 12f, LensColors.amber)) }
     }
 
+    private fun sourceWarnings(root: LinearLayout, batches: List<DataBatch> = listOfNotNull(snapshot?.whoop, snapshot?.health)) {
+        val now = System.currentTimeMillis()
+        val warnings = batches.flatMap { batch ->
+            listOfNotNull(if (batch.stale(now)) "${batch.source.label}: saved data is over 12 hours old." else null,
+                if (!batch.complete) "${batch.source.label}: partial history." else null) + batch.notices
+        }.distinct()
+        warnings.forEach { ui.add(root, ui.text(it, 12f, LensColors.amber)) }
+    }
+
+    private fun sources(root: LinearLayout) {
+        ui.card(root) { c ->
+            ui.heading(c, "Sources & freshness")
+            for (source in DataSource.entries) {
+                val batch = if (source == DataSource.WHOOP) snapshot?.whoop else snapshot?.health
+                ui.chip(c, source)
+                ui.add(c, ui.text(if (source == DataSource.WHOOP) "Official recovery, strain, sleep and vitals."
+                    else "Android records from permitted writing apps; aggregates follow Health Connect source priority.", 12f, LensColors.muted))
+                if (batch == null) ui.add(c, ui.text("Not refreshed", 12f, LensColors.amber)) else freshness(c, batch)
+            }
+            ui.add(c, ui.text("Sources remain separate. Missing observations are never zero-filled or substituted. Refresh times describe reads; measurement times stay on each reading. Direct BLE is local and experimental. These measurements are not medical advice.", 12f, LensColors.muted))
+        }
+    }
+
     private val defaultCards = defaultHomeCards
 
     private fun cardOrder() = homeCardOrder(prefs.getString("home-order", null))
@@ -1065,8 +1101,6 @@ class MainActivity : ComponentActivity() {
 
     private fun home(root: LinearLayout) {
         renderNoticeInbox(root)
-        freshness(root, snapshot?.whoop)
-        freshness(root, snapshot?.health)
         val hidden = prefs.getStringSet("home-hidden", emptySet()).orEmpty()
         val visible = visibleHomeCards(cardOrder(), hidden)
         visible.forEachIndexed { index, key ->
@@ -1245,40 +1279,9 @@ class MainActivity : ComponentActivity() {
                             ui.add(c, row, 0)
                         }
                     }
-                "Sources" ->
-                    ui.card(root) { c ->
-                        ui.heading(c, "Sources & freshness")
-                        ui.chip(c, DataSource.WHOOP)
-                        ui.add(
-                            c,
-                            ui.text(
-                                "Authoritative WHOOP recovery, strain, sleep and vitals",
-                                12f,
-                                LensColors.muted,
-                            ),
-                        )
-                        freshness(c, snapshot?.whoop)
-                        ui.chip(c, DataSource.HEALTH_CONNECT)
-                        ui.add(
-                            c,
-                            ui.text(
-                                "Local Android records · writing apps labelled",
-                                12f,
-                                LensColors.muted,
-                            ),
-                        )
-                        freshness(c, snapshot?.health)
-                    }
+                "Sources" -> sources(root)
             }
         }
-        ui.add(
-            root,
-            ui.text(
-                "Health Connect stays on this phone. Uploads and deletion are off in this build.",
-                12f,
-                LensColors.sand,
-            ),
-        )
         ui.button(root, "Arrange cards") {
             page = "Arrange Home"
             render()
@@ -1314,11 +1317,11 @@ class MainActivity : ComponentActivity() {
     ) {
         root.addView(
             TrendChart(this, points, source, bars, baseline),
-            LinearLayout.LayoutParams(-1, ui.dp(150)),
+            LinearLayout.LayoutParams(-1, ui.dp(chartHeightDp(resources.configuration.fontScale))),
         )
         ui.add(
             root,
-            ui.text(source.label + " · gaps mean not shared · tap a point", 12f, LensColors.muted),
+            ui.text("Gaps mean not shared · tap a point", 12f, LensColors.muted),
         )
     }
 
@@ -1409,12 +1412,11 @@ class MainActivity : ComponentActivity() {
         ui.add(
             root,
             ui.text(
-                "Totals follow Health Connect source priority. Sessions can overlap. WHOOP stays separate.",
+                "Session durations can overlap.",
                 12f,
                 LensColors.muted,
             ),
         )
-        freshness(root, snapshot?.health)
     }
 
     private fun strainTile(parent: LinearLayout) {
@@ -1477,7 +1479,6 @@ class MainActivity : ComponentActivity() {
         val timing = sleepTiming(snapshot?.whoop?.sleeps.orEmpty(), System.currentTimeMillis())
         ui.card(root) { c ->
             ui.heading(c, "Consistency")
-            ui.add(c, ui.text("Recorded nights only. Missing nights are left out.", 13f, LensColors.muted))
             ui.pair(
                 c,
                 { tile ->
@@ -1515,11 +1516,12 @@ class MainActivity : ComponentActivity() {
             if (prefs.getString("sleep-source", "both") == "health")
                 listOf(DataSource.HEALTH_CONNECT, DataSource.WHOOP)
             else listOf(DataSource.WHOOP, DataSource.HEALTH_CONNECT)
-        order.forEach { metricCard(root, "sleep", "Sleep · " + it.label, it) }
-        ui.heading(root, "Compare sources")
+        ui.heading(root, "Sleep by source")
         order.forEach { s ->
             ui.card(root) { c ->
                 ui.chip(c, s)
+                ui.add(c, ui.text(metric("sleep", s)?.display() ?: "Not shared", 22f, bold = true, role = TextRole.MONO))
+                ui.button(c, "Sleep measurements") { detail = "sleep"; detailSource = s; render() }
                 val b = if (s == DataSource.WHOOP) snapshot?.whoop else snapshot?.health
                 val last = b?.sleeps?.lastOrNull()
                 ui.add(
@@ -1552,7 +1554,7 @@ class MainActivity : ComponentActivity() {
                     else {
                         c.addView(
                             SleepTimeline(this, last),
-                            LinearLayout.LayoutParams(-1, ui.dp(112)),
+                            LinearLayout.LayoutParams(-1, ui.dp((112*resources.configuration.fontScale.coerceAtLeast(1f)).toInt())),
                         )
                         last.stages.take(60).forEach { stage ->
                             ui.add(
@@ -1605,35 +1607,18 @@ class MainActivity : ComponentActivity() {
             ui.add(
                 c,
                 ui.text(
-                    "No consistency score is invented. History depends on actual records and permissions.",
+                    "Missing nights are excluded.",
                     12f,
                     LensColors.muted,
                 ),
             )
         }
-        ui.heading(root, "Weekly recorded-night averages")
-        for (n in 0..3) {
-            val p =
-                chartSlots(
-                        snapshot?.whoop?.series?.get("sleep").orEmpty(),
-                        28,
-                        System.currentTimeMillis(),
-                    )
-                    .take(28 - n * 7)
-                    .takeLast(7)
-            ui.card(root) {
-                ui.add(
-                    it,
-                    ui.text(
-                        "Week " +
-                            (n + 1) +
-                            ": " +
-                            (statistics(p)?.let { s -> duration(s.first) } ?: "Not shared"),
-                        16f,
-                        numbers = true,
-                    ),
-                )
-                ui.chip(it, DataSource.WHOOP)
+        ui.card(root) { c ->
+            ui.heading(c, "Weekly recorded-night averages")
+            ui.chip(c, DataSource.WHOOP)
+            for (n in 0..3) {
+                val p = chartSlots(snapshot?.whoop?.series?.get("sleep").orEmpty(), 28, System.currentTimeMillis()).take(28-n*7).takeLast(7)
+                ui.add(c, ui.text("Week ${n+1}: " + (statistics(p)?.let { duration(it.first) } ?: "Not shared"), 16f, numbers = true))
             }
         }
     }
@@ -1723,7 +1708,7 @@ class MainActivity : ComponentActivity() {
         ui.add(
             root,
             ui.text(
-                "Body temperature is not skin temperature. Readings describe measurements, not medical status. Sources are never substituted.",
+                "Body temperature and WHOOP skin temperature remain separate.",
                 12f,
                 LensColors.muted,
             ),
@@ -1737,7 +1722,7 @@ class MainActivity : ComponentActivity() {
             rangeDays = listOf(7, 30, 90)[it]
             render()
         }
-        ui.metric(root, metric(k, detailSource), metric(k, detailSource)?.title ?: k, detailSource)
+        ui.metric(root, metric(k, detailSource), metric(k, detailSource)?.title ?: k, detailSource, showHeading = false)
         val p = chartSlots(b?.series?.get(k).orEmpty(), rangeDays, System.currentTimeMillis())
         ui.card(root) { c ->
             val baseline = personalBaseline(b?.baselineSeries(k).orEmpty(), System.currentTimeMillis())
@@ -1775,7 +1760,7 @@ class MainActivity : ComponentActivity() {
                 ),
             )
         }
-        ui.heading(root, "Measurements · " + detailSource.label)
+        ui.heading(root, "Measurements")
         b?.series
             ?.get(k)
             .orEmpty()
@@ -1800,7 +1785,8 @@ class MainActivity : ComponentActivity() {
                         },
                 )
             }
-        freshness(root, b)
+        sourceWarnings(root, listOfNotNull(b))
+        ui.button(root, "Sources & freshness") { detail = null; page = "Sources & freshness"; render() }
     }
 
     private fun health(root: LinearLayout) {
@@ -1822,7 +1808,6 @@ class MainActivity : ComponentActivity() {
                     bold = true,
                 ),
             )
-            ui.add(c, ui.text("Read only · choose categories individually", 12f, LensColors.sand))
         }
         ui.card(root, dashed = true) { c ->
             ui.heading(c, "Data categories")
@@ -1838,7 +1823,6 @@ class MainActivity : ComponentActivity() {
                         true,
                     ),
                 )
-                ui.add(c, ui.text(cat.explanation, 12f, LensColors.muted))
             }
             ui.button(c, "Review permissions", true) { permissionFlow() }
             ui.button(c, "Open Health Connect settings") { healthSettings() }
@@ -1847,17 +1831,8 @@ class MainActivity : ComponentActivity() {
             ui.heading(c, "Preview on this phone")
             ui.button(c, "Refresh permitted local records", true, !loading) { refresh(true) }
             freshness(c, snapshot?.health)
-            ui.add(
-                c,
-                ui.text("Stored encrypted on this phone only · not uploaded", 12f, LensColors.sand),
-            )
-            ui.button(c, "Review upload (off)") {
-                dialog(
-                    "Review Health Connect upload",
-                    (metric("steps", DataSource.HEALTH_CONNECT)?.display() ?: "No steps shared") +
-                        "\nHealth Connect aggregate · mixed/unknown origin.\nUploads are OFF. Nothing has been sent.",
-                )
-            }
+            ui.button(c, "Cloud synchronization") { page = "Account & Settings"; render() }
+
         }
         ui.card(root, dashed = true) { c ->
             ui.heading(c, "Refresh & sync")
@@ -1868,7 +1843,7 @@ class MainActivity : ComponentActivity() {
             ui.add(
                 c,
                 ui.text(
-                    "Cloud uploads · Off in this build\nServer deletion · Off in this build",
+                    "Local refresh does not upload. Cloud transfer needs a separate reviewed action.",
                     14f,
                     LensColors.amber,
                 ),
@@ -1915,7 +1890,7 @@ class MainActivity : ComponentActivity() {
             } else
                 dialog(
                     "Background refresh",
-                    "Android schedules updates roughly every 30 minutes, possibly later under battery restrictions. WHOOP needs network. Health Connect needs separate background permission. Uploads stay OFF.",
+                    "Android may delay background reads under battery restrictions. Health Connect needs separate background permission. Background refresh never uploads.",
                     "Enable local background refresh",
                 ) {
                     prefs.edit().putBoolean("background", true).apply()
@@ -1970,23 +1945,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun settings(root: LinearLayout) {
-        ui.button(root, "Direct BLE · experimental") {
-            ble.selectAccount()
-            page = "Direct BLE"
-            handler.removeCallbacks(bleTick)
-            handler.postDelayed(bleTick, 5000)
-            render()
-        }
-        ui.button(root, "Open Source Licenses & Credits") {
-            page = "Open Source Licenses & Credits"
-            render()
-        }
         ui.card(root) { c ->
             ui.heading(c, "Signed in · Cloudflare")
             ui.add(
                 c,
                 ui.text(
-                    "Invited account\nSession · Keystore-encrypted\nAccess · server checks every authenticated request"
+                    "Private account · signed in"
                 ),
             )
             ui.button(c, "Reconnect account") {
@@ -2005,7 +1969,7 @@ class MainActivity : ComponentActivity() {
             ui.heading(c, "Life Schedule")
             ui.add(c, ui.text("How predictable is your everyday schedule?"))
             val preference = lifeSchedule?.takeIf { it.account == account }
-            ui.add(c, ui.text(if (preference == null) "Selection unavailable. Retry when connected; nothing has been changed."
+            ui.add(c, ui.text(if (preference == null) lifeScheduleMessage(lifeScheduleIssue)
                 else "Current: " + preference.selection.label + if (preference.explicit) "" else " (default)", 12f, LensColors.muted))
             for (option in LifeSchedule.entries) {
                 ui.button(c, option.label + (if (option == LifeSchedule.UNPREDICTABLE) " (Default)" else "") + "\n" + option.description,
@@ -2197,29 +2161,7 @@ class MainActivity : ComponentActivity() {
             if (selected == LockLevel.DETAILED && prefs.getBoolean("glance-confirmed", false))
                 ui.button(c, "Choose stored measurements") { chooseGlanceMetrics() }
         }
-        ui.card(root) { c ->
-            ui.heading(c, "Cloud synchronization · prepared only")
-            ui.add(c, ui.text("Off in this build · last cloud sync: Never", 14f, LensColors.amber))
-            ui.add(
-                c,
-                ui.text(
-                    "Dashboard refresh never authorizes transfer. A separately verified backend contract, consent and release are required.",
-                    12f,
-                    LensColors.muted,
-                ),
-            )
-            ui.button(c, "Prepare category choices") { cloudChoices() }
-            ui.button(c, "Pause / clear future sync consent") {
-                prefs
-                    .edit()
-                    .putBoolean("sync-consent", false)
-                    .putBoolean("sync-paused", true)
-                    .remove("sync-categories")
-                    .apply()
-                message = "Future sync paused. No transfer occurred."
-                render()
-            }
-        }
+        cloudSyncControls(root)
         ui.button(root, "Health Connect & privacy") {
             page = "Health Connect"
             render()
@@ -2227,13 +2169,25 @@ class MainActivity : ComponentActivity() {
         ui.button(root, "Account & data options") {
             dialog(
                 "Your data, by where it lives",
-                "On this phone: sign-out erases credentials and cached previews.\nHealth Connect: revoke permissions in Android settings. No phone records deleted.\nOn the server: deletion is OFF in this app. Existing records may remain. Use the privacy request page.",
+                "On this phone: sign-out erases credentials and cached previews.\nHealth Connect: revoke permissions in Android settings. No phone records deleted.\nOn the server: cloud Health Connect withdrawal is available in Cloud synchronization after service activation. Other account data uses the privacy request page.",
                 "Open web request page",
             ) {
                 openExternal(
                     Intent(Intent.ACTION_VIEW, "https://www.whooplens.tech/privacy/".toUri())
                 )
             }
+        }
+        ui.heading(root, "About & help")
+        ui.button(root, "Direct BLE · experimental") {
+            ble.selectAccount()
+            page = "Direct BLE"
+            handler.removeCallbacks(bleTick)
+            handler.postDelayed(bleTick, 5000)
+            render()
+        }
+        ui.button(root, "Open Source Licenses & Credits") {
+            page = "Open Source Licenses & Credits"
+            render()
         }
         ui.button(root, "Online privacy policy") {
             openExternal(Intent(Intent.ACTION_VIEW, "https://www.whooplens.tech/privacy/".toUri()))
@@ -2251,41 +2205,131 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun cloudChoices() {
-        val selected = BooleanArray(healthCategories.size)
-        AlertDialog.Builder(this)
-            .setTitle("Prepare future cloud-sync categories")
-            .setMultiChoiceItems(healthCategories.map { it.title }.toTypedArray(), selected) {
-                _,
-                i,
-                b ->
-                selected[i] = b
+    private fun lifeScheduleMessage(code: String?): String = when (code) {
+        "loading" -> "Checking your saved preference…"
+        "feature_disabled", "migration_required", "activation_required" -> "Life Schedule needs service activation. Your preference has not changed."
+        "sign_in_required" -> "Sign in again to read your preference."
+        else -> "Service unavailable. Retry to read the saved selection; nothing has been changed."
+    }
+
+    private fun cloudSyncControls(root: LinearLayout) {
+        ui.card(root) { c ->
+            ui.heading(c, "Cloud synchronization")
+            val state = cloudStatus?.takeIf { it.account == account }
+            val ready = state?.ready == true
+            val status = when {
+                state == null -> "Checking service…"
+                ready -> if (state?.paused != false || prefs.getBoolean("sync-paused", true)) "Paused · manual review required" else "Ready · manual uploads only"
+                state.code in setOf("activation_required", "feature_disabled", "migration_required") -> "Service activation required"
+                state.code == "sign_in_required" -> "Sign in again to check cloud sync"
+                else -> "Connection unavailable · retry status"
             }
+            ui.add(c, ui.text(status, 14f, if (ready) LensColors.teal else LensColors.amber))
+            ui.add(c, ui.text("Last confirmed sync: " + (state?.lastSyncAt?.let(::dateTime) ?: if (ready) "Never" else "Unavailable"), 12f, LensColors.muted))
+            val selected = if (prefs.getString("sync-account", null) == account) prefs.getStringSet("sync-categories", emptySet()).orEmpty().intersect(ManualSync.categories.keys) else emptySet()
+            ui.add(c, ui.text("Categories: " + if (selected.isEmpty()) "None selected" else selected.joinToString { ManualSync.categories[it] ?: it }, 12f, LensColors.muted))
+            ui.button(c, "Choose sync categories", enabled = !cloudBusy) { cloudChoices() }
+            ui.button(c, "Review & sync now", primary = true, enabled = ready && !cloudBusy && selected.isNotEmpty()) { reviewCloudSync() }
+            ui.button(c, "Retry sync status", enabled = !cloudBusy) { account?.let { loadCloudStatus(it); render() } }
+            ui.button(c, "Pause / revoke sync consent", enabled = !cloudBusy) {
+                dialog("Pause cloud sync", "Stops future uploads, revokes phone ingestion tokens and keeps the stored cloud copy. No phone records change.", "Pause sync") { cloudAction("pause") }
+            }
+            ui.button(c, "Withdraw & delete cloud Health Connect copy", enabled = ready && !cloudBusy) {
+                dialog("Withdraw cloud Health Connect consent", "Delete this account's cloud Health Connect records and revoke ingestion. WHOOP data and phone records remain unchanged.", "Withdraw & delete") { cloudAction("withdraw") }
+            }
+            ui.add(c, ui.text("Choosing categories and refreshing the dashboard never authorize uploads. Each transfer requires reviewing its exact records. Other categories remain local.", 12f, LensColors.muted))
+        }
+    }
+
+    private fun loadCloudStatus(owner: String) {
+        val generation = uiGeneration
+        io.execute {
+            val result = CloudSyncClient(auth, owner, allowed = { generation == uiGeneration && auth.accountKey() == owner }).status()
+            runOnUiThread {
+                if (generation != uiGeneration || account != owner || isDestroyed) return@runOnUiThread
+                cloudStatus = if (result.lastSyncAt == null && cloudStatus?.account == owner) result.copy(lastSyncAt = cloudStatus?.lastSyncAt) else result
+                if (drawer == null && page == "Account & Settings") render()
+            }
+        }
+    }
+
+    private fun permittedSyncCategories(): Set<String> {
+        val current = runBlocking { HealthConnectClient.getOrCreate(this@MainActivity).permissionController.getGrantedPermissions() }
+        return healthCategories.filter { it.key in ManualSync.categories && it.permission in current }.map { it.key }.toSet()
+    }
+
+    private fun reviewCloudSync() {
+        val owner = account ?: return
+        val selected = prefs.getStringSet("sync-categories", emptySet()).orEmpty().intersect(ManualSync.categories.keys)
+        val preview = try {
+            ManualSync.draft(snapshot ?: error("Refresh first"), owner, selected,
+                healthCategories.filter { it.permission in granted }.map { it.key }.toSet(), System.currentTimeMillis())
+        } catch (_: Exception) { message = "Refresh Health Connect and check selected permissions before review."; render(); return }
+        if (preview.records.isEmpty()) { message = "No selected records are available in the seven-day window."; render(); return }
+        val generation = syncGeneration
+        dialog("Review cloud transfer", preview.review(), "Sync these records") {
+            if (account == owner && generation == syncGeneration) {
+                prefs.edit().putBoolean("sync-consent", true).putBoolean("sync-paused", false).apply()
+                cloudAction("upload", preview)
+            }
+        }
+    }
+
+    private fun cloudAction(action: String, preview: CloudSyncDraft? = null) {
+        val owner = account ?: return
+        if (cloudBusy) return
+        if (action != "upload") {
+            ++syncGeneration
+            prefs.edit().putBoolean("sync-consent", false).putBoolean("sync-paused", true).apply()
+        }
+        val generation = syncGeneration
+        val session = uiGeneration
+        cloudBusy = true
+        render()
+        io.execute {
+            val allowed = { generation == syncGeneration && session == uiGeneration && auth.accountKey() == owner && foreground && !locked() }
+            val client = CloudSyncClient(auth, owner, allowed = allowed)
+            val success = try {
+                when (action) {
+                    "pause" -> client.pause()
+                    "withdraw" -> client.withdraw()
+                    else -> {
+                        val draft = preview ?: error("Review required")
+                        client.upload(draft, SyncConsent(owner, draft.categories,
+                            prefs.getBoolean("sync-consent", false), prefs.getBoolean("sync-paused", true)), permittedSyncCategories())
+                    }
+                }
+            } catch (_: Exception) { false }
+            val status = client.status()
+            runOnUiThread {
+                if (session != uiGeneration || account != owner || isDestroyed) return@runOnUiThread
+                cloudBusy = false
+                cloudStatus = status
+                message = if (success) when (action) { "pause" -> "Cloud ingestion paused; cloud copy retained."; "withdraw" -> "Cloud Health Connect copy deleted; ingestion revoked."; else -> "Cloud sync confirmed." }
+                    else if (action == "pause") "Local uploads paused; server revocation was not confirmed. Retry status when connected."
+                    else "Cloud action was not confirmed. Retry status before retrying; no automatic retry will upload data."
+                render()
+            }
+        }
+    }
+
+    private fun cloudChoices() {
+        val owner = account ?: return
+        val keys = ManualSync.categories.keys.toList()
+        val previous = if (prefs.getString("sync-account", null) == owner) prefs.getStringSet("sync-categories", emptySet()).orEmpty().intersect(ManualSync.categories.keys) else emptySet()
+        val selected = BooleanArray(keys.size) { keys[it] in previous }
+        AlertDialog.Builder(this).setTitle("Cloud sync categories")
+            .setMultiChoiceItems(keys.map { ManualSync.categories.getValue(it) }.toTypedArray(), selected) { _, index, checked -> selected[index] = checked }
             .setNegativeButton("Cancel", null)
-            .setPositiveButton("Review") { _, _ ->
-                dialog(
-                    "Uploads remain OFF",
-                    "Records could leave this phone only after a separately approved backend contract, consent and release. Saving choices does not activate or schedule transfer.",
-                    "Save preparation only",
-                ) {
-                    prefs
-                        .edit()
-                        .putString("sync-account", account)
-                        .putBoolean("sync-consent", false)
-                        .putBoolean("sync-paused", true)
-                        .putStringSet(
-                            "sync-categories",
-                            healthCategories
-                                .filterIndexed { i, _ -> selected[i] }
-                                .map { it.key }
-                                .toSet(),
-                        )
-                        .apply()
-                    message = "Future choices saved locally. Uploads OFF."
+            .setPositiveButton("Save choices") { _, _ ->
+                if (account == owner) {
+                    ++syncGeneration
+                    prefs.edit().putString("sync-account", owner).putStringSet("sync-categories", keys.filterIndexed { i, _ -> selected[i] }.toSet())
+                        .putBoolean("sync-consent", false).putBoolean("sync-paused", true).apply()
+                    message = "Choices saved. No upload authorized or sent."
                     render()
                 }
-            }
-            .show()
+            }.show()
     }
 
     private fun customize(root: LinearLayout) {
@@ -2405,8 +2449,6 @@ class MainActivity : ComponentActivity() {
         )
         ui.add(panel, ui.text("WhoopLens", 28f, role = TextRole.HAND))
         ui.add(panel, ui.text("Signed in · Cloudflare", 12f, LensColors.muted))
-        ui.chip(panel, DataSource.WHOOP)
-        ui.chip(panel, DataSource.HEALTH_CONNECT)
         ui.add(panel, ui.text("MENU", 11f, LensColors.label, bold = true), 4)
         val navigation = listOf(
             "Home" to "⌂",
@@ -2414,6 +2456,7 @@ class MainActivity : ComponentActivity() {
             "Sleep" to "☾",
             "Vitals" to "♥",
             "Health Connect" to "✚",
+            "Sources & freshness" to "◷",
             "Account & Settings" to "⚙",
         )
         for ((destination, symbol) in navigation) {
@@ -2456,7 +2499,7 @@ class MainActivity : ComponentActivity() {
         ui.add(
             panel,
             ui.text(
-                "Read only · local dashboard\nCloud uploads and deletion off",
+                "Private account · manual uploads only",
                 12f,
                 LensColors.muted,
             ),

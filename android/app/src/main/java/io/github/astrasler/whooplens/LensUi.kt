@@ -294,13 +294,14 @@ internal class LensUi(val context: Context) {
         m: Metric?,
         title: String,
         source: DataSource,
+        showHeading: Boolean = true,
         onClick: (() -> Unit)? = null,
     ) =
         card(parent, dashed = source == DataSource.HEALTH_CONNECT) { c ->
             val stale =
                 m?.measuredAt?.let { System.currentTimeMillis() - it > 12 * 3600000L } == true
             val missing = m?.value == null
-            heading(c, title)
+            if (showHeading) heading(c, title)
             chip(c, source)
             add(
                 c,
@@ -454,12 +455,15 @@ internal class StrainArc(context: Context, private val value: Double?, private v
 
 internal class TrendChart(
     context: Context,
-    private val points: List<Point>,
+    points: List<Point>,
     private val source: DataSource,
     private val bars: Boolean = false,
     private val baseline: Triple<Double, Double, Double>? = null,
 ) : View(context) {
+    private val points = points.sortedBy { it.time }
     private val paint = Paint(3)
+    internal var axisLabels: List<AxisLabel> = emptyList()
+        private set
     private var selected: Int? = null
     private var touchSelection = false
 
@@ -484,7 +488,7 @@ internal class TrendChart(
         if (event.action == MotionEvent.ACTION_UP && points.isNotEmpty()) {
             val t =
                 points.first().time +
-                    (event.x / width).coerceIn(0f, 1f) * (points.last().time - points.first().time)
+                    ((event.x - 16 * resources.displayMetrics.density) / (width - 32 * resources.displayMetrics.density).coerceAtLeast(1f)).coerceIn(0f, 1f) * (points.last().time - points.first().time)
             selected = chartPointIndices(points).minByOrNull { abs(points[it].time - t) }
             touchSelection = true
             performClick()
@@ -505,14 +509,16 @@ internal class TrendChart(
         if (values.isEmpty()) {
             paint.color = LensColors.muted
             paint.textSize = 14 * resources.displayMetrics.scaledDensity
-            canvas.drawText("No shared measurements", 12f, height / 2f, paint)
+            canvas.drawText("Not shared", 16*resources.displayMetrics.density, height / 2f, paint)
             return
         }
         val low = if (bars) 0.0 else min(values.min(), baseline?.first ?: values.min()) * .95
         val high = max(max(values.max(), baseline?.third ?: values.max()) * 1.05, low + 1)
-        val inset = 16f
-        val w = width - 2 * inset
-        val h = height - 2 * inset - 16 * resources.displayMetrics.density
+        val inset = 16f * resources.displayMetrics.density
+        paint.textSize = 12f * resources.displayMetrics.scaledDensity
+        val labelHeight = paint.fontMetrics.bottom - paint.fontMetrics.top
+        val w = (width - 2 * inset).coerceAtLeast(1f)
+        val h = (height - 2 * inset - labelHeight - 8 * resources.displayMetrics.density).coerceAtLeast(1f)
         fun x(i: Int) =
             inset +
                 w * (points[i].time - points.first().time).toFloat() /
@@ -569,22 +575,20 @@ internal class TrendChart(
             java.time.format.DateTimeFormatter.ofPattern(
                 if (points.last().time - points.first().time < 2 * 86400000L) "HH:mm" else "MMM d"
             )
-        for ((index, align) in
-            listOf(
-                0 to Paint.Align.LEFT,
-                points.size / 2 to Paint.Align.CENTER,
-                points.lastIndex to Paint.Align.RIGHT,
-            )) {
-            paint.textAlign = align
-            canvas.drawText(
-                java.time.Instant.ofEpochMilli(points[index].time)
-                    .atZone(java.time.ZoneId.systemDefault())
-                    .format(axisFormat),
-                x(index),
-                height - 4 * resources.displayMetrics.density,
-                paint,
-            )
+        // Time-spaced ticks avoid dense clusters at the beginning of the series.
+        // Measured text bounds, rather than sample indexes, decide which labels fit.
+        val from = points.first().time
+        val span = (points.last().time - from).coerceAtLeast(0L)
+        val ticks = if (span == 0L) listOf(from) else listOf(from, from + span/2, from + span)
+        val candidates = ticks.map { time ->
+            val text = java.time.Instant.ofEpochMilli(time).atZone(java.time.ZoneId.systemDefault()).format(axisFormat)
+            val anchor = if (span == 0L) inset + w/2 else inset + w*(time-from).toFloat()/span
+            AxisCandidate(text, anchor, paint.measureText(text))
         }
+        axisLabels = collisionFreeAxisLabels(candidates, inset, width-inset, 8*resources.displayMetrics.density)
+        paint.textAlign = Paint.Align.LEFT
+        val labelBaseline = height - 4*resources.displayMetrics.density - paint.fontMetrics.bottom
+        axisLabels.forEach { label -> canvas.drawText(label.text, label.left, labelBaseline, paint) }
         paint.pathEffect = null
         paint.style = Paint.Style.FILL
         selected?.let { i ->
@@ -608,9 +612,10 @@ internal class SleepTimeline(context: Context, private val sleep: SleepDetail) :
         super.onDraw(canvas)
         val labels = listOf("Awake", "REM", "Light", "Deep")
         val d = resources.displayMetrics.density
-        val left = 48 * d
-        val row = height / 4f
         paint.textSize = 12 * resources.displayMetrics.scaledDensity
+        paint.typeface = resources.getFont(R.font.jetbrains_mono)
+        val left = labels.maxOf { paint.measureText(it) } + 12*d
+        val row = height / 4f
         paint.typeface = resources.getFont(R.font.jetbrains_mono)
         labels.forEachIndexed { i, label ->
             paint.color = LensColors.label

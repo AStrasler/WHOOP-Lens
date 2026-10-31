@@ -1,6 +1,6 @@
 # WhoopLens Android companion (optional, unreleased)
 
-The local `codex/android-approved-design` branch implements the native dashboard, WHOOP and Health Connect reads, encrypted caching, opt-in WorkManager refresh and six adaptive home widgets. The owner has verified sign-in, real measurements, widgets and screenshots on a Samsung Galaxy S26 Ultra. See [current verification and PR scope](../docs/android-companion-pr-verification-20261024.md) for exact results and remaining limits. The related auth Worker fix is already deployed; the Android branch remains unpublished. Uploads and deletion remain disabled.
+The local `codex/android-approved-design` branch implements the native dashboard, WHOOP and Health Connect reads, encrypted caching, opt-in WorkManager refresh and six adaptive home widgets. The owner has verified sign-in, real measurements, widgets and screenshots on a Samsung Galaxy S26 Ultra. See [current verification and PR scope](../docs/android-companion-pr-verification-20261024.md) for exact results and remaining limits. The related auth Worker fix is already deployed; the Android branch remains unpublished. The beta.2 candidate adds explicitly reviewed manual Health Connect sync; production activation and release are separate gates. Background refresh and BLE never upload.
 
 ## Historical preview baseline
 
@@ -24,7 +24,7 @@ The notes below describe the earlier preview-only baseline, not the current dash
 
 ## Release gate remains OFF
 
-ManualSync.ENABLE_UPLOADS is intentionally **false**. Both uploads and deletions remain disabled in the compiled APK until the production backend migration and private release are approved.
+`ManualSync.ENABLE_UPLOADS=true` enables the beta.2 client workflow, not consent or production activation. Upload requires an authenticated protocol-1 readiness response, selected permitted categories, a fresh exact-record preview and explicit confirmation. Pause revokes ingestion without deleting cloud records; withdrawal deletes only the account's cloud Health Connect copy. The committed server flags remain off and missing lifecycle migrations fail closed. See [activation gates](../cloudflare/docs/companion-beta2-activation.md) and [candidate release notes](../docs/releases/0.6.0-beta.2.md).
 
 Protocol v2 sends schema_version 2, source health_connect, metric steps_daily, record_key daily:YYYY-MM-DD:local and the aggregate value and dates. No user ID is trusted from the phone. Server must derive ownership from Cloudflare OAuth and D1 membership. Stable keys permit correction without duplicate rows.
 
