@@ -98,4 +98,31 @@ class ManualSyncTest {
         assertThrows(IllegalStateException::class.java) { client.upload(draft,SyncConsent(owner,draft.categories,true,false),all) }
     }
 
+    @Test fun revocationDoesNotDependOnUploadReadinessAndStillFencesAccounts() {
+        val calls=mutableListOf<String>()
+        val auth=session()
+        val client=CloudSyncClient(auth,owner,transport=CloudSyncTransport { method,path,authorization,body ->
+            assertEquals("Bearer synthetic-access",authorization)
+            calls+=path
+            when(method) {
+                "POST" -> { assertEquals("pause-my-health-connect-sync",JSONObject(body!!).getString("consent"));200 to """{"paused":true}""" }
+                "DELETE" -> { assertEquals("delete-my-health-connect-records",JSONObject(body!!).getString("consent"));200 to """{"deleted":0,"consent":"withdrawn"}""" }
+                else -> throw AssertionError("Revocation must not require upload readiness")
+            }
+        },now={now})
+        assertTrue(client.pause());assertTrue(client.withdraw());assertEquals(2,calls.size)
+        auth.beginSignIn()
+        assertThrows(IllegalStateException::class.java) { client.pause() }
+        assertThrows(IllegalStateException::class.java) { client.withdraw() }
+        assertEquals(2,calls.size)
+    }
+    @Test fun authoritativeEmptySyncTimeClearsCachedTimeAfterExternalWithdrawal() {
+        val previous=CloudSyncStatus(owner,true,"ready",2,now,false)
+        val cleared=CloudSyncStatus(owner,true,"ready",0,null,true)
+        assertNull(cleared.withCachedSyncTime(previous).lastSyncAt)
+        val failed=CloudSyncStatus(owner,false,"connection_unavailable")
+        assertEquals(now,failed.withCachedSyncTime(previous).lastSyncAt)
+        assertNull(failed.withCachedSyncTime(previous.copy(account="other")).lastSyncAt)
+    }
+
 }

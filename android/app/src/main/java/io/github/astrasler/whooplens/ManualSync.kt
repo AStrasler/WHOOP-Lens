@@ -10,6 +10,10 @@ import org.json.JSONObject
 
 internal data class CloudSyncStatus(val account: String, val ready: Boolean, val code: String,
     val stored: Int = 0, val lastSyncAt: Long? = null, val paused: Boolean = true)
+// A successful authenticated response is authoritative, including a cleared timestamp.
+internal fun CloudSyncStatus.withCachedSyncTime(previous: CloudSyncStatus?): CloudSyncStatus =
+    if (!ready && lastSyncAt == null && previous?.account == account) copy(lastSyncAt = previous.lastSyncAt) else this
+
 internal data class CloudSyncDraft(val account: String, val categories: Set<String>, val records: List<SyncRecord>,
     val preparedAtMs: Long, val omitted: Int) {
     fun valid(now: Long) = records.isNotEmpty() && records.size <= 100 && now >= preparedAtMs && now-preparedAtMs < 300000 && records.all { it.account == account && it.category in categories }
@@ -106,12 +110,10 @@ internal class CloudSyncClient(private val auth: PrivateSession, private val acc
         return engine.transfer(account,consent,draft.records,granted,true,{ if (allowed()) auth.accessToken() else null },{ if (allowed()) auth.accountKey() else null })=="Synced"
     }
     fun pause(): Boolean {
-        if (!status().ready) return false
         val (code,text)=exchange("POST","/v1/health-connect/pause",JSONObject().put("consent","pause-my-health-connect-sync").toString())
         return code==200 && runCatching { JSONObject(text).getBoolean("paused") }.getOrDefault(false)
     }
     fun withdraw(): Boolean {
-        if (!status().ready) return false
         val (code,text)=exchange("DELETE","/v1/health-connect",JSONObject().put("consent","delete-my-health-connect-records").toString())
         return code==200 && runCatching { JSONObject(text).let { it.opt("deleted") is Int && it.getInt("deleted")>=0 && it.optString("consent")=="withdrawn" } }.getOrDefault(false)
     }

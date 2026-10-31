@@ -9,8 +9,8 @@ const REQUIRED=['companion_sync_status','health_connect_records','health_import_
 export class CompanionSyncRejected extends Error{
  constructor(status,code){super(code);this.status=status;this.code=code;}
 }
-export async function requireSyncReady(db,userId,env){
- if(env?.WEB_HEALTH_IMPORT_ENABLED!=='true')throw new CompanionSyncRejected(503,'feature_disabled');
+export async function requireSyncReady(db,userId,env,{revoking=false}={}){
+ if(!revoking && env?.WEB_HEALTH_IMPORT_ENABLED!=='true')throw new CompanionSyncRejected(503,'feature_disabled');
  if(!await activeMembership(db,userId))throw new CompanionSyncRejected(403,'not_authorized');
  const rows=(await db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','trigger')").all())?.results??[];
  if(!REQUIRED.every(name=>rows.some(row=>row.name===name)))throw new CompanionSyncRejected(503,'migration_required');
@@ -23,7 +23,7 @@ export async function companionSyncStatus(db,userId,env){
    categories:['steps','heart','sleep','exercise']};
 }
 export async function pauseCompanionSync(db,userId,env,consent){
- await requireSyncReady(db,userId,env);
+ await requireSyncReady(db,userId,env,{revoking:true});
  if(consent!=='pause-my-health-connect-sync')throw new CompanionSyncRejected(400,'consent_required');
  const result=await db.batch([
   db.prepare('UPDATE health_import_consent SET withdrawn_at=CURRENT_TIMESTAMP WHERE user_id=?1').bind(userId),
@@ -37,7 +37,7 @@ const json=(body,status=200)=>Response.json(body,{status,headers:{'cache-control
 export async function companionSyncHttp(request,env,userId){
  try{
   const path=new URL(request.url).pathname;
-  await requireSyncReady(env.DB,userId,env);
+  await requireSyncReady(env.DB,userId,env,{revoking:request.method==='POST' && path==='/v1/health-connect/pause'});
   if(request.method==='GET'&&path==='/v1/health-connect/sync-status')return json(await companionSyncStatus(env.DB,userId,env));
   if(request.method!=='POST'||!['/v1/health-connect/sync','/v1/health-connect/pause'].includes(path))return json({code:'unsupported_method'},405);
   const origin=request.headers.get('origin');

@@ -2234,7 +2234,7 @@ class MainActivity : ComponentActivity() {
             ui.button(c, "Pause / revoke sync consent", enabled = !cloudBusy) {
                 dialog("Pause cloud sync", "Stops future uploads, revokes phone ingestion tokens and keeps the stored cloud copy. No phone records change.", "Pause sync") { cloudAction("pause") }
             }
-            ui.button(c, "Withdraw & delete cloud Health Connect copy", enabled = ready && !cloudBusy) {
+            ui.button(c, "Withdraw & delete cloud Health Connect copy", enabled = !cloudBusy) {
                 dialog("Withdraw cloud Health Connect consent", "Delete this account's cloud Health Connect records and revoke ingestion. WHOOP data and phone records remain unchanged.", "Withdraw & delete") { cloudAction("withdraw") }
             }
             ui.add(c, ui.text("Choosing categories and refreshing the dashboard never authorize uploads. Each transfer requires reviewing its exact records. Other categories remain local.", 12f, LensColors.muted))
@@ -2247,7 +2247,7 @@ class MainActivity : ComponentActivity() {
             val result = CloudSyncClient(auth, owner, allowed = { generation == uiGeneration && auth.accountKey() == owner }).status()
             runOnUiThread {
                 if (generation != uiGeneration || account != owner || isDestroyed) return@runOnUiThread
-                cloudStatus = if (result.lastSyncAt == null && cloudStatus?.account == owner) result.copy(lastSyncAt = cloudStatus?.lastSyncAt) else result
+                cloudStatus = result.withCachedSyncTime(cloudStatus)
                 if (drawer == null && page == "Account & Settings") render()
             }
         }

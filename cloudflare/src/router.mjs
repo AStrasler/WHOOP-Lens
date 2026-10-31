@@ -123,7 +123,7 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
     if(preliminaryUrl.pathname==="/v1/health-connect"||
        preliminaryUrl.pathname==="/v1/health-connect/import"||
        preliminaryUrl.pathname==="/v1/health-connect/status"){
-      if(env?.WEB_HEALTH_IMPORT_ENABLED!=="true")
+      if(env?.WEB_HEALTH_IMPORT_ENABLED!=="true" && !(request.method==="DELETE" && preliminaryUrl.pathname==="/v1/health-connect"))
         return json({error:"Health Connect file import is not activated"},503);
       if(!env?.DB)return json({error:"Staging unavailable"},503);
       try{
