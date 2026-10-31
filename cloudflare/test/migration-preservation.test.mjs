@@ -84,6 +84,10 @@ test("0015/0016 up, re-run and rollback leave members, credentials, consent and 
     db.prepare("INSERT INTO whoop_member_request_budget(user_id,minute_start,minute_count,day_start,day_count) VALUES(?,1,1,1,1)").run(FORMER);
     db.prepare("DELETE FROM whoop_credential_revocations WHERE user_id=?").run(FORMER);
     db.prepare("DELETE FROM whoop_members WHERE user_id=?").run(FORMER);
+    // 0023 retains a fresh fence on removal; follow the former-member runbook
+    // before removing its identity parent. The 0015/0016 cascades still apply.
+    assert.equal(db.prepare("SELECT COUNT(*) n FROM health_import_fences WHERE user_id=?").get(FORMER).n,1);
+    db.prepare("DELETE FROM health_import_fences WHERE user_id=?").run(FORMER);
     db.prepare("DELETE FROM identity_links WHERE user_id=?").run(FORMER);
     assert.equal(db.prepare("SELECT COUNT(*) n FROM whoop_member_request_budget").get().n,0);
     assert.equal(db.prepare("SELECT COUNT(*) n FROM whoop_connection_generations WHERE user_id=?").get(FORMER).n,0);

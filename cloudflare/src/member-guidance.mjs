@@ -21,6 +21,18 @@ export const SOURCE_HIERARCHY=Object.freeze([
   'Source of truth: sensor measurements establish what WHOOP measured, manual entries establish what the person recorded, and user-provided context establishes what the person reports experiencing. Analyze all of them without disputing, rewriting or substituting any of them.'
 ]);
 export const sourceHierarchyGuidance='Source hierarchy (required): '+SOURCE_HIERARCHY.map((r,i)=>`(${i+1}) ${r}`).join(' ');
+// Individualization applies to every member and metric, not just sleep.
+// These rules guide interpretation; no profile or preference storage is added.
+export const PERSONALIZATION_PRINCIPLES=Object.freeze([
+  "Interpret each member as an individual. Chronotype, circadian phase, sleep need, physiology, disability, age, environment, and responsibilities vary; do not presume one ideal schedule or one universal normal person from population averages.",
+  "Prioritize the member's own dated measurements and sufficiently sampled personal history when describing trends. Label the time window, available record coverage, and incomplete baselines. Population references are optional context, not mandatory targets or proof that a member is abnormal.",
+  "Treat the member's stated experiences, biological timing, preferences, constraints, intentions, and priorities as distinct, equally relevant context. Never replace what the member reports with a guess based on wearable data; do not infer chronotype, motives, willingness, or sleep disorders from timing alone.",
+  "For sleep, distinguish a person's natural sleep-wake tendency from social or environmental requirements such as school, work, caregiving, morning appointments, and household routines. Wake times may be externally constrained; do not assume the person can or should stabilize wake time by personal choice.",
+  "Preserve user autonomy. If a member proposes a goal or an experiment, recognize it as their choice rather than a standing request for correction. Do not convert an observation into a decision, or a suggested experiment into a requirement. Offer recommendations or alternatives when invited, framed as options and tradeoffs.",
+  "A WHOOP sleep-consistency score or other population-informed metric describes what its measurement measures; it is not a moral grade, a diagnosis, or evidence that everyone must live on the same schedule. Explain the metric and compare the member's own longitudinal pattern without imposing a generic clock time.",
+  "Do not persist, change, or share a member's inferred chronotype, preferences, goals, schedule, or medical context without explicit, separate authorization and an implemented storage path. The existing tools cannot alter WHOOP settings. Keep user-reported context separate from WHOOP measurements."
+]);
+export const personalizationGuidance='Member-first interpretation (required): '+PERSONALIZATION_PRINCIPLES.map((r,i)=>`(${i+1}) ${r}`).join(' ');
 // A listed tool whose server flag is off throws this, so the member is told the
 // feature is off instead of a generic "WHOOP data is unavailable" message.
 export class FeatureDisabled extends Error{

@@ -43,6 +43,8 @@ internal class LensUi(val context: Context) {
     private val hand by lazy { context.resources.getFont(R.font.covered_by_your_grace) }
     private val surfaces by lazy { GlassSurface(context) }
 
+    fun applyElevation(view: View) = surfaces.applyElevation(view, appearance.mode)
+
     fun glassBackground(role: GlassRole, dashed: Boolean = false, edgeColor: Int? = null) =
         surfaces.background(role, appearance.mode, dashed, edgeColor)
 
@@ -164,6 +166,7 @@ internal class LensUi(val context: Context) {
     }
 
     /** A one-time lift on pointer/press; respects Android reduced motion and saver mode. */
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
     private fun liftOnInteraction(view: View, amountDp: Int) {
         if (appearance.reduceMotion || appearance.mode != LensAppearance.GLASS) return
         fun move(raised: Boolean) {
@@ -260,6 +263,24 @@ internal class LensUi(val context: Context) {
                 0,
             )
         }
+        surface.minimumHeight = dp(48)
+        surface.descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        fun silenceChildren(group: android.view.ViewGroup) {
+            for (i in 0 until group.childCount) {
+                val child = group.getChildAt(i)
+                child.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+                if (child is android.view.ViewGroup) silenceChildren(child)
+            }
+        }
+        silenceChildren(surface)
+        surface.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+        surface.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: android.view.accessibility.AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.className = android.widget.Button::class.java.name
+            }
+        }
+        surface.foreground = RippleDrawable(ColorStateList.valueOf(0x224FD8CF), null, shape())
         surface.contentDescription = "$title, $value. ${trend ?: "Baseline unavailable"}. ${source.label}. Open details."
         surface.isClickable = true
         surface.isFocusable = true
@@ -448,7 +469,7 @@ internal class TrendChart(
         contentDescription = description()
         setOnClickListener {
             if (points.isNotEmpty()) {
-                if (!touchSelection) selected = ((selected ?: -1) + 1) % points.size
+                if (!touchSelection) selected = nextChartPointIndex(points, selected)
                 touchSelection = false
                 contentDescription = description()
                 announceForAccessibility(contentDescription)
@@ -457,20 +478,14 @@ internal class TrendChart(
         }
     }
 
-    private fun description(): String {
-        val p = selected?.let { points[it] }
-        return if (p != null)
-            "${source.label}, ${dateTime(p.time)}, ${p.value?.let { java.text.DecimalFormat("0.#").format(it)}?:"Not shared"}"
-        else
-            "${source.label} chart. ${points.count {it.value!=null}} available points. Gaps mean missing data. Tap to read each point; full measurements below."
-    }
+    private fun description() = chartDescription(points, source, selected)
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         if (event.action == MotionEvent.ACTION_UP && points.isNotEmpty()) {
             val t =
                 points.first().time +
                     (event.x / width).coerceIn(0f, 1f) * (points.last().time - points.first().time)
-            selected = points.indices.minByOrNull { abs(points[it].time - t) }
+            selected = chartPointIndices(points).minByOrNull { abs(points[it].time - t) }
             touchSelection = true
             performClick()
             return true
@@ -485,7 +500,8 @@ internal class TrendChart(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val values = points.mapNotNull { it.value }
+        val drawableIndices = chartPointIndices(points)
+        val values = drawableIndices.map { points[it].value!! }
         if (values.isEmpty()) {
             paint.color = LensColors.muted
             paint.textSize = 14 * resources.displayMetrics.scaledDensity
@@ -532,7 +548,7 @@ internal class TrendChart(
         var open = false
         points.forEachIndexed { i, p ->
             val v = p.value
-            if (v == null) open = false
+            if (v == null || !v.isFinite()) open = false
             else if (bars) {
                 paint.strokeWidth = max(4f, w / max(1, points.size) * .62f)
                 canvas.drawLine(x(i), inset + h, x(i), y(v), paint)
@@ -544,6 +560,9 @@ internal class TrendChart(
         if (!bars) canvas.drawPath(path, paint)
         paint.pathEffect = null
         paint.style = Paint.Style.FILL
+        if (!bars) drawableIndices.forEach { i ->
+            canvas.drawCircle(x(i), y(points[i].value!!), 3.5f * resources.displayMetrics.density, paint)
+        }
         paint.color = LensColors.muted
         paint.textSize = 12f * resources.displayMetrics.scaledDensity
         val axisFormat =
@@ -569,7 +588,7 @@ internal class TrendChart(
         paint.pathEffect = null
         paint.style = Paint.Style.FILL
         selected?.let { i ->
-            points[i].value?.let { v ->
+            points[i].value?.takeIf { it.isFinite() }?.let { v ->
                 canvas.drawCircle(x(i), y(v), 6 * resources.displayMetrics.density, paint)
             }
         }
@@ -630,3 +649,4 @@ internal class SleepTimeline(context: Context, private val sleep: SleepDetail) :
         }
     }
 }
+

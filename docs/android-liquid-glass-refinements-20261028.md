@@ -1,22 +1,11 @@
-# Android liquid-glass refinements — October 28, 2026
+# Native glass refinements
 
-The owner supplied three visual references: glassy dashboard stat cards, an illuminated translucent sidebar, and raised liquid-pill buttons. The video fragments use React, Framer Motion and Lucide; the WhoopLens Android companion is a native Kotlin Views app, so the visual behavior is implemented natively without adding those web libraries.
+The HRV/RHR personal-baseline cards, liquid buttons and icon-led drawer are integrated with main's Overview cards, recorded chart points, freshness labels and Home controls. Overview compares prior records; HRV/RHR explicitly compare a personal baseline. Neither arrow implies health improvement.
 
-## Changes
+Recovery uses a separate details button so nested HRV/RHR controls stay independently reachable. Stat cards expose one button role and one complete accessible name; decorative children are hidden from accessibility. Font scaling above 130% stacks the cards. Touch targets are at least 48dp. Lift effects are suppressed for remove-animations, reduced transparency and battery saver.
 
-- `LensUi.button`: rounded, gradient-highlighted liquid buttons; native ripple, disabled-state contrast, minimum 48dp touch target.
-- `LensUi.statsCard`: frosted title/value/icon/trend tiles with a user-interaction-only 5dp lift, preserving screen-reader names and normal tap handling.
-- The home recovery section shows actual WHOOP HRV and resting-HR values. Percentages appear only when a valid personal baseline is available; arrows mean higher/lower, **not** healthier/unhealthier. Missing history displays a clear unavailable state.
-- The existing blurred navigation drawer gains an icon-led, selected-page treatment without new routes or API behavior.
-- No perpetual animation. Motion is disabled for reduced-motion and battery-saver appearances.
+## Automated and owner verification
 
-## Scope and privacy
+Android CI runs unit tests, lint, debug build and instrumentation compilation. The API 34/36 emulator job produces 18 synthetic component screenshots per API: 360/412/480dp widths, 100%/200% fonts, and three appearances. It checks text fit, independent taps, touch targets, accessible roles, contrast and remove-animations. These are representative density-independent phone widths; they do not assert the actual Galaxy S26 Ultra display mode, One UI behavior or physical-device approval.
 
-Only native UI code and a pure display-formatting test changed. No API endpoints, storage, OAuth, Health Connect ingestion, token handling, lock-screen privacy defaults or releases were changed.
-
-## Verification
-
-- Pure `baselinePercent` unit cases were added for positive, negative, zero, missing and non-finite values.
-- **Requires CI:** `gradle -p android :app:testDebugUnitTest :app:lintDebug :app:assembleDebug`.
-- **Requires owner device check:** Galaxy S26 Ultra typography at 200%, inset and nested-card readability, nav selection, pointer/press animations, reduced-motion and battery-saver behavior.
-- The reference screenshots and original React snippet are visual guidance only; this PR does not claim exact source reconstruction.
+Download `android-debug-owner-testing` and `glassy-evidence-api-*` from the PR's Android Actions run. The debug APK is for separately approved owner testing, not a production release. On the Galaxy S26 Ultra record the actual resolution, display zoom and Android/One UI version; check normal and 200% font scale, Home HRV/RHR details, recovery details, drawer selection, TalkBack navigation, contrast, pointer/press feedback, remove-animations and battery saver. Do not uninstall the existing app or overwrite a signed release without owner approval. Physical acceptance remains outstanding until those results are supplied.

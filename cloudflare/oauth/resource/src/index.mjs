@@ -1,3 +1,4 @@
+import {rejectEarlyData} from '../../../src/early-data.mjs';
 import { OAuthResourceServer, insufficientScope } from "@cloudflare/workers-oauth-provider";
 import { activeMembership } from "../../../src/storage.mjs";
 import { createStagingRouter } from "../../../src/router.mjs";
@@ -51,6 +52,7 @@ export default {
     }));
   },
   fetch(request,env,ctx){
+    const early=rejectEarlyData(request);if(early)return early;
     // The WHOOP callback is authenticated by its expiring, atomically consumed
     // state. The Health Connect webhook authenticates its own per-user bearer.
     // All other paths retain MCP OAuth protection.

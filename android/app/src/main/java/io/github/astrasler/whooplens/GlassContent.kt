@@ -123,3 +123,4 @@ internal fun strainArcClearance(viewHeight: Float = 76f, stroke: Float = 9f, rad
     val below = viewHeight - baseline - stroke / 2f
     return if (below < 0f) below else above
 }
+

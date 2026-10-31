@@ -174,18 +174,21 @@ internal fun widgetText(
             b?.metric(key)?.let { b to it }
         }
     if (chosen.isEmpty()) return "No shared measurements\nOpen WhoopLens"
-    return chosen.joinToString("\n") { (_, m) -> m.title + "  " + m.display() } +
+    return chosen.joinToString("\n") { (_, m) ->
+        m.title + "  " + m.display() + (if (isDailyTotal(m)) " · " + dailyTotalPeriodLabel(m, now) else "")
+    } +
         chosen
             .groupBy { it.first.source }
             .values
             .joinToString("") { pairs ->
                 val b = pairs.first().first
-                val measured = pairs.mapNotNull { it.second.measuredAt }.minOrNull() ?: b.fetchedAt
+                val times = pairs.map { metricUpdatedAt(it.second, b) }
+                val measured = if (times.any { it == null }) null else times.filterNotNull().minOrNull()
                 "\n" +
                     b.source.label +
                     " · " +
-                    (if (b.stale(now) || now - measured > 12 * 3600000L) "Saved " else "Read ") +
-                    dateTime(measured)
+                    (if (pairs.any { metricIsStale(it.second, b, now) }) "Saved " else "Read ") +
+                    (measured?.let(::dateTime) ?: "refresh time unavailable")
             }
 }
 

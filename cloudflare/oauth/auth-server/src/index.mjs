@@ -2,6 +2,8 @@ import {createSeatRequestHandler,SEAT_REQUEST_PATH,SEAT_REQUEST_TO} from './seat
 import {
   OAuthAuthorizationServer,authorizationErrorRedirect,OAuthError
 } from '@cloudflare/workers-oauth-provider';
+import {oauthStateEnv} from './oauth-state-store.mjs';
+import {rejectEarlyData} from '../../../src/early-data.mjs';
 import {WorkerEntrypoint} from 'cloudflare:workers';
 import {makeConsentFlow} from './consent-flow.mjs';
 import {refreshGrantResult} from './refresh-grant.mjs';
@@ -59,21 +61,24 @@ const seatRequests=createSeatRequestHandler({sendMail:async(data,env)=>{
 }});
 export default class WhoopLensAuthServer extends WorkerEntrypoint {
   fetch(request){
-    if(new URL(request.url).pathname===SEAT_REQUEST_PATH)return seatRequests(request,this.env);
-    if(this.env.OAUTH_SERVER_ENABLED!=='true'||
-       this.env.OAUTH_CONSENT_ENABLED!=='true')
+    const early=rejectEarlyData(request);if(early)return early;
+    const env=oauthStateEnv(this.env);
+    if(new URL(request.url).pathname===SEAT_REQUEST_PATH)return seatRequests(request,env);
+    if(env.OAUTH_SERVER_ENABLED!=='true'||
+       env.OAUTH_CONSENT_ENABLED!=='true')
       return new Response('WhoopLens OAuth is not activated',{
         status:503,headers:{'cache-control':'no-store'}
       });
     const path=new URL(request.url).pathname;
-    if(path==='/authorize')return flow.authorize(request,this.env);
-    if(path==='/oauth/upstream/callback')return flow.callback(request,this.env);
-    return server.fetch(request,this.env,this.ctx)
+    if(path==='/authorize')return flow.authorize(request,env);
+    if(path==='/oauth/upstream/callback')return flow.callback(request,env);
+    return server.fetch(request,env,this.ctx)
       .then(response=>registeredClientDiscovery(request,response));
   }
   validateToken(resource,token){
-    if(this.env.OAUTH_SERVER_ENABLED!=='true'||
-       this.env.OAUTH_CONSENT_ENABLED!=='true')return null;
-    return server.validateToken(resource,token,this.env);
+    const env=oauthStateEnv(this.env);
+    if(env.OAUTH_SERVER_ENABLED!=='true'||
+       env.OAUTH_CONSENT_ENABLED!=='true')return null;
+    return server.validateToken(resource,token,env);
   }
 }

@@ -13,7 +13,7 @@ const NOW=Date.parse('2026-10-13T03:00:00Z');
 const UNSUPPORTED=['distance','active_calories','total_calories','weight','height','blood_pressure','blood_glucose','oxygen_saturation','body_temperature','skin_temperature','respiratory_rate','resting_heart_rate','heart_rate_variability','hydration','nutrition','basal_metabolic_rate','body_fat','lean_body_mass','body_water_mass','bmi','vo2_max','bone_mass','menstruation_flow','menstruation_period','intermenstrual_bleeding','ovulation_test','cervical_mucus','sexual_activity','basal_body_temperature'];
 function fixture(){
   const sqlite=new DatabaseSync(':memory:');
-  for(const name of ['0001_initial.sql','0004_medical_context_review.sql','0006_health_import_consent.sql','0007_health_connect_ingest.sql'])
+  for(const name of ['0001_initial.sql','0004_medical_context_review.sql','0006_health_import_consent.sql','0022_health_import_fences.sql','0007_health_connect_ingest.sql'])
     sqlite.exec(readFileSync(new URL('../migrations/'+name,import.meta.url),'utf8'));
   for(const id of [A,B]){
     sqlite.prepare("INSERT INTO identity_links(user_id,identity_provider,provider_subject) VALUES(?,'cloudflare_access',?)").run(id,id);

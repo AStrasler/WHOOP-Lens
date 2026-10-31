@@ -32,3 +32,51 @@ jobs:
         run: gradle -p android --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
       - name: Confirm debug APK output
         run: test -s android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Build acceptance instrumentation APK
+        run: gradle -p android --no-daemon -PlensTestRunner=io.github.astrasler.whooplens.GlassyAcceptanceInstrumentation :app:assembleDebugAndroidTest
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-owner-testing
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/androidTest/debug/*.apk
+            android/app/build/reports/
+
+  glassy-renders:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        api: [34, 36]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          disable-animations: true
+          script: |
+            gradle -p android --no-daemon -PlensTestRunner=io.github.astrasler.whooplens.GlassyAcceptanceInstrumentation :app:installDebug :app:installDebugAndroidTest
+            adb shell am instrument -w io.github.astrasler.whooplens.test/io.github.astrasler.whooplens.GlassyAcceptanceInstrumentation | tee /tmp/glassy-results.txt
+            grep -q 'PASS: 18 synthetic' /tmp/glassy-results.txt
+            adb pull /sdcard/Android/data/io.github.astrasler.whooplens/files/glassy-acceptance /tmp/glassy-acceptance
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: glassy-evidence-api-${{ matrix.api }}
+          path: |
+            /tmp/glassy-results.txt
+            /tmp/glassy-acceptance/

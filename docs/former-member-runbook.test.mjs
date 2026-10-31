@@ -6,7 +6,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';
 
 const DIR=new URL('../cloudflare/migrations/',import.meta.url);
-const runbook=readFileSync(new URL('./runbooks/former-member-deletion.md',import.meta.url),'utf8');
+const runbook=readFileSync(new URL('./runbooks/former-member-deletion.md',import.meta.url),'utf8').replaceAll('\r\n','\n');
 
 test('runbook deletes from every table keyed by a member id',()=>{
   const db=new DatabaseSync(':memory:');
@@ -118,4 +118,53 @@ test('identity verification never rests on a From address alone',()=>{
   assert.match(runbook,/matching From address is never\s+enough/);
   assert.match(runbook,/one-time code/);
   assert.doesNotMatch(runbook,/request comes\s+from the email address used for the seat request/);
+});
+
+function seedOAuth(db){
+ const targetGrant='grant:'+U+':live';
+ const rows=[
+  [targetGrant,'{"synthetic":"grant"}',3,9999999999,'{"synthetic":"metadata"}',null],
+  ['token:'+U+':live:access','{"synthetic":"token"}',2,9999999999,'{}',targetGrant],
+  ['grant:'+U+':revoked',null,9,null,null,null],
+  ['token:'+U+':revoked:access',null,4,null,null,'grant:'+U+':revoked'],
+  ['grant:'+OTHER+':live','{"other":true}',1,null,null,null],
+  ['token:'+OTHER+':live:access','{"other":true}',1,null,null,'grant:'+OTHER+':live'],
+  ['grant:'+U+'-suffix:live','{"nearPrefix":true}',1,null,null,null],
+  ['client:shared','{"shared":true}',1,null,null,null],
+  ['transaction:opaque','sealed-synthetic',1,9999999999,null,null]
+ ];
+ for(const row of rows)db.prepare('INSERT INTO oauth_security_state(key,value,revision,expires_at,metadata_json,grant_key) VALUES(?,?,?,?,?,?)').run(...row);
+}
+const oauthRows=db=>db.prepare('SELECT * FROM oauth_security_state ORDER BY key').all();
+const targetOAuth=row=>row.key.startsWith('grant:'+U+':')||row.key.startsWith('token:'+U+':');
+test('health-data-only SQL preserves D1 OAuth credentials and unrelated state',()=>{
+ const {db}=seeded(1);try{
+  seedOAuth(db);const before=oauthRows(db);
+  db.exec('BEGIN');db.exec(block('### 4a.'));db.exec('COMMIT');
+  assert.deepEqual(oauthRows(db),before);
+  assert.ok(canSignIn(db,U));
+ }finally{db.close();}
+});
+test('full deletion clears only exact-owner D1 OAuth payloads and retains advancing tombstones',()=>{
+ const {db}=seeded(0);try{
+  seedOAuth(db);const before=oauthRows(db);
+  db.exec('BEGIN');db.exec(block('### 4a.'));db.exec(block('### 4b.'));db.exec('COMMIT');
+  const after=oauthRows(db);assert.equal(after.length,before.length,'no D1 revocation marker is deleted');
+  for(let i=0;i<before.length;i++){
+   const row=after[i],old=before[i];assert.equal(row.key,old.key);
+   if(targetOAuth(old)){
+    assert.equal(row.value,null);assert.equal(row.metadata_json,null);assert.equal(row.expires_at,null);
+    assert.equal(row.revision,old.revision+1);
+   }else assert.deepEqual(row,old,'other member, prefix lookalike, client and transaction remain unchanged');
+  }
+  assert.equal(db.prepare('SELECT count(*) n FROM oauth_security_state WHERE value IS NOT NULL AND (substr(key,1,length(?))=? OR substr(key,1,length(?))=?)').get('grant:'+U+':','grant:'+U+':','token:'+U+':','token:'+U+':').n,0);
+ }finally{db.close();}
+});
+test('runbook distinguishes both OAuth stores and forbids deleting D1 revocation markers',()=>{
+ assert.match(runbook,/OAUTH_STATE_STORE=d1/);
+ assert.match(block('### 4b.'),/UPDATE oauth_security_state/);
+ assert.match(block('### 4b.'),/revision=revision\+1/);
+ assert.doesNotMatch(runbook,/DELETE FROM oauth_security_state/);
+ assert.doesNotMatch(block('### 4a.'),/oauth_security_state/);
+ assert.match(runbook,/in-flight authorization\/credential writers/);
 });
