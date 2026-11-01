@@ -51,7 +51,9 @@ class WidgetPresentationTest {
     @Test
     fun expandsProgressively() {
         val sizes = listOf(WidgetSpace(56f, 56f), WidgetSpace(150f, 100f), WidgetSpace(320f, 160f))
-        assertEquals(listOf(0, 2, 4), sizes.map { it.supporting })
+        // A one-row (about 100dp) widget has no room for supporting lines under a title and footer;
+        // native renders showed two lines there clipped the primary to about 11dp.
+        assertEquals(listOf(0, 0, 4), sizes.map { it.supporting })
         assertTrue(render(sizes.last()).wide)
         assertFalse(render(WidgetSpace(320f, 160f, 2f)).wide)
         assertTrue(render(sizes.last()).supporting.contains("Strain"))
@@ -62,7 +64,8 @@ class WidgetPresentationTest {
     @Test
     fun largeFontKeepsSupportingOnExpandedButNotCompact() {
         assertEquals(0, WidgetSpace(56f, 56f, 2f).supporting)
-        assertEquals(1, WidgetSpace(320f, 160f, 2f).supporting)
+        assertEquals(0, WidgetSpace(320f, 160f, 2f).supporting)
+        assertEquals(2, WidgetSpace(320f, 250f, 2f).supporting)
     }
 
     @Test
@@ -183,7 +186,7 @@ class WidgetPresentationTest {
         assertTrue(expanded.supporting.lines().size <= 4)
         val scaled = WidgetSpace(320f, 250f, 2f)
         assertFalse(render(scaled).wide)
-        assertEquals(3, scaled.supporting)
+        assertEquals(2, scaled.supporting)
         assertEquals(0, WidgetSpace(40f, 40f, 2f).supporting)
     }
 
