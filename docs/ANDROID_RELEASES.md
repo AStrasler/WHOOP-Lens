@@ -91,8 +91,9 @@ the original key update in place, keeping their data.
   The four original-key secrets (`ANDROID_SIGNING_KEYSTORE_BASE64`,
   `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) are
   no longer used and should be deleted after the first rotated release.
-- **Environment protection:** restrict `android-release` deployments to `main`
-  so a dispatch from another branch cannot supply its own workflow or lineage.
+- **Environment protection (verified Nov 1 2026):** `android-release` deploys only
+  from `main` and requires approval by `AStrasler`, so a dispatch from another
+  branch cannot supply its own workflow or lineage. Keep it that way.
 - **Key custody:** both keystores and the release password are in the owner's
   password manager with an offline copy. Losing the release key would again
   require uninstalling the app. Never commit a keystore.
