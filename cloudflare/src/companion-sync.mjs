@@ -58,3 +58,56 @@ export async function companionSyncHttp(request,env,userId){
   return json({error:'Cloud sync was not confirmed.',code:'sync_unavailable'},503);
  }
 }
+
+// MCP parity for the member-visible companion controls that need no phone:
+// read the sync status, and pause sync on an explicit member request.
+export const COMPANION_PAUSE_CONFIRMATION='pause-my-health-connect-sync';
+export const companionStatusTool=Object.freeze({
+ name:'get_companion_sync_status',
+ description:"Read the signed-in member's Health Connect companion sync status: whether sync is paused, consent state, stored record count, last successful sync time and the categories the WhoopLens phone app syncs. Read-only. It does not sync a phone, change consent or return health records.",
+ inputSchema:{type:'object',properties:{},additionalProperties:false},
+ annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false}
+});
+export const companionPauseTool=Object.freeze({
+ name:'pause_companion_sync',
+ description:"Pause Health Connect companion sync for the signed-in member. Use ONLY when the member explicitly asks in this conversation to pause or stop phone sync; never infer it. Withdraws upload consent and revokes phone ingest tokens. Stored Health Connect records are kept (withdraw_health_connect_import deletes them). Sync resumes only when the member syncs again from the WhoopLens phone app.",
+ inputSchema:{type:'object',properties:{confirm:{type:'string',const:COMPANION_PAUSE_CONFIRMATION}},required:['confirm'],additionalProperties:false},
+ annotations:{readOnlyHint:false,destructiveHint:true,idempotentHint:true,openWorldHint:false}
+});
+const on=(env,flag)=>env?.[flag]==='true';
+// Status is part of the import feature. Pause stays reachable whenever any Health Connect
+// path can hold consent or tokens, so a member can always stop uploads (same rule as withdrawal).
+export function companionToolsFor(env){
+ const tools=[];
+ if(on(env,'WEB_HEALTH_IMPORT_ENABLED'))tools.push(companionStatusTool);
+ if(on(env,'WEB_HEALTH_IMPORT_ENABLED')||on(env,'HEALTH_CONNECT_WEBHOOK_ENABLED'))tools.push(companionPauseTool);
+ return tools;
+}
+export const isCompanionTool=name=>name===companionStatusTool.name||name===companionPauseTool.name;
+export function companionSyncArguments(name,args){
+ if(!args||typeof args!=='object'||Array.isArray(args))return null;
+ const keys=Object.keys(args);
+ if(name===companionStatusTool.name)return keys.length===0?{}:null;
+ if(name===companionPauseTool.name)
+  return keys.length===1&&keys[0]==='confirm'&&args.confirm===COMPANION_PAUSE_CONFIRMATION?{confirm:args.confirm}:null;
+ return null;
+}
+export async function runCompanionSyncTool(name,args,{db,userId,env}){
+ if(name===companionStatusTool.name){
+  const status=await companionSyncStatus(db,userId,env);
+  return {...status,note:status.paused?'Sync is paused or not set up. The member resumes it by syncing from the WhoopLens phone app.':'Sync runs only when the member starts it in the WhoopLens phone app.'};
+ }
+ if(name===companionPauseTool.name){
+  const result=await pauseCompanionSync(db,userId,env,args.confirm);
+  return {...result,changed_by:'member_request',note:'Uploads are paused and phone ingest tokens are revoked. Stored records were kept. The member resumes by syncing again from the WhoopLens phone app.'};
+ }
+ throw new CompanionSyncRejected(400,'invalid_request');
+}
+export function companionToolError(name,error){
+ const code=error instanceof CompanionSyncRejected?error.code:'unavailable';
+ const nothing=name===companionPauseTool.name?' Nothing was changed.':'';
+ if(code==='feature_disabled')return 'Companion sync is not available right now.'+nothing;
+ if(code==='not_authorized')return 'Companion sync is only available to active members.'+nothing;
+ if(code==='migration_required')return 'Companion sync is not set up on this server yet.'+nothing;
+ return 'Companion sync could not be reached. Retry shortly.'+nothing;
+}

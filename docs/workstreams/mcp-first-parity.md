@@ -21,7 +21,7 @@ WHOOP Lens is **MCP-first, with Android optional**. A member using only MCP must
 Record every Android feature as MCP-available, web-available, physically phone-required or still missing. Include preferences, consent views and sync status in the audit. Health Connect ingestion and Direct BLE require compatible phone hardware, but their member-visible status/controls should still be evaluated independently.
 
 - [x] Inventory the actual app features against current main, citing source paths. See `docs/workstreams/mcp-parity-audit.md`.
-- [x] Identify parity gaps; create dedicated follow-up work only when concrete gaps are confirmed. (Closed: Life Schedule write and capability discovery. Follow-up gaps: read-only companion sync status and a confirmed non-destructive `pause_companion_sync`. Blocked: web settings.)
+- [x] Identify parity gaps; create dedicated follow-up work only when concrete gaps are confirmed. (Closed: Life Schedule write and capability discovery. Closed: companion sync status (`get_companion_sync_status`) and the non-destructive pause (`pause_companion_sync`). Blocked: web settings.)
 - [x] Keep private data/access boundaries intact and do not expand Android permissions.
 
 ## Review/release boundary

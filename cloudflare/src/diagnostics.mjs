@@ -147,6 +147,8 @@ export function toolSubsystem(name){
   if(name==='issue_health_connect_ingest_token'||name==='revoke_health_connect_ingest_token')return 'hc_token';
   if(name==='import_health_connect_file')return 'hc_import';
   if(name==='withdraw_health_connect_import')return 'hc_consent';
+  if(name==='pause_companion_sync')return 'hc_consent';
+  if(name==='get_companion_sync_status')return 'hc_storage';
   if(name==='get_health_connect')return 'hc_storage';
   if(name==='connect_whoop'||name==='disconnect_whoop')return 'whoop_oauth';
   if(name==='get_ai_usage')return 'ai_summary';

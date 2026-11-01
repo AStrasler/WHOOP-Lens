@@ -1,3 +1,4 @@
+import {companionToolsFor,isCompanionTool,companionSyncArguments,runCompanionSyncTool,companionToolError} from './companion-sync.mjs';
 import {lifeScheduleEnabled,lifeScheduleWriteTool,lifeScheduleWriteArguments,runLifeScheduleWrite,LifeScheduleRejected} from './life-schedule.mjs';
 import {contextualLifeSchedule} from './life-schedule-insights.mjs';
 import {flareTools,flareEnabled,flareArguments,runFlareTool} from './flare-journal.mjs';
@@ -124,6 +125,8 @@ function listedTools(env,userId){
   const notices=announcementToolsFor(env,userId);
   let tools=baseListedTools(env);
   if(lifeScheduleEnabled(env))tools=[...tools,lifeScheduleTool,lifeScheduleWriteTool];
+  const companion=companionToolsFor(env);
+  if(companion.length)tools=[...tools,...companion];
   if(issueTools.length)tools=[...tools,...issueTools];
   if(notices.length)tools=[...tools,...notices];
   return notionEnabled(env)?[...tools,...notionTools]:tools;
@@ -143,6 +146,7 @@ function baseListedTools(env){
 }
 function optionalTool(name,env,userId){
   if(name==='get_life_schedule_insights'||name==='set_life_schedule')return lifeScheduleEnabled(env);
+  if(isCompanionTool(name))return companionToolsFor(env).some(t=>t.name===name);
   if(isAnnouncementTool(name))return announcementToolsFor(env,userId).some(t=>t.name===name);
   if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name);
   if(isNotionTool(name))return notionEnabled(env);
@@ -173,6 +177,7 @@ function checkArguments(name,args,env,userId) {
   if(!isObject(args))return null;
   if(name==='get_life_schedule_insights')return lifeScheduleEnabled(env)&&Object.keys(args).length===0?{}:null;
   if(name==='set_life_schedule')return lifeScheduleEnabled(env)?lifeScheduleWriteArguments(args):null;
+  if(isCompanionTool(name))return companionToolsFor(env).some(t=>t.name===name)?companionSyncArguments(name,args):null;
   if(isAnnouncementTool(name))return announcementToolsFor(env,userId).some(t=>t.name===name)?announcementArguments(name,args):null;
   if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name)?errorReportArguments(name,args):null;
   if(isNotionTool(name))return notionEnabled(env)?notionArguments(name,args):null;
@@ -306,6 +311,8 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       data=await contextualLifeSchedule({db,userId,env,now},records,complete);
     }else if(name==='set_life_schedule'){
       data=await runLifeScheduleWrite(args,{db,userId,env});
+    }else if(isCompanionTool(name)){
+      data=await runCompanionSyncTool(name,args,{db,userId,env});
     }else if(isErrorReportTool(name)){
       data=await runErrorReportTool(name,args,{db,userId,env,requestId});
     }else if(isNotionTool(name)){
@@ -428,6 +435,7 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
         `WHOOP is rate limiting requests right now.${wait} then request the first page again without next_token; the next_token you sent will have expired by then.`:
         `WHOOP is rate limiting requests right now.${wait} then retry the same call. Any next_token you hold stays valid for up to one hour.`,modern);
     }
+    if(isCompanionTool(name))return toolError(id,companionToolError(name,error),modern);
     if(name==='set_life_schedule')return toolError(id,error instanceof LifeScheduleRejected&&error.code==='feature_disabled'?
       'Life Schedule is not available right now. Nothing was changed.':
       'Life Schedule could not be saved. Nothing was changed. It can only be set to fixed, flexible or unpredictable, for the signed-in member, when the member asks.',modern);
