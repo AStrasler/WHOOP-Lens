@@ -12,6 +12,15 @@ Source-of-truth references:
 - `docs/ble/DIRECT_BLE.md`
 - `android/app/src/main/java/io/github/astrasler/whooplens/ble/StrapCompatibility.kt`
 
+## Session readiness (November 1, 2026)
+
+- **Build to test:** published `android-v0.6.0-beta.5` (versionCode 12), already installed on the owner's Galaxy S26 Ultra. Its device acceptance (in-place update, sign-in, data, Health Connect permissions, main screens) passed on November 1 and is recorded in `docs/releases/0.6.0-beta.5.md` (PR #112). It includes the foreground Direct BLE screen; **no BLE or strap behavior was part of that acceptance.**
+- **Install rule (new):** releases are now signed by the release key with key rotation from the original debug key, and the lineage has rollback off. **A locally built debug APK can no longer install over the app** without uninstalling, which would wipe local data. Run both sheets on the published release build, not a debug build.
+- **Before each session:** record the S26 Ultra Android and One UI build, the app version from Settings → About & help, and the strap's model and firmware from the official WHOOP app (do not unpair it). Note the WHOOP subscription state.
+- **Order:** Sheet A (WHOOP 5.0) and Sheet B (WHOOP MG) are independent; either can go first. Do not reuse a result across sheets.
+- **Hardware availability:** the owner uses an MG. A WHOOP 5.0 session needs access to a 5.0 strap (per #84, likely the owner's sister's). Sheet A stays untested until that is arranged.
+- **Engineering status:** no code change is pending for these sessions. Parsers and recognizers stay unwired from proprietary reads by design, and nothing here authorizes new GATT commands.
+
 ## Separate test sessions (equal priority)
 
 | Evidence | WHOOP 5.0 | WHOOP MG |
