@@ -171,10 +171,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        BleRuntime.appVisible = true
         stopAppearance = LensAppearanceReader(this).observe { if (!isDestroyed) render() }
     }
 
     override fun onStop() {
+        BleRuntime.appVisible = false
         // The app is no longer visible. A session continues only if its notification can be seen.
         if (
             BleBackgroundPolicy.keepsService(ble.state.phase) &&

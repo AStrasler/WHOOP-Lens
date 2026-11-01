@@ -7,8 +7,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.os.Handler
@@ -29,6 +31,9 @@ internal object BleRuntime {
     private var controller: BleSessionController? = null
     private val listeners = linkedSetOf<(BleViewState) -> Unit>()
     private var serviceRequested = false
+
+    /** Set by MainActivity in onStart/onStop. */
+    var appVisible = false
     private val main by lazy { Handler(Looper.getMainLooper()) }
 
     fun controller(context: Context): BleSessionController {
@@ -93,6 +98,40 @@ internal object BleRuntime {
 @SuppressLint("MissingPermission") // notify() is only called after canNotify() confirms POST_NOTIFICATIONS.
 class BleSessionService : Service() {
     private var unobserve: (() -> Unit)? = null
+    private var blockReceiver: BroadcastReceiver? = null
+
+    private fun stopIfNotificationHidden() {
+        val controller = BleRuntime.controller(this)
+        if (
+            BleBackgroundPolicy.stopsForHiddenNotification(
+                controller.state.phase,
+                BleRuntime.appVisible,
+                BleRuntime.notificationVisible(this),
+            )
+        ) {
+            controller.stop("Stopped: Direct BLE notifications were turned off while WhoopLens was in the background.")
+            finish()
+        }
+    }
+
+    /** Blocking the channel or all WhoopLens notifications in Settings ends a background session. */
+    private fun watchNotificationBlocking() {
+        if (blockReceiver != null) return
+        val receiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) = stopIfNotificationHidden()
+            }
+        blockReceiver = receiver
+        ContextCompat.registerReceiver(
+            this,
+            receiver,
+            IntentFilter().apply {
+                addAction(NotificationManager.ACTION_NOTIFICATION_CHANNEL_BLOCK_STATE_CHANGED)
+                addAction(NotificationManager.ACTION_APP_BLOCK_STATE_CHANGED)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+    }
     private var shown: Pair<BlePhase, String?>? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -124,6 +163,10 @@ class BleSessionService : Service() {
             return START_NOT_STICKY
         }
         shown = state.phase to state.selected?.id
+        watchNotificationBlocking()
+        // The state may already be hidden (for example, blocked between tap and start).
+        stopIfNotificationHidden()
+        if (!BleBackgroundPolicy.keepsService(controller.state.phase)) return START_NOT_STICKY
         if (unobserve == null)
             unobserve = BleRuntime.observe { next ->
                 if (!BleBackgroundPolicy.keepsService(next.phase)) finish()
@@ -147,6 +190,8 @@ class BleSessionService : Service() {
     override fun onDestroy() {
         unobserve?.invoke()
         unobserve = null
+        blockReceiver?.let { runCatching { unregisterReceiver(it) } }
+        blockReceiver = null
         BleRuntime.serviceStopped()
         super.onDestroy()
     }
@@ -155,6 +200,8 @@ class BleSessionService : Service() {
         BleRuntime.serviceStopped()
         unobserve?.invoke()
         unobserve = null
+        blockReceiver?.let { runCatching { unregisterReceiver(it) } }
+        blockReceiver = null
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

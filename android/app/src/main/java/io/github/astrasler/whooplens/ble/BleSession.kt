@@ -375,6 +375,10 @@ internal object BleBackgroundPolicy {
     fun continuesInBackground(phase: BlePhase, notificationVisible: Boolean) =
         keepsService(phase) && notificationVisible
 
+    /** A running session must end when its notification is hidden while the app is not visible. */
+    fun stopsForHiddenNotification(phase: BlePhase, appVisible: Boolean, notificationVisible: Boolean) =
+        keepsService(phase) && !appVisible && !notificationVisible
+
     fun canReconnect(state: BleViewState) = state.selected != null && state.phase in RESUMABLE
 
     /**

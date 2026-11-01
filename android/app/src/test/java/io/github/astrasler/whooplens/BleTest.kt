@@ -482,6 +482,24 @@ class BleTest {
     }
 
     @Test
+    fun blockingTheNotificationAfterBackgroundingEndsTheSession() {
+        // Codex P1: a channel blocked after the app left the screen must stop collection.
+        val f = Fixture()
+        f.live()
+        assertTrue(BleBackgroundPolicy.stopsForHiddenNotification(f.c.state.phase, appVisible = false, notificationVisible = false))
+        assertFalse("visible notification keeps it", BleBackgroundPolicy.stopsForHiddenNotification(f.c.state.phase, false, true))
+        assertFalse("app on screen keeps it until onStop", BleBackgroundPolicy.stopsForHiddenNotification(f.c.state.phase, true, false))
+        val stops = f.transport.stops
+        f.c.stop("Stopped: Direct BLE notifications were turned off while WhoopLens was in the background.")
+        assertTrue(f.transport.stops > stops)
+        f.transport.events?.packet(packet)
+        assertEquals(BlePhase.STOPPED, f.c.state.phase)
+        listOf(BlePhase.IDLE, BlePhase.SCANNING, BlePhase.STOPPED, BlePhase.ERROR).forEach {
+            assertFalse(it.name, BleBackgroundPolicy.stopsForHiddenNotification(it, false, false))
+        }
+    }
+
+    @Test
     fun sessionNotificationNeverCarriesMeasurements() {
         val f = Fixture()
         f.live()
