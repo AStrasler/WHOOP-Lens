@@ -88,4 +88,11 @@ class GlassDashboardStatsTest {
         assertEquals("Recovery", homeCardOrder(null).first())
         assertTrue(homeCardOrder("Recovery,Strain,Sleep,Activity,Vitals,Sources").contains("Overview"))
     }
+    @Test fun legacySourcesCardIsRemovedWithoutChangingOtherHomePreferences() {
+        val order=homeCardOrder("Sleep,Sources,Activity,Recovery,Overview,Vitals,Strain")
+        assertEquals(listOf("Sleep","Activity","Recovery","Overview","Vitals","Strain"),order)
+        assertFalse(defaultHomeCards.contains("Sources"))
+        assertEquals(listOf("Sleep","Recovery","Overview","Vitals","Strain"),visibleHomeCards(order,setOf("Sources","Activity")))
+    }
+
 }

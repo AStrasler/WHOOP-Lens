@@ -11,8 +11,8 @@ test("Vitals baseline uses history while its chart stays limited to today", () =
   assert.match(vitals, /history\.filter\s*\{\s*it\.time > now - 86400000/);
   assert.match(vitals, /chart\(c, p, DataSource\.HEALTH_CONNECT\)/);
   assert.match(vitals, /baselineDelta\(latest, personalBaseline\(snapshot\?\.health\?\.baselineSeries\("heart"\)\.orEmpty\(\), now\)\)/);
-  assert.match(activity, /personalBaseline\(b\?\.baselineSeries\(k\)\.orEmpty\(\)/);
-  assert.match(activity, /snapshot\?\.health\?\.baselineSeries\(key\)\.orEmpty\(\)/);
+  assert.match(activity, /personalBaseline\(b\?\.let \{ it\.presentationPoints\(k, it\.baselineSeries\(k\)\) \}\.orEmpty\(\)/);
+  assert.match(activity, /snapshot\?\.health\?\.let \{ it\.presentationPoints\(key, it\.baselineSeries\(key\)\) \}\.orEmpty\(\)/);
   const health = read("../android/app/src/main/java/io/github/astrasler/whooplens/HealthDashboard.kt");
   assert.match(health, /heartPoints\.takeLast\(2000\)/);
   assert.match(health, /series\[HEART_RATE_DAILY\] = emptyList\(\)/);
@@ -67,9 +67,13 @@ test("Liquid glass keeps the merged repair contracts", () => {
   assert.match(ui, /size\.coerceAtLeast\(12f\)/);
   assert.match(credits, /COVERED-BY-YOUR-GRACE-OFL\.txt/);
   assert.match(gradle, /applicationId = "io\.github\.astrasler\.whooplens"/);
-  assert.match(gradle, /versionCode = 7/);
-  assert.match(gradle, /versionName = "0\.5\.0-beta\.1"/);
-  assert.match(uploads, /const val ENABLE_UPLOADS = false/);
+  // Release versions advance independently from the visual regression contract.
+  const code = gradle.match(/versionCode\s*=\s*(\d+)/);
+  const version = gradle.match(/versionName\s*=\s*"([^"]+)"/);
+  assert.ok(code && Number(code[1]) > 8, "Android versionCode must exceed the previous published build");
+  assert.ok(version, "Android versionName must exist");
+  assert.match(version[1], /^\d+\.\d+\.\d+-beta\.[1-9]\d*$/);
+  assert.match(uploads, /const val ENABLE_UPLOADS = true/);
   assert.match(manifest, /android:name="android\.permission\.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/);
   assert.match(manifest, /android:name="android\.permission\.USE_BIOMETRIC"/);
   const permissions = [...manifest.matchAll(/uses-permission android:name="([^"]+)"/g)].map(match => match[1]);
