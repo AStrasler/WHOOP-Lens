@@ -172,7 +172,15 @@ class WidgetFitInstrumentation : Instrumentation() {
                 results.putString("result", "PASS: $renders widget renders, $checks checks")
                 finish(Activity_RESULT_OK, results)
             } else {
-                results.putString("result", "FAIL: ${failures.size} of $checks checks\n" + failures.take(60).joinToString("\n"))
+                // Grouped so every failing widget/font combination is visible, with examples.
+                val groups = failures.groupBy { it.substringBefore(' ') + " " + Regex("font=[0-9.]+").find(it)?.value }
+                results.putString(
+                    "result",
+                    "FAIL: ${failures.size} of $checks checks\n" +
+                        groups.entries.joinToString("\n") { (key, list) ->
+                            "$key: ${list.size}\n  " + list.take(4).joinToString("\n  ")
+                        },
+                )
                 finish(Activity_RESULT_FAILED, results)
             }
         } catch (t: Throwable) {

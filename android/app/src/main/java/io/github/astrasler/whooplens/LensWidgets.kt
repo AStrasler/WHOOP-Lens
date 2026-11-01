@@ -142,15 +142,18 @@ internal object LensWidgets {
             if (content.stale) LensColors.amber else LensColors.text,
         )
         if (!content.wide) {
+            // Without a title (one row or narrow), the source glyph and badge row is hidden too so
+            // the primary keeps the height; staleness stays in the amber primary and description.
+            val row = content.title.isNotEmpty()
             views.setTextViewText(R.id.widget_source, content.glyph)
             views.setViewVisibility(
                 R.id.widget_source,
-                if (content.glyph.isEmpty()) View.GONE else View.VISIBLE,
+                if (!row || content.glyph.isEmpty()) View.GONE else View.VISIBLE,
             )
             views.setTextViewText(R.id.widget_badge, content.badge ?: "")
             views.setViewVisibility(
                 R.id.widget_badge,
-                if (content.badge.isNullOrEmpty()) View.GONE else View.VISIBLE,
+                if (!row || content.badge.isNullOrEmpty()) View.GONE else View.VISIBLE,
             )
         }
         if (content.healthConnectSurface) {

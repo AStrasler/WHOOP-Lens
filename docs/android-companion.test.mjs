@@ -174,14 +174,23 @@ test('Widgets remain cache-only consumers and resize/background callbacks update
 
 test("Widget layouts declare valid autosize ranges for native inflation", () => {
   // Confirmed on One UI: uniform TextView inflation throws if max <= min.
-  for (const name of ["lens_widget_preview", "lens_widget_responsive", "lens_widget_wide"]) {
+  for (const name of ["lens_widget_preview", "lens_widget_responsive", "lens_widget_wide", "lens_widget_compact", "lens_widget_status_tiny"]) {
     const layout = read(`../android/app/src/main/res/layout/${name}.xml`);
     for (const match of layout.matchAll(/<TextView\b[^>]*>/g)) {
       const view = match[0];
       if (!view.includes('android:autoSizeTextType="uniform"')) continue;
-      const min = Number(view.match(/android:autoSizeMinTextSize="([\d.]+)sp"/)?.[1]);
-      const max = Number(view.match(/android:autoSizeMaxTextSize="([\d.]+)sp"/)?.[1]);
-      assert.ok(Number.isFinite(min) && min > 0 && max > min, `${name}: invalid autosize range`);
+      // A dp minimum (not scaled by the font) keeps the primary fitting at 200% text.
+      // Check max > min across the font-scale range Android offers.
+      const size = attr => {
+        const m = view.match(new RegExp(`android:${attr}="([\\d.]+)(sp|dp)"`));
+        return m ? { value: Number(m[1]), unit: m[2] } : null;
+      };
+      const min = size('autoSizeMinTextSize'), max = size('autoSizeMaxTextSize');
+      assert.ok(min && max && min.value > 0, `${name}: missing autosize bounds`);
+      for (const scale of [0.85, 1, 1.3, 2]) {
+        const px = s => s.value * (s.unit === 'sp' ? scale : 1);
+        assert.ok(px(max) > px(min), `${name}: invalid autosize range at font ${scale}`);
+      }
     }
   }
 });
