@@ -4,7 +4,7 @@ import java.text.DecimalFormat
 import kotlin.math.abs
 
 internal val defaultHomeCards =
-    listOf("Recovery", "Strain", "Sleep", "Activity", "Vitals", "Overview", "Sources")
+    listOf("Recovery", "Strain", "Sleep", "Activity", "Vitals", "Overview")
 
 internal fun homeCardOrder(saved: String?): List<String> =
     saved.orEmpty().split(',').filter { it in defaultHomeCards }.distinct()

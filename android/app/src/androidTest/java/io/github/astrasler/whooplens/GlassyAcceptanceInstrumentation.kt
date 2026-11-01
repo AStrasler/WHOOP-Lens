@@ -199,8 +199,10 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                         val content=(frame.getChildAt(0) as android.widget.ScrollView).getChildAt(0)
                         content.measure(View.MeasureSpec.makeMeasureSpec(frame.width,View.MeasureSpec.EXACTLY),View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED))
                         content.layout(0,0,frame.width,content.measuredHeight)
+                        var sourcesEntries = 0
                         fun inspect(view: View) {
                             if (view is TextView && view.visibility==View.VISIBLE && view.width>0) {
+                                if (view.text.toString() == "Sources & freshness") sourcesEntries++
                                 val layout=view.layout
                                 check(layout!=null && layout.height<=view.height-view.paddingTop-view.paddingBottom+1) { "$screen clipped height: ${view.text}" }
                                 for (line in 0 until layout.lineCount) check(layout.getLineMax(line)<=layout.width+1) { "$screen clipped visible width ${layout.getLineMax(line)} > ${layout.width}: ${view.text}" }
@@ -208,6 +210,8 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                             if (view is android.view.ViewGroup) for (i in 0 until view.childCount) inspect(view.getChildAt(i))
                         }
                         inspect(content)
+                        if (screen == "Home" && metric == null)
+                            check(sourcesEntries == 1) { "Home must expose exactly one Sources & Freshness entry, found $sourcesEntries" }
                         val name=(screen+"-"+(metric?:"screen")).replace(" ","-").replace("&", "and")
                         captureTiles(content,directory,"App-$name-${(font*100).toInt()}",true)
                         fun charts(view: View) {

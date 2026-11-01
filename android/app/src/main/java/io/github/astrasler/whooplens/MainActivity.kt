@@ -959,7 +959,7 @@ class MainActivity : ComponentActivity() {
             "Open Source Licenses & Credits" -> renderOpenSourceCredits(ui, root)
             else -> settings(root)
         }
-        if (page in setOf("Home", "Activity", "Sleep", "Vitals"))
+        if (page in setOf("Activity", "Sleep", "Vitals"))
             ui.button(root, "Sources & freshness") { page = "Sources & freshness"; message = ""; render() }
     }
 
@@ -1044,9 +1044,9 @@ class MainActivity : ComponentActivity() {
 
     private fun homeSourceStatus(root: LinearLayout) {
         val batches = listOfNotNull(snapshot?.whoop, snapshot?.health)
-        if (batches.none { it.stale(System.currentTimeMillis()) || !it.complete || it.notices.isNotEmpty() }) return
-        ui.add(root, ui.text("Some readings are unavailable, saved or limited. View source status for details and refresh options.", 12f, LensColors.amber), 4)
-        ui.button(root, "View source status") { page = "Sources & freshness"; render() }
+        if (batches.any { it.stale(System.currentTimeMillis()) || !it.complete || it.notices.isNotEmpty() })
+            ui.add(root, ui.text("Some readings are unavailable, saved or limited.", 12f, LensColors.amber), 4)
+        ui.button(root, "Sources & freshness") { page = "Sources & freshness"; message = ""; render() }
     }
 
     private fun sourceWarnings(root: LinearLayout, batches: List<DataBatch> = listOfNotNull(snapshot?.whoop, snapshot?.health)) {
@@ -1287,7 +1287,6 @@ class MainActivity : ComponentActivity() {
                             ui.add(c, row, 0)
                         }
                     }
-                "Sources" -> sources(root)
             }
         }
         ui.button(root, "Arrange cards") {

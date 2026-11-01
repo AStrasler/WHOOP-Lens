@@ -11,8 +11,8 @@ android {
     applicationId = "io.github.astrasler.whooplens"
     minSdk = 34
     targetSdk = 35
-    versionCode = 10
-    versionName = "0.6.0-beta.3"
+    versionCode = 11
+    versionName = "0.6.0-beta.4"
     testInstrumentationRunner = providers.gradleProperty("lensTestRunner")
       .getOrElse("io.github.astrasler.whooplens.DesignReviewInstrumentation")
   }
