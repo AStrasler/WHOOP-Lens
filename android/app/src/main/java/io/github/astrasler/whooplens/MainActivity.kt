@@ -49,24 +49,8 @@ class MainActivity : ComponentActivity() {
     private var drawer: View? = null
     private lateinit var frame: FrameLayout
     private var bleScreen: BleScreenBinding? = null
-    private val ble by lazy {
-        BleSessionController(
-            AndroidBleTransport(this),
-            BleCache(androidBleStorage(this)),
-            { auth.accountKey() },
-            { blePermissions(this) },
-            BleTimer { delay, action ->
-                val task = Runnable { action() }
-                handler.postDelayed(task, delay)
-                ({ handler.removeCallbacks(task) })
-            },
-            System::currentTimeMillis,
-            SystemClock::elapsedRealtime,
-        ) {
-            if (foreground && page == "Direct BLE" && !isDestroyed)
-                bleScreen?.update(it, SystemClock.elapsedRealtime())
-        }
-    }
+    private val ble by lazy { BleRuntime.controller(applicationContext) }
+    private var stopBleUpdates: (() -> Unit)? = null
     private var pendingBleScan = false
     private val blePermissionsLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
@@ -109,6 +93,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         applyScreenCapturePrivacy(this)
         page = savedInstanceState?.getString("page") ?: "Home"
+        stopBleUpdates = BleRuntime.observe {
+            if (foreground && page == "Direct BLE" && !isDestroyed)
+                bleScreen?.update(it, SystemClock.elapsedRealtime())
+        }
+        openRequestedPage(intent)
         frame = FrameLayout(this)
         setContentView(frame)
         protectSystemBars(this, frame)
@@ -168,6 +157,16 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleOAuthCallback(intent)
+        if (openRequestedPage(intent)) render()
+    }
+
+    /** The Direct BLE notification opens its screen. Only that exact page is accepted. */
+    private fun openRequestedPage(intent: Intent?): Boolean {
+        if (intent?.getStringExtra(BleSessionService.EXTRA_PAGE) != BleSessionService.PAGE) return false
+        intent.removeExtra(BleSessionService.EXTRA_PAGE)
+        detail = null
+        page = "Direct BLE"
+        return true
     }
 
     override fun onStart() {
@@ -223,7 +222,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         foreground = false
-        ble.stop()
+        // Scanning is screen-only. A connecting or connected session keeps running in the
+        // connected-device foreground service until the member stops it.
+        ble.stopScan()
         handler.removeCallbacks(bleTick)
         handler.removeCallbacks(periodic)
         handler.removeCallbacks(sessionTick)
@@ -232,13 +233,21 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        ble.stop()
+        stopBleUpdates?.invoke()
+        stopBleUpdates = null
+        ble.stopScan()
         ++uiGeneration
         callbacks.cancel()
         handler.removeCallbacksAndMessages(null)
         io.shutdownNow()
         super.onDestroy()
     }
+
+    /** Asked once, with the Bluetooth request, so the background session notification is visible. */
+    private fun shouldAskBleNotifications() =
+        !prefs.getBoolean("ble-notifications-asked", false) &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
 
     private fun locked() = getSystemService(KeyguardManager::class.java).isDeviceLocked
 
@@ -794,12 +803,7 @@ class MainActivity : ComponentActivity() {
         syncAppearance()
         scheduleNoticeExpiry()
         bleScreen = null
-        if (
-            page != "Direct BLE" &&
-                ble.state.phase in
-                    setOf(BlePhase.SCANNING, BlePhase.CONNECTING, BlePhase.LIVE, BlePhase.RETRYING)
-        )
-            ble.stop()
+        if (page != "Direct BLE") ble.stopScan()
         drawer = null
         frame.removeAllViews()
         val scroll = ScrollView(this)
@@ -945,17 +949,21 @@ class MainActivity : ComponentActivity() {
                         ble.state,
                         SystemClock.elapsedRealtime(),
                         {
-                            if (blePermissions(this)) ble.scan()
-                            else
+                            if (blePermissions(this) && !shouldAskBleNotifications()) ble.scan()
+                            else {
+                                prefs.edit().putBoolean("ble-notifications-asked", true).apply()
                                 blePermissionsLauncher.launch(
                                     arrayOf(
                                         android.Manifest.permission.BLUETOOTH_SCAN,
                                         android.Manifest.permission.BLUETOOTH_CONNECT,
+                                        android.Manifest.permission.POST_NOTIFICATIONS,
                                     )
                                 )
+                            }
                         },
                         { ble.connect(it) },
                         { ble.stop() },
+                        { ble.reconnect() },
                     )
             "Open Source Licenses & Credits" -> renderOpenSourceCredits(ui, root)
             else -> settings(root)

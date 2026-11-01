@@ -91,7 +91,7 @@ internal enum class BlePhase {
 
 internal data class BleViewState(
     val phase: BlePhase = BlePhase.IDLE,
-    val message: String = "Ready. Collection runs only while Direct BLE is open.",
+    val message: String = "Ready. Scan on this screen. A connected session keeps running in the background until you stop it.",
     val candidates: List<BleCandidate> = emptyList(),
     val selected: BleCandidate? = null,
     val sample: BleSample? = null,

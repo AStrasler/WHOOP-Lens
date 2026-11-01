@@ -17,10 +17,12 @@ internal class BleScreenBinding(
     scan: () -> Unit,
     private val select: (String) -> Unit,
     stop: () -> Unit,
+    reconnect: () -> Unit,
 ) {
     private lateinit var status: TextView
     private lateinit var scanButton: TextView
     private lateinit var stopButton: TextView
+    private lateinit var reconnectButton: TextView
     private val candidates = ui.column()
     private var shownCandidates = emptyList<BleCandidate>()
     private lateinit var heartRate: TextView
@@ -39,7 +41,7 @@ internal class BleScreenBinding(
             ui.heading(card, "WHOOP Direct BLE · experimental")
             text(
                 card,
-                "Foreground only · local encrypted readings · no uploads",
+                "Runs in the background once connected · local encrypted readings · no uploads",
                 color = LensColors.teal,
             )
             status = text(card, "", size = 14f)
@@ -51,6 +53,8 @@ internal class BleScreenBinding(
                 ui.button(card, "Scan for WHOOP devices", true, action = scan).apply {
                     tag = "ble-scan"
                 }
+            reconnectButton =
+                ui.button(card, "Reconnect", action = reconnect).apply { tag = "ble-reconnect" }
             stopButton =
                 ui.button(card, "Stop / disconnect", action = stop).apply { tag = "ble-stop" }
         }
@@ -70,7 +74,7 @@ internal class BleScreenBinding(
             details = text(card, "")
             text(
                 card,
-                "Direct observations stay separate from official WHOOP and Health Connect. No recovery, HRV, strain, sleep-stage or medical claims. Leaving this section or locking/backgrounding the app stops BLE.",
+                "Direct observations stay separate from official WHOOP and Health Connect. No recovery, HRV, strain, sleep-stage or medical claims. Scanning runs only on this screen. A connected session keeps running when you leave this screen, switch apps or lock the phone, and shows an ongoing notification without your readings. Stop it here or from the notification; swiping WhoopLens away from Recents also stops it.",
             )
         }
     }
@@ -97,6 +101,8 @@ internal class BleScreenBinding(
         scanButton.isEnabled = !active
         scanButton.setTextColor(if (active) LensColors.muted else Color.rgb(5, 32, 35))
         stopButton.isEnabled = active
+        val resumable = BleBackgroundPolicy.canReconnect(state)
+        reconnectButton.show("Reconnect to ${state.selected?.name.orEmpty()}", resumable)
         stopButton.setTextColor(if (active) LensColors.teal else LensColors.muted)
         val list =
             if (
@@ -184,4 +190,6 @@ internal fun renderBleScreen(
     scan: () -> Unit,
     select: (String) -> Unit,
     stop: () -> Unit,
-): BleScreenBinding = BleScreenBinding(ui, root, scan, select, stop).also { it.update(state, now) }
+    reconnect: () -> Unit,
+): BleScreenBinding =
+    BleScreenBinding(ui, root, scan, select, stop, reconnect).also { it.update(state, now) }

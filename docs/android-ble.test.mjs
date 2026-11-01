@@ -21,11 +21,24 @@ test('BLE has separate encrypted no-backup storage and does not add a dashboard 
   assert.doesNotMatch(read('android/app/src/main/java/io/github/astrasler/whooplens/DashboardData.kt'),/DIRECT_BLE/);
   const manifest=read('android/app/src/main/AndroidManifest.xml');
   assert.match(manifest,/BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation"/);
-  assert.match(manifest,/BLUETOOTH_CONNECT/);assert.doesNotMatch(manifest,/BLUETOOTH_ADVERTISE|ACCESS_FINE_LOCATION|FOREGROUND_SERVICE_CONNECTED_DEVICE/);
+  assert.match(manifest,/BLUETOOTH_CONNECT/);assert.doesNotMatch(manifest,/BLUETOOTH_ADVERTISE|ACCESS_FINE_LOCATION|ACCESS_BACKGROUND_LOCATION|FOREGROUND_SERVICE_LOCATION|FOREGROUND_SERVICE_HEALTH/);
+  // Background Direct BLE is a member-started connected-device session only: one non-exported service, no boot or scheduled start.
+  assert.match(manifest,/FOREGROUND_SERVICE_CONNECTED_DEVICE/);
+  assert.match(manifest,/<service\s+android:name="\.BleSessionService"\s+android:exported="false"\s+android:foregroundServiceType="connectedDevice"\s*\/>/);
+  assert.equal([...manifest.matchAll(/<service\b/g)].length,1);
+  assert.doesNotMatch(manifest,/RECEIVE_BOOT_COMPLETED|BOOT_COMPLETED/);
 });
 test('BLE lifecycle and copied parser notices are present in repository and APK inputs',()=>{
   const activity=read('android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt');
-  assert.match(activity,/override fun onPause\(\)[\s\S]*?ble\.stop\(\)/);
+  // Pausing ends scanning only; a connected session continues in the foreground service.
+  const onPause=activity.match(/override fun onPause\(\)[\s\S]*?\n    }\n/)[0];
+  assert.match(onPause,/ble\.stopScan\(\)/);assert.doesNotMatch(onPause,/ble\.stop\(\)/);
+  const runtime=read(base+'BleRuntime.kt');
+  assert.match(runtime,/FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE/);
+  assert.match(runtime,/START_NOT_STICKY/);assert.doesNotMatch(runtime,/START_STICKY\b|START_REDELIVER_INTENT/);
+  assert.match(runtime,/override fun onTaskRemoved[\s\S]*?\.stop\(\)/);
+  assert.match(runtime,/VISIBILITY_PRIVATE/);assert.match(runtime,/setPublicVersion/);
+  assert.doesNotMatch(runtime,/bpm|measurement|rrTicks/,'the notification must not show readings');
   assert.match(activity,/ble\.forget\(\)/);
   const mit=read('android/app/src/main/assets/licenses/whoop4-ble-MIT.txt');
   assert.match(mit,/Copyright \(c\) 2026 Andy Guzman/);assert.match(mit,/Permission is hereby granted/);

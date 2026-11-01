@@ -21,7 +21,8 @@ Source-of-truth references:
 - **Before each session:** record the S26 Ultra Android and One UI build, the app version from Settings → About & help, and the strap's model and firmware from the official WHOOP app (do not unpair it). Note the WHOOP subscription state.
 - **Order:** Sheet A (WHOOP 5.0) and Sheet B (WHOOP MG) are independent; either can go first. Do not reuse a result across sheets.
 - **Hardware availability:** the owner uses an MG. A WHOOP 5.0 session needs access to a 5.0 strap (per #84, likely the owner's sister's). Sheet A stays untested until that is arranged.
-- **Engineering status:** no code change is pending for these sessions. Parsers and recognizers stay unwired from proprietary reads by design, and nothing here authorizes new GATT commands.
+- **Engineering status:** Direct BLE now keeps a member-started session running in the background (connected-device foreground service, ongoing notification without readings, Stop action) and offers one-tap Reconnect to the same strap. This ships in the next build after this PR merges, not in beta.5, so record the background checks below on that build. Parsers and recognizers stay unwired from proprietary reads by design, and nothing here authorizes new GATT commands.
+- **Background checks (both sheets, on the build with background BLE):** with a live session, leave the screen, switch apps, lock the phone for 2+ minutes and accept any OS pairing prompt: readings must keep arriving and the notification must stay. The lock-screen notification must not show heart rate. Notification Stop and swiping WhoopLens from Recents must end the session. After Stop, Reconnect must resume the same strap without a scan.
 
 ## Separate test sessions (equal priority)
 
