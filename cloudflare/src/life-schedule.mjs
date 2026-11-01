@@ -26,7 +26,8 @@ export async function readLifeSchedule(db,userId,{env}={}){
   const selected=LIFE_SCHEDULES.includes(row?.life_schedule);
   return {life_schedule:effectiveLifeSchedule(row?.life_schedule),explicit:selected,revision:selected?row.revision:null};
 }
-// No MCP write tool. Call only from authenticated settings HTTP.
+// Called by authenticated settings HTTP (app/web) and by the MCP set_life_schedule
+// tool. Both require an explicit member action; nothing infers or changes it.
 export async function selectLifeSchedule(db,userId,input,{env,now=Date.now()}={}){
   const id=await guard(db,userId,env);
   if(!input||typeof input!=='object'||Array.isArray(input)||
@@ -56,4 +57,31 @@ export async function lifeScheduleHttp(request,env,userId){
     let input;try{input=JSON.parse(body.text);}catch{return json({error:'Invalid preference'},400);}
     return json(await selectLifeSchedule(env.DB,userId,input,{env}));
   }catch(error){return json({error:'Life Schedule is unavailable or the request is not allowed.',code:error instanceof LifeScheduleRejected?error.code:'service_unavailable'},error instanceof LifeScheduleRejected?error.status:503);}
+}
+
+// MCP write (#121): members who use only MCP can change their own preference, but
+// only when they explicitly ask in the conversation. The confirmation constant and
+// the exact-keys check keep it from being used for inferred or background changes.
+export const LIFE_SCHEDULE_MCP_CONFIRMATION='member-requested-life-schedule-change';
+export const lifeScheduleWriteTool=Object.freeze({
+  name:'set_life_schedule',
+  description:'Change the signed-in member\'s own Life Schedule preference. Use ONLY when the member explicitly asks, in this conversation, to set it to a named value (fixed, flexible or unpredictable). Never infer, suggest-and-apply, reclassify or change it from sleep timing, observations, summaries, insights, memory or background work, and never on your own initiative. If the member has not named a value, ask; do not choose one. Set confirm to the exact constant only after the member requested the change.',
+  inputSchema:{type:'object',properties:{
+    life_schedule:{type:'string',enum:[...LIFE_SCHEDULES],description:'The value the member explicitly asked for.'},
+    confirm:{type:'string',const:LIFE_SCHEDULE_MCP_CONFIRMATION,description:'Required. Confirms the member explicitly requested this change in the conversation.'}
+  },required:['life_schedule','confirm'],additionalProperties:false},
+  annotations:{readOnlyHint:false,destructiveHint:false,idempotentHint:true,openWorldHint:false}
+});
+export function lifeScheduleWriteArguments(args){
+  if(!args||typeof args!=='object'||Array.isArray(args))return null;
+  if(Object.keys(args).sort().join(',')!=='confirm,life_schedule')return null;
+  if(args.confirm!==LIFE_SCHEDULE_MCP_CONFIRMATION||!LIFE_SCHEDULES.includes(args.life_schedule))return null;
+  return {life_schedule:args.life_schedule,confirm:args.confirm};
+}
+export async function runLifeScheduleWrite(args,{db,userId,env,now=Date.now()}){
+  const valid=lifeScheduleWriteArguments(args);
+  if(!valid)throw new LifeScheduleRejected(400);
+  const saved=await selectLifeSchedule(db,userId,{life_schedule:valid.life_schedule,confirmation:'user_selected_life_schedule'},{env,now});
+  return {...saved,changed_by:'member_request',
+    note:'Saved for this member only. Life Schedule changes only when the member explicitly asks; it is never inferred.'};
 }

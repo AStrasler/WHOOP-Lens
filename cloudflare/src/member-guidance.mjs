@@ -64,6 +64,10 @@ export function featureStates(env){
       state:state(on(env,'HEALTH_CONNECT_WEBHOOK_ENABLED'))},
     {id:'health_connect_withdraw',tools:['withdraw_health_connect_import'],
       state:state(on(env,'WEB_HEALTH_IMPORT_ENABLED')||on(env,'HEALTH_CONNECT_WEBHOOK_ENABLED'))},
+    {id:'companion_sync_status',tools:['get_companion_sync_status'],
+      state:state(on(env,'WEB_HEALTH_IMPORT_ENABLED'))},
+    {id:'companion_sync_pause',tools:['pause_companion_sync'],
+      state:state(on(env,'WEB_HEALTH_IMPORT_ENABLED')||on(env,'HEALTH_CONNECT_WEBHOOK_ENABLED'))},
     {id:'ai_summaries',tools:['summary argument on WHOOP read tools'],
       state:state(on(env,'AI_SUMMARY_ENABLED'),ai)},
     {id:'weekly_digest',tools:['get_weekly_digest'],
@@ -74,6 +78,8 @@ export function featureStates(env){
       state:state(on(env,'STRESS_ESTIMATE_ENABLED')&&on(env,'AI_SUMMARY_ENABLED'))},
     {id:'flare_journal',tools:['set_flare_consent','get_flare_journal'],
       state:state(on(env,'FLARE_JOURNAL_ENABLED'))},
+    {id:'life_schedule',tools:['get_life_schedule_insights','set_life_schedule'],
+      state:state(on(env,'LIFE_SCHEDULE_ENABLED'))},
     {id:'service_announcements',tools:['list_service_announcements'],
       state:state(on(env,'ANNOUNCEMENTS_ENABLED'))}
   ];
