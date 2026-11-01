@@ -21,7 +21,7 @@ Verified October 15, 2026: all completed private MCP features are enabled server
 | Descriptive personal flare comparisons | Enabled | Separate analysis consent, own journal labels and WHOOP connection |
 | Journal edit, delete, analysis pause and withdrawal | Enabled | Own journal and the applicable confirmation/revision |
 
-The production resource Worker is version `6ae55a84-64f3-4369-aaaf-ebae3750a7e4`, serving 100% of traffic from code commit `ae57926` (PR #55). All eleven resource feature flags and both OAuth issuer flags were verified enabled. Public workers.dev and preview access remain disabled. The last runtime release passed 338 synthetic tests and all three applicable CI workflows.
+Production version records live in the dated release notes under [cloudflare/docs](cloudflare/docs) and [docs/release-queue.md](docs/release-queue.md); this README does not track the deployed Worker version. As of the October 15, 2026 audit, all eleven resource feature flags and both OAuth issuer flags were verified enabled, and public workers.dev and preview access remain disabled. Features added since then, such as Life Schedule, service announcements and companion sync, have their own flags and are enabled only by an approved release.
 
 Flare predictions, automated flare notifications and unfinished importers remain outside the completed feature set. Global AI-budget visibility remains an operator-only permission; each member can read their own usage. Existing clients may need to refresh their MCP discovery to expose new tools. See the [flare release verification](cloudflare/docs/flare-journal.md#production-verification--2026-10-15) and [audit record](cloudflare/docs/private-mcp-audit-20261015.md).
 
@@ -65,7 +65,7 @@ The private OAuth sign-in server is `https://auth.whooplens.tech`. WHOOP connect
 
 > Use WhoopLens connect_whoop to give me my WHOOP authorization link.
 
-2. Open the returned link, sign into your own WHOOP account, and approve the requested read access. Complete the redirect back to WhoopLens.
+2. Open the returned link, sign into your own WHOOP account, and approve the requested read access. Complete the redirect back to WhoopLens. If the link opens a WhoopLens **Connect your WHOOP account** page first, select **Continue to WHOOP** and finish in that same browser. Never open a WHOOP connection link that someone else sent you: it would connect your WHOOP data to their account.
 3. Return to the chat and verify:
 
 > Use WhoopLens get_profile and get_recovery. Confirm the profile is mine and show the dates of the returned recovery records.

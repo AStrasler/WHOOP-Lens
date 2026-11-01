@@ -16,6 +16,7 @@
     "MIGRATION_API_ENABLED": "false",
     "WHOOP_READS_ENABLED": "false",
     "WHOOP_OAUTH_ENABLED": "false",
+    "WHOOP_CONNECT_BROWSER_BINDING": "false",
     "MCP_ENABLED": "false",
     "WEB_HEALTH_IMPORT_ENABLED": "false",
     "HEALTH_CONNECT_WEBHOOK_ENABLED": "false",
