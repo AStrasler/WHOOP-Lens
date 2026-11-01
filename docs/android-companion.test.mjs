@@ -94,8 +94,8 @@ test('All six home widgets declare compact picker previews and bounded two-axis 
     const v36 = read('../android/app/src/main/res/xml-v36/widget_' + name + '.xml');
     for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.match(xml, new RegExp('android:' + attr + '="1"'));
     for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.match(xml, new RegExp('android:' + attr + '="40dp"'));
-    assert.match(xml, /maxResizeWidth="320dp"/);
-    assert.match(xml, /maxResizeHeight="250dp"/);
+    assert.match(xml, /maxResizeWidth="284dp"/);
+    assert.match(xml, /maxResizeHeight="180dp"/);
     assert.match(xml, /resizeMode="horizontal\|vertical"/);
     assert.match(xml, /previewLayout="@layout\/lens_widget_preview"/);
     assert.match(xml, /initialLayout="@layout\/lens_widget_responsive"/);
@@ -121,8 +121,8 @@ test('The status widget follows the same 1x1 minimum and resize bounds as the si
   const v36 = read('../android/app/src/main/res/xml-v36/widget_private_lock.xml');
   for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.match(xml, new RegExp('android:' + attr + '="1"'));
   for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.match(xml, new RegExp('android:' + attr + '="40dp"'));
-  assert.match(xml, /maxResizeWidth="320dp"/);
-  assert.match(xml, /maxResizeHeight="250dp"/);
+  assert.match(xml, /maxResizeWidth="284dp"/);
+  assert.match(xml, /maxResizeHeight="180dp"/);
   assert.match(xml, /previewLayout="@layout\/lens_widget_preview"/);
   assert.match(xml, /initialLayout="@layout\/lens_widget_compact"/);
   assert.equal(v36.replace('home_screen|not_keyguard', 'home_screen'), xml);

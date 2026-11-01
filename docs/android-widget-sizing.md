@@ -15,7 +15,7 @@ are not One UI cell measurements and are not results from the phone.
 ## Sizing and content
 
 - `targetCellWidth=1`, `targetCellHeight=1`; minimum/fallback resize bounds 40 x 40dp.
-- Both resize axes are enabled. Maximum hints are 320 x 250dp. On the handset
+- Both resize axes are enabled. Maximum hints are 284 x 180dp (were 320 x 250dp; see the 4 x 2 section). On the handset
   table in Android's widget layout guide, portrait 4 cells are 276dp wide and 5
   cells are 349dp; portrait 2 cells are 220dp tall and 3 cells are 337dp. The
   hints sit between those published estimates. They are **not Samsung cells** and
@@ -111,6 +111,21 @@ Alternatives considered:
 | Width-qualified provider XML (`xml-w400dp` etc.) | Adjusts for screen width only, not the user's grid or display-size choice | Partial; only after measurements |
 | Render 4 x 2 content centered in larger frames | Does not stop the launcher; adds empty space the requirement forbids | Rejected |
 | Disable resizing | Breaks the 1 x 1 to 4 x 2 range | Rejected |
+
+**Constraint chosen (Nov 1, 2026):** `maxResizeWidth="284dp"`, `maxResizeHeight="180dp"` on
+all seven providers (were 320 x 250dp). Under the Launcher3 rule, modeled in
+`WidgetSpanModelTest`:
+
+- Height 180dp gives exactly two rows for row pitches of 100-165dp (4- to 6-row phone grids)
+  with the 12-20dp padding and spacing Launcher3 adds. The old 250dp allowed three rows on
+  5- and 6-row grids.
+- Width 284dp reaches four columns on 4-column grids with column pitch up to 96dp, and stays
+  at four on 5-column grids with pitch of 76dp or more (about 400dp-wide phones). On narrower
+  5-column layouts a fifth column remains possible. That is the residual risk; no single dp
+  value avoids it without capping some 4-column grids at three.
+
+This is the safest reasonable constraint available from the app. It is **not** a passed
+4 x 2 requirement until the S26 Ultra checks below confirm it on One UI.
 
 Settings -> Widgets & privacy -> Placed widget sizes is a **measurement aid**, not a
 completion of this requirement. It shows the launcher-reported dp bounds per placed widget
