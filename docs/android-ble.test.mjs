@@ -48,6 +48,8 @@ test('release workflow is manual, separates signing from source builds and defau
   assert.match(read('scripts/android_release.py'),/c3e4f56d7ebc66329585197c492635ffb457e7c0d0d273e16f16a43e72ccf578/);
   // Key rotation: releases are signed by the release key with the original key in their lineage.
   assert.match(read('scripts/android_release.py'),/CERT = "8aa3a7bd9acd71191de151d6c4ae4d04dd3e08ef5724e6d133a9030b367e7c80"/);
-  assert.match(workflow,/--next-signer --ks "\$release_key"/);
+  assert.match(workflow,/--v1-signing-enabled false --v2-signing-enabled false --v3-signing-enabled true/);
+  assert.match(workflow,/--ks "\$release_key"/);
+  assert.doesNotMatch(workflow,/ANDROID_SIGNING_KEYSTORE_BASE64|--next-signer/,'the original debug key is not used in CI');
   assert.match(workflow,/--lineage "\$lineage" --rotation-min-sdk-version 34/);
 });

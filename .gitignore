@@ -21,3 +21,7 @@ repair-results/
 *.p12
 *.pfx
 WhoopLens-signing/
+
+# Python bytecode
+__pycache__/
+*.pyc
