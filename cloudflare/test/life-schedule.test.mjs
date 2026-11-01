@@ -135,7 +135,7 @@ test('rollback removes only schedule selections and disabled reads fail closed',
  }finally{db.sqlite.close();}
 });
 
-test('MCP offers read-only schedule insights and refuses AI preference writes',async(t)=>{
+test('MCP insights stay read-only; set_life_schedule is the only MCP write and needs explicit confirmation',async(t)=>{
  t.mock.method(Date,'now',()=>NOW);
  const db=database();try{
   await selectLifeSchedule(db,A,selection('fixed'),{env:ON});
@@ -149,8 +149,16 @@ test('MCP offers read-only schedule insights and refuses AI preference writes',a
   const inventory=await rpc('tools/list',{});
   const tool=inventory.result.tools.find(t=>t.name==='get_life_schedule_insights');
   assert.equal(tool.annotations.readOnlyHint,true);
-  assert.equal(inventory.result.tools.some(t=>/set_life|select_life|update_life/.test(t.name)),false);
+  // #121: exactly one schedule write tool, never read-only, never a select/update alias.
+  assert.deepEqual(inventory.result.tools.filter(t=>/life_schedule/.test(t.name)).map(t=>t.name).sort(),['get_life_schedule_insights','set_life_schedule']);
+  const write=inventory.result.tools.find(t=>t.name==='set_life_schedule');
+  assert.equal(write.annotations.readOnlyHint,false);
+  assert.deepEqual(write.inputSchema.required,['life_schedule','confirm']);
+  assert.equal(write.inputSchema.additionalProperties,false);
+  assert.match(write.description,/ONLY when the member explicitly asks/);
+  assert.match(write.description,/Never infer/);
   assert.ok((await rpc('tools/call',{name:tool.name,arguments:{user_id:B}})).error);
+  // Without the explicit confirmation (an AI acting on its own) the write is refused.
   assert.ok((await rpc('tools/call',{name:'set_life_schedule',arguments:{life_schedule:'flexible'}})).error);
   const result=await rpc('tools/call',{name:tool.name,arguments:{}});
   const data=JSON.parse(result.result.content[0].text);
@@ -197,4 +205,78 @@ test('signed WHOOP nap credit reduces estimated need and missing stages suppress
  assert.equal(metric({...sleep,score:{...sleep.score,stage_summary:{...sleep.score.stage_summary,total_no_data_time_milli:60000}}}),undefined);
  assert.equal(metric({...sleep,score:{...sleep.score,sleep_needed:{...sleep.score.sleep_needed,need_from_recent_nap_milli:3600000}}}),undefined);
  assert.deepEqual(buildLifeScheduleInsights({records:[{...sleep,score_state:'PENDING_SCORE'}],now:NOW}).windows[0].metrics,{});
+});
+
+test('set_life_schedule changes only the requesting member, only with exact confirmed values',async()=>{
+ const db=database();try{
+  const CONFIRM='member-requested-life-schedule-change';
+  const rpcFor=(userId,env=ON)=>(arguments_)=>handleMcpRpc({jsonrpc:'2.0',id:7,method:'tools/call',params:{name:'set_life_schedule',arguments:arguments_}},
+    {db,userId,env,whoopRequest:async()=>{throw Error('no WHOOP reads for a preference write');}},{modern:false});
+  const rows=()=>db.sqlite.prepare('SELECT user_id,life_schedule FROM member_life_schedule ORDER BY user_id').all().map(r=>({...r}));
+  // Valid member request: saved for A only, visible through the same settings API the app uses.
+  const ok=await rpcFor(A)({life_schedule:'flexible',confirm:CONFIRM});
+  const saved=JSON.parse(ok.result.content[0].text);
+  assert.equal(saved.life_schedule,'flexible');assert.equal(saved.explicit,true);assert.equal(saved.changed_by,'member_request');
+  assert.equal((await (await request(db,A)).json()).life_schedule,'flexible');
+  assert.deepEqual(rows(),[{user_id:A,life_schedule:'flexible'}]);
+  assert.equal((await readLifeSchedule(db,B,{env:ON})).explicit,false);
+  // Idempotent, and a later request replaces it.
+  await rpcFor(A)({life_schedule:'flexible',confirm:CONFIRM});
+  await rpcFor(A)({life_schedule:'fixed',confirm:CONFIRM});
+  assert.deepEqual(rows(),[{user_id:A,life_schedule:'fixed'}]);
+  // Rejected: no/wrong confirmation, unknown or inferred values, case changes, extra or
+  // targeting fields, arrays and empty input. None of them write anything.
+  for(const bad of [
+   {life_schedule:'flexible'},{confirm:CONFIRM},
+   {life_schedule:'flexible',confirm:'yes'},{life_schedule:'flexible',confirm:'user_selected_life_schedule'},
+   {life_schedule:'FIXED',confirm:CONFIRM},{life_schedule:'inferred',confirm:CONFIRM},{life_schedule:'night_shift',confirm:CONFIRM},
+   {life_schedule:'flexible',confirm:CONFIRM,user_id:B},{life_schedule:'flexible',confirm:CONFIRM,reason:'sleep timing looks irregular'},
+   {life_schedule:'flexible',confirm:CONFIRM,inferred:true},[],{}]){
+   const r=await rpcFor(A)(bad);
+   assert.ok(r.error||r.result?.isError,'rejected: '+JSON.stringify(bad));
+  }
+  assert.deepEqual(rows(),[{user_id:A,life_schedule:'fixed'}]);
+  // Another member's call never touches A.
+  await rpcFor(B)({life_schedule:'unpredictable',confirm:CONFIRM});
+  assert.deepEqual(rows(),[{user_id:A,life_schedule:'fixed'},{user_id:B,life_schedule:'unpredictable'}]);
+  // Inactive (revoked) membership: refused, nothing written.
+  const inactive=await rpcFor(INACTIVE)({life_schedule:'fixed',confirm:CONFIRM});
+  assert.ok(inactive.error||inactive.result?.isError);
+  assert.equal(rows().some(r=>r.user_id===INACTIVE),false);
+  // Feature off: tool not listed and not callable.
+  const OFF={...ON,LIFE_SCHEDULE_ENABLED:'false'};
+  const listed=await handleMcpRpc({jsonrpc:'2.0',id:8,method:'tools/list',params:{}},{db,userId:A,env:OFF,whoopRequest:async()=>({records:[]})},{modern:false});
+  assert.equal(listed.result.tools.some(t=>t.name==='set_life_schedule'),false);
+  const off=await rpcFor(A,OFF)({life_schedule:'flexible',confirm:CONFIRM});
+  assert.ok(off.error||off.result?.isError);
+  assert.deepEqual(rows(),[{user_id:A,life_schedule:'fixed'},{user_id:B,life_schedule:'unpredictable'}]);
+  // Missing schema (migration rolled back): safe refusal, no crash, nothing written.
+  db.sqlite.exec(readFileSync(new URL('../migration/rollback/0024_life_schedule.down.sql',import.meta.url),'utf8'));
+  const missing=await rpcFor(A)({life_schedule:'flexible',confirm:CONFIRM});
+  assert.equal(missing.result?.isError,true);
+  assert.match(missing.result.content[0].text,/Nothing was changed/);
+ }finally{db.sqlite.close();}
+});
+
+test('host instructions allow set_life_schedule only on an explicit member request',async()=>{
+ const {hostInstructionsFor}=await import('../src/host-instructions.mjs');
+ const text=hostInstructionsFor(ON);
+ assert.doesNotMatch(hostInstructionsFor({...ON,LIFE_SCHEDULE_ENABLED:'false'}),/set_life_schedule/);
+ assert.match(text,/Call set_life_schedule only when the member explicitly asks/);
+ assert.match(text,/Never infer, reclassify or change the selection/);
+});
+
+test('get_capabilities advertises Life Schedule to MCP-only members only when enabled',async()=>{
+ const db=database();try{
+  const call=env=>handleMcpRpc({jsonrpc:'2.0',id:9,method:'tools/call',params:{name:'get_capabilities',arguments:{}}},
+   {db,userId:A,env,whoopRequest:async()=>({records:[]})},{modern:false});
+  const on=JSON.parse((await call(ON)).result.content[0].text);
+  const item=on.capabilities.find(c=>c.id==='life-schedule');
+  assert.deepEqual(item.tools,['get_life_schedule_insights','set_life_schedule']);
+  assert.match(item.limitations.join(' '),/never inferred/);
+  assert.equal(on.server_features.find(f=>f.id==='life_schedule').state,'enabled');
+  const off=JSON.parse((await call({...ON,LIFE_SCHEDULE_ENABLED:'false'})).result.content[0].text);
+  assert.equal(off.capabilities.some(c=>c.id==='life-schedule'),false);
+  assert.notEqual(off.server_features.find(f=>f.id==='life_schedule').state,'enabled');
+ }finally{db.sqlite.close();}
 });

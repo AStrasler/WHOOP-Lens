@@ -74,6 +74,8 @@ export function featureStates(env){
       state:state(on(env,'STRESS_ESTIMATE_ENABLED')&&on(env,'AI_SUMMARY_ENABLED'))},
     {id:'flare_journal',tools:['set_flare_consent','get_flare_journal'],
       state:state(on(env,'FLARE_JOURNAL_ENABLED'))},
+    {id:'life_schedule',tools:['get_life_schedule_insights','set_life_schedule'],
+      state:state(on(env,'LIFE_SCHEDULE_ENABLED'))},
     {id:'service_announcements',tools:['list_service_announcements'],
       state:state(on(env,'ANNOUNCEMENTS_ENABLED'))}
   ];

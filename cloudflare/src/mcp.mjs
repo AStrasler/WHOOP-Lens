@@ -1,4 +1,4 @@
-import {lifeScheduleEnabled} from './life-schedule.mjs';
+import {lifeScheduleEnabled,lifeScheduleWriteTool,lifeScheduleWriteArguments,runLifeScheduleWrite,LifeScheduleRejected} from './life-schedule.mjs';
 import {contextualLifeSchedule} from './life-schedule-insights.mjs';
 import {flareTools,flareEnabled,flareArguments,runFlareTool} from './flare-journal.mjs';
 import {notionTools,isNotionTool,notionArguments,runNotionTool,publicNotionError} from './notion.mjs';
@@ -115,7 +115,7 @@ const weeklyDigestTool=Object.freeze({
 });
 const lifeScheduleTool=Object.freeze({
   name:'get_life_schedule_insights',
-  description:'Read schedule-aware sleep, recovery and activity context with rolling 7, 14 and 30 day observations. Reads the authenticated member only. Never changes the Life Schedule preference; only explicit user settings actions can do that. Missing data and correlation limits are reported.',
+  description:'Read schedule-aware sleep, recovery and activity context with rolling 7, 14 and 30 day observations. Reads the authenticated member only. Never changes the Life Schedule preference; only an explicit member request (settings, or set_life_schedule when the member asks) can do that. Missing data and correlation limits are reported.',
   inputSchema:{type:'object',properties:{},additionalProperties:false},
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
 });
@@ -123,7 +123,7 @@ function listedTools(env,userId){
   const issueTools=[...issueToolsFor(env,userId),...errorReportToolsFor(env,userId)];
   const notices=announcementToolsFor(env,userId);
   let tools=baseListedTools(env);
-  if(lifeScheduleEnabled(env))tools=[...tools,lifeScheduleTool];
+  if(lifeScheduleEnabled(env))tools=[...tools,lifeScheduleTool,lifeScheduleWriteTool];
   if(issueTools.length)tools=[...tools,...issueTools];
   if(notices.length)tools=[...tools,...notices];
   return notionEnabled(env)?[...tools,...notionTools]:tools;
@@ -142,7 +142,7 @@ function baseListedTools(env){
   return tools;
 }
 function optionalTool(name,env,userId){
-  if(name==='get_life_schedule_insights')return lifeScheduleEnabled(env);
+  if(name==='get_life_schedule_insights'||name==='set_life_schedule')return lifeScheduleEnabled(env);
   if(isAnnouncementTool(name))return announcementToolsFor(env,userId).some(t=>t.name===name);
   if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name);
   if(isNotionTool(name))return notionEnabled(env);
@@ -172,6 +172,7 @@ function toolError(id,message,modern) {
 function checkArguments(name,args,env,userId) {
   if(!isObject(args))return null;
   if(name==='get_life_schedule_insights')return lifeScheduleEnabled(env)&&Object.keys(args).length===0?{}:null;
+  if(name==='set_life_schedule')return lifeScheduleEnabled(env)?lifeScheduleWriteArguments(args):null;
   if(isAnnouncementTool(name))return announcementToolsFor(env,userId).some(t=>t.name===name)?announcementArguments(name,args):null;
   if(isErrorReportTool(name))return errorReportToolsFor(env,userId).some(t=>t.name===name)?errorReportArguments(name,args):null;
   if(isNotionTool(name))return notionEnabled(env)?notionArguments(name,args):null;
@@ -303,6 +304,8 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
         }catch{complete=false;}
       }
       data=await contextualLifeSchedule({db,userId,env,now},records,complete);
+    }else if(name==='set_life_schedule'){
+      data=await runLifeScheduleWrite(args,{db,userId,env});
     }else if(isErrorReportTool(name)){
       data=await runErrorReportTool(name,args,{db,userId,env,requestId});
     }else if(isNotionTool(name)){
@@ -425,6 +428,9 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
         `WHOOP is rate limiting requests right now.${wait} then request the first page again without next_token; the next_token you sent will have expired by then.`:
         `WHOOP is rate limiting requests right now.${wait} then retry the same call. Any next_token you hold stays valid for up to one hour.`,modern);
     }
+    if(name==='set_life_schedule')return toolError(id,error instanceof LifeScheduleRejected&&error.code==='feature_disabled'?
+      'Life Schedule is not available right now. Nothing was changed.':
+      'Life Schedule could not be saved. Nothing was changed. It can only be set to fixed, flexible or unpredictable, for the signed-in member, when the member asks.',modern);
     if(flareTools.some(t=>t.name===name))return toolError(id,'Flare journal request could not be completed. Verify consent, active membership, the current entry revision, and WHOOP connection for analysis. No medical data or internal error details are included.',modern);
     const safe=publicImportError(error);
     if(safe)return toolError(id,safe,modern);

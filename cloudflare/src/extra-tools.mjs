@@ -140,7 +140,16 @@ async function catalog(db,userId,{category,limit=25,offset=0,include_planned=tru
     provides:'Private journal lifecycle and exploratory dated comparisons; no flare prediction or notifications.',
     data_requirements:['Explicit journal storage consent; separate analysis consent plus WHOOP connection and user labels for comparisons.'],
     limitations:['No automatic enrollment or diagnosis inference. Missing labels are not non-flare controls. Predictions remain disabled.'],example_prompts:['Explain flare-journal consent before I opt in.']};
-  const capabilities=[...manifest.capabilities,...(stressOn?[STRESS_CAPABILITY]:[]),...(flareOn?[flareCapability]:[])].map(item=>{
+  const lifeOn=env?.LIFE_SCHEDULE_ENABLED==='true';
+  const lifeScheduleCapability={id:'life-schedule',name:'Life Schedule preference and schedule-aware context',category:'optional',delivery:'mcp_tool',
+    tools:['get_life_schedule_insights','set_life_schedule'],status:'available',
+    description:"The member's own Life Schedule (fixed, flexible or unpredictable) and schedule-aware sleep, recovery and activity context. Works from MCP alone; the Android app is optional.",
+    provides:'Rolling 7, 14 and 30 day context from this account\'s WHOOP records, and member-requested preference changes.',
+    data_requirements:['WHOOP connection for insights. Changing the preference needs only an explicit member request.'],
+    limitations:['Changed only when the member explicitly asks; never inferred from sleep timing or other data. Unset means unpredictable.',
+      'Insights describe observations and correlations, not causes or diagnoses.'],
+    example_prompts:['Set my Life Schedule to flexible.','How does my sleep look for my Life Schedule this month?']};
+  const capabilities=[...manifest.capabilities,...(stressOn?[STRESS_CAPABILITY]:[]),...(flareOn?[flareCapability]:[]),...(lifeOn?[lifeScheduleCapability]:[])].map(item=>{
     let value={...item};
     if(localTools[item.id]){
       const health=item.id==='health-connect';
