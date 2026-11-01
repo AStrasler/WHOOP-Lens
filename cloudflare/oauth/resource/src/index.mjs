@@ -9,7 +9,8 @@ import {runRetention} from '../../../src/diagnostics.mjs';
 
 // Private MCP resource server for https://whooplens.tech/mcp.
 // Cloudflare is the live MCP resource server. Do not copy legacy WHOOP refresh tokens.
-const mcpResource=new OAuthResourceServer({
+function createMcpResource(originalRequest){
+ return new OAuthResourceServer({
   resourceMetadata:{
     resource:"https://whooplens.tech/mcp",
     authorization_servers:["https://auth.whooplens.tech"],
@@ -18,7 +19,8 @@ const mcpResource=new OAuthResourceServer({
   requiredScopes:["mcp:read"],
   validateToken:env=>env.AUTH_SERVER.validateToken,
   handler:{
-    async fetch(request,env,ctx){
+    async fetch(protectedRequest,env,ctx){
+      const request=originalRequest??protectedRequest;
       if(env.OAUTH_RESOURCE_ENABLED!=="true"||env.MCP_ENABLED!=="true"||
          env.WHOOP_READS_ENABLED!=="true"||env.MIGRATION_API_ENABLED!=="true")
         return Response.json({error:"WhoopLens MCP OAuth is disabled"},{status:503});
@@ -39,6 +41,18 @@ const mcpResource=new OAuthResourceServer({
     }
   }
 });
+}
+const mcpResource=createMcpResource();
+// Exact existing API routes share the canonical MCP token audience. The original
+// request is held only in this invocation's closure, never in caller headers.
+const AUTHENTICATED_API_PATHS=new Set([
+ '/v1/status','/v1/recovery','/v1/sleep','/v1/whoop/connect',
+ '/v1/whoop/profile','/v1/whoop/measurements','/v1/whoop/recovery',
+ '/v1/whoop/sleep','/v1/whoop/workouts','/v1/whoop/cycles',
+ '/v1/health-connect','/v1/health-connect/import','/v1/health-connect/status',
+ '/v1/health-connect/sync-status','/v1/health-connect/sync','/v1/health-connect/pause',
+ '/v1/preferences/life-schedule','/v1/announcements','/v1/announcements/manage','/v1/announcements/update'
+]);
 
 const SITE_REDIRECTS={'/':'/','/privacy':'/privacy/','/privacy/':'/privacy/','/terms':'/terms/','/terms/':'/terms/','/support':'/support/','/support/':'/support/'};
 
@@ -71,6 +85,13 @@ export default {
       return Response.json({error:"WhoopLens resource server not activated"},{status:503,headers:{"cache-control":"no-store"}});
     if(path==='/api/whoop/callback'||path===WEBHOOK_PATH||path===NOTION_CALLBACK||path===NOTION_START)
       return createStagingRouter()(request,env);
+    if(requestUrl.origin==='https://whooplens.tech' && AUTHENTICATED_API_PATHS.has(path)){
+      const canonical=new URL('https://whooplens.tech/mcp');
+      // OAuth validates bearer, audience, expiry and scope before the closure
+      // dispatches the untouched original request, including its bounded body.
+      const protectedRequest=new Request(canonical,{method:request.method,headers:request.headers});
+      return createMcpResource(request).fetch(protectedRequest,env,ctx);
+    }
     return mcpResource.fetch(request,env,ctx);
   }
 };
