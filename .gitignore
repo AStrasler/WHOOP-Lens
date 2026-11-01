@@ -14,3 +14,10 @@ repair-results/
 
 # Uploaded recovery archives stay local.
 .codex-remote-attachments/
+
+# Signing keys must never be committed (android/signing/ holds only the public lineage).
+*.jks
+*.keystore
+*.p12
+*.pfx
+WhoopLens-signing/
