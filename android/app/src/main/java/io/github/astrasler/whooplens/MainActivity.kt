@@ -393,6 +393,8 @@ class MainActivity : ComponentActivity() {
         render()
         val attempt = uiGeneration
         io.execute {
+            var whoopFailed = false
+            var healthFailed = false
             if (whoop && auth.accountKey() == owner) {
                 val b =
                     WhoopDashboard(
@@ -400,6 +402,7 @@ class MainActivity : ComponentActivity() {
                                 call
                         )
                         .load()
+                whoopFailed = b.readFailed()
                 if (attempt == uiGeneration) DashboardRepository.commit(this, auth, owner, b)
             }
             if (health && auth.accountKey() == owner)
@@ -413,9 +416,11 @@ class MainActivity : ComponentActivity() {
                                 }
                                 .load()
                         }
+                    healthFailed = b.readFailed()
                     if (attempt == uiGeneration && foreground)
                         DashboardRepository.commit(this, auth, owner, b)
                 } catch (_: Exception) {
+                    healthFailed = true
                     DashboardRepository.clearHealth(this, auth)
                 }
             val cache = DashboardRepository.read(this, auth)
@@ -427,9 +432,7 @@ class MainActivity : ComponentActivity() {
                     return@runOnUiThread
                 }
                 snapshot = cache
-                message =
-                    if (!online(this)) "Offline · local reads only. Saved WHOOP values are dated."
-                    else "Dashboard refreshed"
+                message = refreshOutcome(online(this), whoopFailed, healthFailed).message
                 LensWidgets.updateAll(this)
                 if (foreground) render()
                 scheduleSession()
@@ -901,7 +904,18 @@ class MainActivity : ComponentActivity() {
                 LinearLayout.LayoutParams(-1, ui.dp(4)),
             )
         }
-        if (message.isNotEmpty()) {
+        if (message == REFRESH_FAILED_MESSAGE && account != null) {
+            // §9 error state: one coral banner with Retry; saved values below stay visible.
+            ui.card(root, edgeColor = LensColors.error) { c ->
+                ui.add(
+                    c,
+                    ui.text(message, 14f, LensColors.error, role = TextRole.BODY).apply {
+                        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+                    },
+                )
+                ui.button(c, "Retry", enabled = !loading) { refresh(true) }
+            }
+        } else if (message.isNotEmpty()) {
             val failed = message.contains("unavailable", true) || message.contains("blocked", true)
             ui.add(
                 root,

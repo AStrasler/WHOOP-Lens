@@ -170,7 +170,7 @@ internal class HealthDashboard(
                     )
                 )
             } catch (_: Exception) {
-                notices.add("$title could not be read. Check permission and retry.")
+                notices.add(title + HEALTH_READ_FAILED_NOTICE)
                 complete = false
             }
         }
@@ -271,7 +271,7 @@ internal class HealthDashboard(
                 }
             } catch (_: Exception) {
                 notices.add(
-                    "${healthCategories.find { it.type==type }?.title} unavailable. Permission may have changed."
+                    "${healthCategories.find { it.type==type }?.title}" + HEALTH_RECORDS_FAILED_NOTICE
                 )
                 complete = false
                 return emptyList()
@@ -330,7 +330,7 @@ internal class HealthDashboard(
                     }
                 }
             } catch (_: Exception) {
-                notices.add("Heart-rate baseline unavailable. Check permission and retry.")
+                notices.add("Heart-rate baseline" + HEALTH_BASELINE_FAILED_NOTICE)
                 complete = false
             }
         }

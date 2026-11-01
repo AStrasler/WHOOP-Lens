@@ -6,6 +6,7 @@ import { WEBHOOK_PATH } from "../../../src/health-connect-webhook.mjs";
 import {healthConnectHttp} from '../../../src/health-import.mjs';
 import {NOTION_CALLBACK,NOTION_START} from '../../../src/notion-oauth.mjs';
 import {runRetention} from '../../../src/diagnostics.mjs';
+import {WHOOP_START} from '../../../src/whoop-start.mjs';
 
 // Private MCP resource server for https://whooplens.tech/mcp.
 // Cloudflare is the live MCP resource server. Do not copy legacy WHOOP refresh tokens.
@@ -67,23 +68,26 @@ export default {
   },
   fetch(request,env,ctx){
     const early=rejectEarlyData(request);if(early)return early;
-    // The WHOOP callback is authenticated by its expiring, atomically consumed
-    // state. The Health Connect webhook authenticates its own per-user bearer.
+    // The WHOOP start page and callback are authenticated by the expiring,
+    // atomically consumed state (and, with WHOOP_CONNECT_BROWSER_BINDING, the
+    // browser cookie set by the start page). The Health Connect webhook authenticates its own per-user bearer.
     // All other paths retain MCP OAuth protection.
     const requestUrl=new URL(request.url),path=requestUrl.pathname;
     // The apex only serves the MCP resource. Public site pages live on www, so
     // the bare root and the site paths redirect there. Nothing else changes.
     if((request.method==='GET'||request.method==='HEAD')&&Object.hasOwn(SITE_REDIRECTS,path))
       return new Response(null,{status:301,headers:{location:'https://www.whooplens.tech'+SITE_REDIRECTS[path]+requestUrl.search,'cache-control':'public, max-age=3600'}});
-    // Android App Links: only the debug signing certificate is registered here.
-    // Release builds must add their own signing certificate fingerprint.
+    // Android App Links: the original companion signing certificate (Android Debug)
+    // and the dedicated release key it was rotated to on Nov 1 2026 (APK v3 key
+    // rotation; docs/ANDROID_RELEASES.md). Keep both until every install runs a
+    // rotated build, then remove the original.
     if(path==='/.well-known/assetlinks.json' && request.method==='GET')
-      return Response.json([{relation:['delegate_permission/common.handle_all_urls'],target:{namespace:'android_app',package_name:'io.github.astrasler.whooplens',sha256_cert_fingerprints:['C3:E4:F5:6D:7E:BC:66:32:95:85:19:7C:49:26:35:FF:B4:57:E7:C0:D0:D2:73:E1:6F:16:A4:3E:72:CC:F5:78']}}],{headers:{'cache-control':'public, max-age=3600','x-content-type-options':'nosniff'}});
+      return Response.json([{relation:['delegate_permission/common.handle_all_urls'],target:{namespace:'android_app',package_name:'io.github.astrasler.whooplens',sha256_cert_fingerprints:['C3:E4:F5:6D:7E:BC:66:32:95:85:19:7C:49:26:35:FF:B4:57:E7:C0:D0:D2:73:E1:6F:16:A4:3E:72:CC:F5:78','8A:A3:A7:BD:9A:CD:71:19:1D:E1:51:D6:C4:AE:4D:04:DD:3E:08:EF:57:24:E6:D1:33:A9:03:0B:36:7E:7C:80']}}],{headers:{'cache-control':'public, max-age=3600','x-content-type-options':'nosniff'}});
     if(path==='/android/oauth/callback' && request.method==='GET')
       return new Response('Open this link on the device with WhoopLens Companion installed. If it does not open automatically, enable supported links for WhoopLens Companion in Android settings and retry sign-in.',{status:200,headers:{'content-type':'text/plain; charset=utf-8','cache-control':'no-store','referrer-policy':'no-referrer','x-content-type-options':'nosniff'}});
     if(env?.OAUTH_RESOURCE_ENABLED!=="true")
       return Response.json({error:"WhoopLens resource server not activated"},{status:503,headers:{"cache-control":"no-store"}});
-    if(path==='/api/whoop/callback'||path===WEBHOOK_PATH||path===NOTION_CALLBACK||path===NOTION_START)
+    if(path==='/api/whoop/callback'||path===WHOOP_START||path===WEBHOOK_PATH||path===NOTION_CALLBACK||path===NOTION_START)
       return createStagingRouter()(request,env);
     if(requestUrl.origin==='https://whooplens.tech' && AUTHENTICATED_API_PATHS.has(path)){
       const canonical=new URL('https://whooplens.tech/mcp');

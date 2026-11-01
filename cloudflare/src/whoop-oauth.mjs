@@ -13,6 +13,22 @@ const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALNUM=/^[A-Za-z0-9_-]{32,512}$/;
 const NOW=()=>Date.now();
 const decoder=new TextDecoder();
+// Browser binding for the connect link (see whoop-start.mjs, migration 0026).
+export const WHOOP_START="/api/whoop/start";
+export const WHOOP_BROWSER_COOKIE="__Host-wl_whoop";
+export const whoopBrowserBinding=env=>env?.WHOOP_CONNECT_BROWSER_BINDING==="true";
+export function readBrowserCookie(header){
+  const value=String(header||"").split(";").map(v=>v.trim())
+    .find(v=>v.startsWith(WHOOP_BROWSER_COOKIE+"="))?.slice(WHOOP_BROWSER_COOKIE.length+1);
+  return /^[A-Za-z0-9_-]{43}$/.test(value||"")?value:null;
+}
+export function whoopAuthorizeUrl(state,env){
+  const params=new URLSearchParams({
+    client_id:env.WHOOP_CLIENT_ID,redirect_uri:REDIRECT,response_type:"code",
+    scope:SCOPES,state
+  });
+  return AUTH+"?"+params;
+}
 function requireConfig(env) {
   if(!env?.WHOOP_CLIENT_ID||!env?.WHOOP_CLIENT_SECRET||(!env?.WHOOP_TOKEN_AES256_KEY&&!env?.WHOOP_TOKEN_AES256_KEY_NEXT))
     throw Error("WHOOP OAuth credentials not configured");
@@ -40,6 +56,7 @@ function tokenString(size=32) {
   // base64url; the authorize response never exposes the digest-only stored state.
   return btoa(String.fromCharCode(...bytes)).replaceAll("+","-").replaceAll("/","_").replace(/=+$/,"");
 }
+export async function sha256Hex(value){return sha256(value);}
 async function sha256(value){
   const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));
   return [...new Uint8Array(digest)].map(x=>x.toString(16).padStart(2,"0")).join("");
@@ -69,11 +86,11 @@ export async function createWhoopAuthorization(db,userId,env,{now=NOW}={}){
       .bind(id)
   ]);
   if(!saved?.success||saved.meta?.changes!==1)throw Error("WHOOP authorization state unavailable");
-  const params=new URLSearchParams({
-    client_id:env.WHOOP_CLIENT_ID,redirect_uri:REDIRECT,response_type:"code",
-    scope:SCOPES,state
-  });
-  return {authorization_url:AUTH+"?"+params};
+  // With browser binding, the member opens a WhoopLens confirmation page first;
+  // it binds the state to that browser before redirecting to WHOOP.
+  if(whoopBrowserBinding(env))
+    return {authorization_url:"https://whooplens.tech"+WHOOP_START+"?"+new URLSearchParams({state})};
+  return {authorization_url:whoopAuthorizeUrl(state,env)};
 }
 async function digestInvalidation(db,id){
   // Compatible with installations predating the optional digest table.
@@ -115,7 +132,7 @@ async function batchWithBump(db,before,bump,after){
     return db.batch([...before,...after]);
   }
 }
-export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW}={}){
+export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW,cookie=null}={}){
   requireConfig(env);
   const url=callback instanceof URL?callback:new URL(callback);
   if(url.origin!=="https://whooplens.tech"||url.pathname!=="/api/whoop/callback")
@@ -127,7 +144,16 @@ export async function acceptWhoopCallback(db,callback,env,{fetcher=fetch,now=NOW
      !/^[A-Za-z0-9._~+/-]+$/.test(code))
     throw Error("Invalid WHOOP callback");
   // Atomically consume this state, even on error. Replay is impossible.
-  const row=await db.prepare(
+  // With browser binding, only the browser that confirmed the start page can
+  // consume it; any other browser leaves the state untouched and is refused.
+  let row;
+  if(whoopBrowserBinding(env)){
+    const browser=readBrowserCookie(cookie);
+    if(!browser)throw Error("Invalid or expired WHOOP state");
+    row=await db.prepare(
+      "DELETE FROM whoop_oauth_states WHERE state_hash=?1 AND expires_at>?2 AND browser_hash=?3 RETURNING user_id,created_at"
+    ).bind(await sha256(state),new Date(now()).toISOString(),await sha256(browser)).first();
+  }else row=await db.prepare(
     "DELETE FROM whoop_oauth_states WHERE state_hash=?1 AND expires_at>?2 RETURNING user_id,created_at"
   ).bind(await sha256(state),new Date(now()).toISOString()).first();
   if(!row?.user_id||typeof row.created_at!=="string")throw Error("Invalid or expired WHOOP state");

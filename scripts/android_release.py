@@ -9,7 +9,12 @@ import subprocess
 import zipfile
 
 PACKAGE = "io.github.astrasler.whooplens"
-CERT = "c3e4f56d7ebc66329585197c492635ffb457e7c0d0d273e16f16a43e72ccf578"
+# Signing identity. Releases are signed with the dedicated release key (CERT) using APK
+# Signature Scheme v3 key rotation from the original Android Debug key (OLD_CERT), so
+# installs signed by OLD_CERT update in place. See docs/ANDROID_RELEASES.md.
+OLD_CERT = "c3e4f56d7ebc66329585197c492635ffb457e7c0d0d273e16f16a43e72ccf578"
+CERT = "8aa3a7bd9acd71191de151d6c4ae4d04dd3e08ef5724e6d133a9030b367e7c80"
+LINEAGE = [OLD_CERT, CERT]
 
 
 def release_metadata(gradle, sha, tag, channel, minimum_code):
@@ -27,12 +32,25 @@ def release_metadata(gradle, sha, tag, channel, minimum_code):
             "channel": channel, "filename": "WHOOP-Lens-" + tag + ".apk"}
 
 
+def verify_signing(apksigner, apk, allow_debug=False):
+    """A release must be signed by CERT and carry the exact OLD_CERT -> CERT lineage.
+    A local debug build (allow_debug) may instead be signed by OLD_CERT alone."""
+    certs = subprocess.check_output([str(apksigner), "verify", "--print-certs", str(apk)], text=True)
+    signers = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-f]{64})$", certs, re.M)
+    if allow_debug and signers == [OLD_CERT]:
+        return {"certificate_sha256": OLD_CERT, "lineage": []}
+    if signers != [CERT]:
+        raise ValueError("APK certificate does not match established App Links/install identity")
+    lineage = subprocess.check_output([str(apksigner), "lineage", "--in", str(apk), "--print-certs"], text=True)
+    chain = re.findall(r"^Signer #\d+ in lineage certificate SHA-256 digest: ([0-9a-f]{64})$", lineage, re.M)
+    if chain != LINEAGE:
+        raise ValueError("APK signing lineage must be exactly the original key followed by the release key")
+    return {"certificate_sha256": CERT, "lineage": chain}
+
+
 def verify_apk(apk, build_tools, version, code, allow_debug=False):
     suffix = ".bat" if os.name == "nt" else ""
-    certs = subprocess.check_output([str(build_tools / ("apksigner" + suffix)), "verify", "--print-certs", str(apk)], text=True)
-    actual = re.findall(r"certificate SHA-256 digest: ([0-9a-f]+)", certs)
-    if actual != [CERT]:
-        raise ValueError("APK certificate does not match established App Links/install identity")
+    signing = verify_signing(build_tools / ("apksigner" + suffix), apk, allow_debug)
     badging = subprocess.check_output([str(build_tools / ("aapt" + (".exe" if os.name == "nt" else ""))), "dump", "badging", str(apk)], text=True, encoding="utf-8")
     identity = re.search(r"package: name='([^']+)' versionCode='([^']+)' versionName='([^']+)'", badging)
     if not identity or identity.groups() != (PACKAGE, str(code), version):
@@ -53,7 +71,7 @@ def verify_apk(apk, build_tools, version, code, allow_debug=False):
         if any(n.lower().endswith((".jks", ".keystore", "direct-ble.bin", "oauth-session.bin", "dashboard.bin")) for n in names):
             raise ValueError("Private build/runtime material must not be packaged")
     digest = hashlib.sha256(apk.read_bytes()).hexdigest()
-    return {"package": PACKAGE, "version": version, "code": code, "certificate_sha256": CERT,
+    return {"package": PACKAGE, "version": version, "code": code, **signing,
             "apk_sha256": digest, "permissions": permissions}
 
 
