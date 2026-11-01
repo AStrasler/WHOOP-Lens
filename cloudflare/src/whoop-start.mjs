@@ -70,7 +70,14 @@ export async function whoopStartHttp(request,env,{now=Date.now}={}){
       return page('Connect your WHOOP account',
         `<p>This links a WHOOP account to the WhoopLens member who asked for this link in their own chat.</p>
 <p class="warn"><strong>If someone sent you this link, do not continue.</strong> Continuing would give them access to your WHOOP data.</p>
-<form method="post" action="${WHOOP_START}"><input type="hidden" name="state" value="${escape(states[0])}"><button type="submit">Continue to WHOOP</button></form>`);
+<form method="post" action="${WHOOP_START}"><input type="hidden" name="state" value="${escape(states[0])}"><button type="submit">Continue to WHOOP</button></form>`,
+        200,
+        // Browsers send `Origin: null` on form POSTs from a no-referrer document,
+        // which the strict Origin check below rejects (production, Nov 1 2026).
+        // Only this confirmation page needs same-origin: the state-bearing URL is
+        // still never sent to another origin, including WHOOP after the redirect.
+        // Same approach as oauth/auth-server/src/consent-flow.mjs.
+        {'referrer-policy':'same-origin'});
     }
     if(request.method!=='POST')return whoopResultPage('Not allowed','Method not allowed.',405);
     const origin=request.headers.get('origin');
@@ -89,8 +96,17 @@ export async function whoopStartHttp(request,env,{now=Date.now}={}){
     const write=await env.DB.prepare('UPDATE whoop_oauth_states SET browser_hash=?1 WHERE state_hash=?2 AND browser_hash IS NULL AND expires_at>?3')
       .bind(await sha256Hex(browser),await sha256Hex(state),new Date(at).toISOString()).run();
     if(write?.meta?.changes!==1)return inProgress();
-    return new Response(null,{status:303,headers:{...baseHeaders,location:whoopAuthorizeUrl(state,env),
-      'set-cookie':`${WHOOP_BROWSER_COOKIE}=${browser}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600`}});
+    // Not a 303: CSP form-action also governs every redirect after a form submission,
+    // and WHOOP's authorize endpoint redirects on to its sign-in host (id.whoop.com),
+    // which form-action would block, leaving the member stuck on this page. A Refresh
+    // navigation (with a link fallback) is not a form submission, so WHOOP's own
+    // redirects proceed normally. This response keeps Referrer-Policy: no-referrer.
+    const whoop=whoopAuthorizeUrl(state,env);
+    return page('Opening WHOOP',
+      `<p>Opening WHOOP sign-in…</p><p><a href="${escape(whoop)}">Continue to WHOOP</a> if nothing happens.</p>`,
+      200,
+      {'refresh':'0;url='+whoop,
+       'set-cookie':`${WHOOP_BROWSER_COOKIE}=${browser}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600`});
   }catch{
     return whoopResultPage('Unavailable','WHOOP connection could not be started. Try again later.',503);
   }

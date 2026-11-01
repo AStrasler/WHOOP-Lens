@@ -76,6 +76,9 @@ test("start page warns, changes nothing on GET, and is safe for link previews",a
     assert.match(html,/If someone sent you this link, do not continue/);
     assert.match(html,/method="post"/);
     assert.equal(res.headers.get("set-cookie"),null);
+    // A no-referrer page makes browsers submit the form with `Origin: null`
+    // (production, Nov 1 2026). Only the confirmation page uses same-origin.
+    assert.equal(res.headers.get("referrer-policy"),"same-origin");
     assert.equal(d.sqlite.prepare("SELECT browser_hash FROM whoop_oauth_states").get().browser_hash,null);
     for(const bad of ["","?state=short","?state="+state+"&state="+state,"?state="+"Z".repeat(43)]){
       const r=await whoopStartHttp(new Request("https://whooplens.tech"+WHOOP_START+bad),{...env,DB:d},{now:()=>base});
@@ -91,8 +94,16 @@ test("confirming binds one browser, redirects to WHOOP and cannot be repeated",a
   try{
     const state=startState(await createWhoopAuthorization(d,A,env,{now:()=>base}));
     const res=await whoopStartHttp(confirm(state),{...env,DB:d},{now:()=>base});
-    assert.equal(res.status,303);
-    const to=new URL(res.headers.get("location"));
+    // 200 + Refresh, not 303: form-action would block WHOOP's onward redirect.
+    assert.equal(res.status,200);
+    assert.equal(res.headers.get("location"),null);
+    assert.equal(res.headers.get("referrer-policy"),"no-referrer");
+    const refresh=/^0;url=(.+)$/.exec(res.headers.get("refresh")||"");
+    assert.ok(refresh,"Refresh header navigates to WHOOP");
+    const html=await res.text();
+    assert.match(html,/Continue to WHOOP<\/a>/);
+    const to=new URL(refresh[1]);
+    assert.ok(html.includes('href="'+refresh[1].replaceAll("&","&amp;")+'"'),"link fallback points to the same WHOOP URL");
     assert.equal(to.origin+to.pathname,"https://api.prod.whoop.com/oauth/oauth2/auth");
     assert.equal(to.searchParams.get("state"),state);
     assert.equal(to.searchParams.get("redirect_uri"),"https://whooplens.tech/api/whoop/callback");
@@ -115,6 +126,9 @@ test("confirmation rejects cross-site posts, extra fields and inactive members",
     const state=startState(await createWhoopAuthorization(d,A,env,{now:()=>base}));
     const cross=await whoopStartHttp(confirm(state,{origin:"https://attacker.invalid"}),{...env,DB:d},{now:()=>base});
     assert.equal(cross.status,403);
+    // The fix is the page's referrer policy, not a looser check: "null" stays rejected.
+    const opaque=await whoopStartHttp(confirm(state,{origin:"null"}),{...env,DB:d},{now:()=>base});
+    assert.equal(opaque.status,403);
     const extra=new Request("https://whooplens.tech"+WHOOP_START,{method:"POST",
       headers:{"content-type":"application/x-www-form-urlencoded",origin:"https://whooplens.tech"},body:"state="+state+"&user=x"});
     assert.equal((await whoopStartHttp(extra,{...env,DB:d},{now:()=>base})).status,400);
@@ -188,6 +202,7 @@ test("reopening the link or clicking again never breaks an authorization in prog
     const cookie=cookieOf(await whoopStartHttp(confirm(state),{...env,DB:d},{now:()=>base}));
     const reopened=await whoopStartHttp(new Request("https://whooplens.tech"+WHOOP_START+"?state="+state),{...env,DB:d},{now:()=>base});
     assert.equal(reopened.status,409);
+    assert.equal(reopened.headers.get("referrer-policy"),"no-referrer","only the confirmation page relaxes the referrer policy");
     assert.match(await reopened.text(),/Finish signing in to WHOOP/);
     const invalid=await whoopStartHttp(new Request("https://whooplens.tech"+WHOOP_START+"?state="+"Z".repeat(43)),{...env,DB:d},{now:()=>base});
     assert.equal(invalid.status,400);
