@@ -102,8 +102,9 @@ test("confirming binds one browser, redirects to WHOOP and cannot be repeated",a
     assert.match(stored,/^[0-9a-f]{64}$/);
     assert.ok(!set.includes(stored));
     const again=await whoopStartHttp(confirm(state),{...env,DB:d},{now:()=>base});
-    assert.equal(again.status,400);
+    assert.equal(again.status,409);
     assert.equal(again.headers.get("location"),null);
+    assert.equal(again.headers.get("set-cookie"),null);
     assert.equal(d.sqlite.prepare("SELECT browser_hash FROM whoop_oauth_states").get().browser_hash,stored);
   }finally{d.close();}
 });
@@ -176,5 +177,23 @@ test("router serves the start page and an HTML callback result when binding is o
     assert.match(ok.headers.get("set-cookie"),/Max-Age=0/);
     const off=await router(new Request("https://whooplens.tech"+WHOOP_START+"?state="+state),{...renv,WHOOP_CONNECT_BROWSER_BINDING:"false"});
     assert.equal(off.status,503);
+  }finally{d.close();}
+});
+
+test("reopening the link or clicking again never breaks an authorization in progress",async()=>{
+  const d=fixture();
+  try{
+    const {fetcher}=tokenFetcher();
+    const state=startState(await createWhoopAuthorization(d,A,env,{now:()=>base}));
+    const cookie=cookieOf(await whoopStartHttp(confirm(state),{...env,DB:d},{now:()=>base}));
+    const reopened=await whoopStartHttp(new Request("https://whooplens.tech"+WHOOP_START+"?state="+state),{...env,DB:d},{now:()=>base});
+    assert.equal(reopened.status,409);
+    assert.match(await reopened.text(),/Finish signing in to WHOOP/);
+    const invalid=await whoopStartHttp(new Request("https://whooplens.tech"+WHOOP_START+"?state="+"Z".repeat(43)),{...env,DB:d},{now:()=>base});
+    assert.equal(invalid.status,400);
+    for(const r of [reopened,invalid,await whoopStartHttp(confirm(state),{...env,DB:d},{now:()=>base})])
+      assert.equal(r.headers.get("set-cookie"),null);
+    const answer=await acceptWhoopCallback(d,callback(state),env,{fetcher,now:()=>base,cookie});
+    assert.equal(answer.connected,true);
   }finally{d.close();}
 });

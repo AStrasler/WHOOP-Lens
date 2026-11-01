@@ -42,7 +42,11 @@ button{margin-top:1rem;width:100%;padding:.8rem 1rem;border:0;border-radius:.8re
 export const whoopResultPage=(title,message,status=200,{clear=false}={})=>
   page(title,`<p>${escape(message)}</p>`,status,clear?{'set-cookie':clearCookie}:{});
 
-const expired=()=>whoopResultPage('Link expired','This WHOOP connection link is invalid, expired or already used. Ask WhoopLens to connect WHOOP again from your own chat.',400,{clear:true});
+// Start-page rejections never clear the browser cookie: reopening the link (or a
+// second click) must not break an authorization already in progress at WHOOP.
+// Only the callback clears it.
+const expired=()=>whoopResultPage('Link expired','This WHOOP connection link is invalid, expired or already used. Ask WhoopLens to connect WHOOP again from your own chat.',400);
+const inProgress=()=>whoopResultPage('Already opened','This link was already opened. Finish signing in to WHOOP in the tab it opened. If you closed that tab, ask WhoopLens for a new link from your own chat.',409);
 
 async function pendingState(db,state,now){
   const row=await db.prepare('SELECT user_id,browser_hash FROM whoop_oauth_states WHERE state_hash=?1 AND expires_at>?2')
@@ -61,7 +65,8 @@ export async function whoopStartHttp(request,env,{now=Date.now}={}){
       const states=url.searchParams.getAll('state');
       if(states.length!==1||!STATE.test(states[0]))return expired();
       const row=await pendingState(env.DB,states[0],now());
-      if(!row||row.browser_hash)return expired();
+      if(!row)return expired();
+      if(row.browser_hash)return inProgress();
       return page('Connect your WHOOP account',
         `<p>This links a WHOOP account to the WhoopLens member who asked for this link in their own chat.</p>
 <p class="warn"><strong>If someone sent you this link, do not continue.</strong> Continuing would give them access to your WHOOP data.</p>
@@ -83,8 +88,7 @@ export async function whoopStartHttp(request,env,{now=Date.now}={}){
     const browser=nonce();
     const write=await env.DB.prepare('UPDATE whoop_oauth_states SET browser_hash=?1 WHERE state_hash=?2 AND browser_hash IS NULL AND expires_at>?3')
       .bind(await sha256Hex(browser),await sha256Hex(state),new Date(at).toISOString()).run();
-    if(write?.meta?.changes!==1)
-      return whoopResultPage('Link already used','This WHOOP connection link was already opened. Ask WhoopLens for a new link from your own chat.',400,{clear:true});
+    if(write?.meta?.changes!==1)return inProgress();
     return new Response(null,{status:303,headers:{...baseHeaders,location:whoopAuthorizeUrl(state,env),
       'set-cookie':`${WHOOP_BROWSER_COOKIE}=${browser}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=600`}});
   }catch{
