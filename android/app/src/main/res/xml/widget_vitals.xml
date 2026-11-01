@@ -2,7 +2,7 @@
     android:targetCellWidth="1" android:targetCellHeight="1"
     android:minWidth="40dp" android:minHeight="40dp"
     android:minResizeWidth="40dp" android:minResizeHeight="40dp"
-    android:maxResizeWidth="320dp" android:maxResizeHeight="250dp"
+    android:maxResizeWidth="284dp" android:maxResizeHeight="180dp"
     android:resizeMode="horizontal|vertical"
     android:initialLayout="@layout/lens_widget_responsive"
     android:previewLayout="@layout/lens_widget_preview"
