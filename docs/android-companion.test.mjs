@@ -130,12 +130,13 @@ test('The status widget follows the same 1x1 minimum and resize bounds as the si
   assert.match(xml, /initialLayout="@layout\/lens_widget_compact"/);
   assert.equal(v36.replace('home_screen|not_keyguard', 'home_screen'), xml);
   const widgets = read('../android/app/src/main/java/io/github/astrasler/whooplens/LensWidgets.kt');
-  assert.match(widgets, /statusWidgetTight\(size\.width, size\.height\)/);
+  assert.match(widgets, /statusWidgetTight\(widthDp, heightDp, context\.resources\.configuration\.fontScale\)/);
   // One cell: a single autosized word, full text kept for accessibility.
   const tiny = read('../android/app/src/main/res/layout/lens_widget_status_tiny.xml');
   assert.match(tiny, /autoSizeTextType="uniform"/);
   assert.match(tiny, /maxLines="1"/);
   assert.match(widgets, /statusWidgetShortText\(text\)/);
+  assert.match(widgets, /clickable\(statusViews\(context, text, size\.width, size\.height\)\)/);
   assert.match(widgets, /setContentDescription\(R\.id\.widget_body, text\)/);
 });
 

@@ -1,0 +1,56 @@
+name: Android widget fit
+# #102: native RemoteViews fit and metadata for all seven home widgets on an emulator.
+# Synthetic fixtures only. Not a Samsung One UI placement test.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'android/app/src/main/res/layout/lens_widget*.xml'
+      - 'android/app/src/main/res/xml/widget_*.xml'
+      - 'android/app/src/main/res/xml-v36/widget_*.xml'
+      - 'android/app/src/main/java/io/github/astrasler/whooplens/LensWidgets.kt'
+      - 'android/app/src/main/java/io/github/astrasler/whooplens/WidgetPresentation.kt'
+      - 'android/app/src/androidTest/java/io/github/astrasler/whooplens/WidgetFitInstrumentation.kt'
+      - '.github/workflows/android-widget-fit.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  widget-fit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [34, 36]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api }}
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -skin 1440x3120
+          script: |
+            gradle -p android --no-daemon -PlensTestRunner=io.github.astrasler.whooplens.WidgetFitInstrumentation :app:installDebug :app:installDebugAndroidTest
+            adb shell wm density 560
+            adb shell am instrument -w io.github.astrasler.whooplens.test/io.github.astrasler.whooplens.WidgetFitInstrumentation | tee /tmp/widget-fit.txt
+            grep -q 'result=PASS' /tmp/widget-fit.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: widget-fit-api-${{ matrix.api }}
+          path: /tmp/widget-fit.txt

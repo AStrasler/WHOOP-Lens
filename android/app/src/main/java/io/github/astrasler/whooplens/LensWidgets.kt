@@ -39,8 +39,11 @@ class ExpandedWidget : LensWidget()
 
 class PrivateLockWidget : LensWidget()
 
-/** One-cell status widget bounds: below these, only a one-word status is shown. */
-internal fun statusWidgetTight(widthDp: Float, heightDp: Float) = widthDp < 110f || heightDp < 90f
+/** Below these bounds (scaled with the font) the status widget shows a one-word status. */
+internal fun statusWidgetTight(widthDp: Float, heightDp: Float, fontScale: Float = 1f): Boolean {
+    val scale = fontScale.coerceAtLeast(1f)
+    return widthDp < 110f * scale || heightDp < 90f * scale
+}
 
 /**
  * The status widget is a lock surface, so its full text is only a sign-in or unlock prompt. At one
@@ -85,6 +88,15 @@ internal object LensWidgets {
         )
         return views
     }
+
+    /** Status widget views for one launcher size; the same path the instrumentation measures. */
+    internal fun statusViews(context: Context, text: String, widthDp: Float, heightDp: Float): RemoteViews =
+        if (statusWidgetTight(widthDp, heightDp, context.resources.configuration.fontScale))
+            RemoteViews(context.packageName, R.layout.lens_widget_status_tiny).apply {
+                setTextViewText(R.id.widget_body, statusWidgetShortText(text))
+                setContentDescription(R.id.widget_body, text)
+            }
+        else widgetViews(context, text, true, true, false)
 
     internal val profiles =
         mapOf<Class<out LensWidget>, List<String>>(
@@ -256,15 +268,7 @@ internal object LensWidgets {
                 // dropped so the status line is not clipped.
                 RemoteViews(
                     supported.associateWith { size ->
-                        clickable(
-                            if (statusWidgetTight(size.width, size.height))
-                                RemoteViews(context.packageName, R.layout.lens_widget_status_tiny)
-                                    .apply {
-                                        setTextViewText(R.id.widget_body, statusWidgetShortText(text))
-                                        setContentDescription(R.id.widget_body, text)
-                                    }
-                            else widgetViews(context, text, true, true, false)
-                        )
+                        clickable(statusViews(context, text, size.width, size.height))
                     }
                 )
             } else {

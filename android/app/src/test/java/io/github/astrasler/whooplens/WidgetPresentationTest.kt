@@ -244,6 +244,10 @@ class WidgetPresentationTest {
         assertTrue(statusWidgetTight(40f, 40f))
         assertFalse(statusWidgetTight(130f, 102f))
         assertFalse(statusWidgetTight(276f, 220f))
+        // Large fonts move the cut-off up, so 2x text never meets a two-cell box.
+        assertTrue(statusWidgetTight(130f, 102f, 2f))
+        assertFalse(statusWidgetTight(276f, 220f, 2f))
+        assertFalse("Small fonts never shrink the threshold", statusWidgetTight(130f, 102f, 0.85f))
     }
 
     @Test
