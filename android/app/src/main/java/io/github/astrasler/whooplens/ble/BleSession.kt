@@ -134,11 +134,26 @@ internal class BleSessionController(
         publish(BleViewState())
     }
 
-    fun stop() {
+    fun stop(message: String = "Stopped. Saved readings are not live.") {
         invalidate()
-        publish(
-            state.copy(phase = BlePhase.STOPPED, message = "Stopped. Saved readings are not live.")
-        )
+        publish(state.copy(phase = BlePhase.STOPPED, message = message))
+    }
+
+    /** Scanning is screen-only; an established or connecting session is left running. */
+    fun stopScan() {
+        if (state.phase != BlePhase.SCANNING) return
+        invalidate()
+        publish(state.copy(phase = BlePhase.IDLE, message = "Scan stopped. Scan again on this screen."))
+    }
+
+    /** One-tap resume to the strap the member already selected under this account. */
+    fun reconnect() {
+        if (!BleBackgroundPolicy.canReconnect(state)) return
+        if (!ready()) return
+        val selected = state.selected ?: return
+        if (!BleBackgroundPolicy.canReconnect(state)) return
+        retries = 0
+        beginConnect(selected)
     }
 
     private fun ready(): Boolean {
@@ -341,5 +356,37 @@ internal class BleSessionController(
                     message = message,
                 )
             )
+    }
+}
+
+/** Which phases need the connected-device foreground service, and when one-tap resume applies. */
+internal object BleBackgroundPolicy {
+    val SESSION_PHASES = setOf(BlePhase.CONNECTING, BlePhase.LIVE, BlePhase.RETRYING)
+    private val RESUMABLE =
+        setOf(BlePhase.IDLE, BlePhase.STOPPED, BlePhase.ERROR, BlePhase.UNAVAILABLE)
+
+    fun keepsService(phase: BlePhase) = phase in SESSION_PHASES
+
+    /**
+     * A session continues after the app leaves the screen only when its ongoing notification can
+     * be shown. Without it the member could not see or stop background collection, so the session
+     * ends instead (the original foreground-only behaviour).
+     */
+    fun continuesInBackground(phase: BlePhase, notificationVisible: Boolean) =
+        keepsService(phase) && notificationVisible
+
+    fun canReconnect(state: BleViewState) = state.selected != null && state.phase in RESUMABLE
+
+    /**
+     * Ongoing-notification copy. It names the phase and the member-chosen strap label only; heart
+     * rate and other measurements never appear in the notification or on the lock screen.
+     */
+    fun notification(state: BleViewState): Pair<String, String> {
+        val name = state.selected?.name ?: "your strap"
+        return when (state.phase) {
+            BlePhase.CONNECTING -> "Direct BLE connecting" to "Connecting to $name."
+            BlePhase.RETRYING -> "Direct BLE reconnecting" to "Reconnecting to $name."
+            else -> "Direct BLE connected" to "Receiving standard heart rate from $name."
+        }
     }
 }
