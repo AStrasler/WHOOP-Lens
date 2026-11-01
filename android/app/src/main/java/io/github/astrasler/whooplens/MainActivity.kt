@@ -406,6 +406,7 @@ class MainActivity : ComponentActivity() {
                                 }
                                 .load()
                         }
+                    healthFailed = b.readFailed()
                     if (attempt == uiGeneration && foreground)
                         DashboardRepository.commit(this, auth, owner, b)
                 } catch (_: Exception) {

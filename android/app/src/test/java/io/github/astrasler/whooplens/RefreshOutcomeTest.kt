@@ -38,4 +38,21 @@ class RefreshOutcomeTest {
         assertFalse(DataBatch(DataSource.WHOOP, 0L).readFailed())
         assertEquals("recovery unavailable. Retry WHOOP reads.", failed.notices.single())
     }
+
+    @Test
+    fun healthConnectFailureNoticesCountButRecordLimitsDoNot() {
+        val hc = { notices: List<String> -> DataBatch(DataSource.HEALTH_CONNECT, 0L, notices = notices) }
+        // Exact wording HealthDashboard produced before these constants existed.
+        assertTrue(hc(listOf("Steps" + HEALTH_READ_FAILED_NOTICE)).readFailed())
+        assertEquals("Steps could not be read. Check permission and retry.", "Steps" + HEALTH_READ_FAILED_NOTICE)
+        assertTrue(hc(listOf("Sleep" + HEALTH_RECORDS_FAILED_NOTICE)).readFailed())
+        assertEquals("Sleep unavailable. Permission may have changed.", "Sleep" + HEALTH_RECORDS_FAILED_NOTICE)
+        assertTrue(hc(listOf("Heart-rate baseline" + HEALTH_BASELINE_FAILED_NOTICE)).readFailed())
+        assertEquals(
+            "Heart-rate baseline unavailable. Check permission and retry.",
+            "Heart-rate baseline" + HEALTH_BASELINE_FAILED_NOTICE,
+        )
+        assertFalse(hc(listOf("Steps: latest 1,000 records shown; more available.")).readFailed())
+        assertFalse(hc(listOf("Heart-rate chart shows latest 2,000 samples.")).readFailed())
+    }
 }
