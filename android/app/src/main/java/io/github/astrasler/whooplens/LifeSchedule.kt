@@ -22,6 +22,8 @@ internal class LifeScheduleClient(
     private val account: String,
     private val transport: LifeScheduleTransport = httpLifeScheduleTransport(),
 ) {
+    var lastFailure: String? = null
+        private set
     fun read(): LifeSchedulePreference? = exchange("GET", null)
     fun select(selection: LifeSchedule, confirmedByUser: Boolean): LifeSchedulePreference? {
         require(confirmedByUser) { "Explicit user confirmation required" }
@@ -29,18 +31,27 @@ internal class LifeScheduleClient(
             .put("confirmation", "user_selected_life_schedule").toString())
     }
     private fun exchange(method: String, body: String?): LifeSchedulePreference? {
+        lastFailure = null
         check(auth.accountKey() == account)
-        val token = auth.accessToken() ?: return null
+        val token = auth.accessToken() ?: run { lastFailure="sign_in_required"; return null }
         check(auth.accountKey() == account)
-        val (status, raw) = try { transport.request(method, "Bearer $token", body) } catch (_: Exception) { return null }
-        if (auth.accountKey() != account || status != 200 || raw.length > 2048) return null
+        val (status, raw) = try { transport.request(method, "Bearer $token", body) } catch (_: Exception) { lastFailure="connection_unavailable"; return null }
+        if (auth.accountKey() != account) { lastFailure="account_changed"; return null }
+        if (status != 200 || raw.length > 2048) {
+            lastFailure = when (status) {
+                401,403 -> "sign_in_required"
+                404 -> "activation_required"
+                else -> runCatching { JSONObject(raw).optString("code", "service_unavailable") }.getOrDefault("connection_unavailable")
+            }
+            return null
+        }
         return try {
             val json = JSONObject(raw)
             if (json.has("error")) return null
             val value = json.optString("life_schedule")
             LifeSchedulePreference(account, LifeSchedule.effective(value),
                 LifeSchedule.entries.any { it.value == value } && json.optBoolean("explicit", false))
-        } catch (_: Exception) { null }
+        } catch (_: Exception) { lastFailure="invalid_response"; null }
     }
     companion object { const val ENDPOINT = "https://whooplens.tech/v1/preferences/life-schedule" }
 }
@@ -58,7 +69,8 @@ internal fun httpLifeScheduleTransport() = LifeScheduleTransport { method, autho
             connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
         }
         val status = connection.responseCode
-        val raw = if (status == 200) connection.inputStream.use { it.readNBytes(2049).toString(Charsets.UTF_8) } else ""
+        val stream = if (status == 200) connection.inputStream else connection.errorStream
+        val raw = stream?.use { it.readNBytes(2049).toString(Charsets.UTF_8) }.orEmpty()
         status to raw
     } finally { connection.disconnect() }
 }

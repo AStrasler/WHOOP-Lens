@@ -118,4 +118,21 @@ class MeasurementPresentationTest {
         assertEquals(now, metricUpdatedAt(metric, batch))
         assertFalse(dailyTotalRefreshFailed(metric, batch))
     }
+    @Test fun temperaturesUseFahrenheitWithoutChangingStoredMeasurements() {
+        for ((key,source) in listOf("temperature" to DataSource.WHOOP,"bodytemperature" to DataSource.HEALTH_CONNECT)) {
+            val raw=Metric(key,"Temperature",37.0,"°C",source,now)
+            assertEquals(98.6,raw.forDisplay().value!!,0.00001)
+            assertEquals("°F",raw.forDisplay().unit)
+            assertTrue(raw.display().endsWith(" °F"))
+            assertEquals(37.0,raw.value!!,0.0);assertEquals("°C",raw.unit)
+            val points=listOf(Point(now,0.0),Point(now+1,100.0),Point(now+2,null))
+            val batch=DataBatch(source,now,listOf(raw),mapOf(key to points))
+            val shown=batch.presentationPoints(key,points)
+            assertEquals(32.0,shown[0].value!!,0.0);assertEquals(212.0,shown[1].value!!,0.0)
+            assertNull(shown[2].value);assertEquals(0.0,points[0].value!!,0.0)
+            assertEquals(raw.forDisplay(),raw.forDisplay().forDisplay())
+            assertEquals("Not shared",raw.copy(value=null).display())
+        }
+    }
+
 }

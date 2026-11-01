@@ -16,7 +16,7 @@ private val READ_FAILED_NOTICES =
 
 internal const val REFRESH_FAILED_MESSAGE = "Couldn't load. Your saved data is still shown."
 internal const val REFRESH_OFFLINE_MESSAGE = "Offline · local reads only. Saved WHOOP values are dated."
-internal const val REFRESH_DONE_MESSAGE = "Refresh finished · no cloud uploads"
+internal const val REFRESH_DONE_MESSAGE = "Dashboard refreshed"
 
 internal data class RefreshOutcome(val message: String, val failed: Boolean)
 

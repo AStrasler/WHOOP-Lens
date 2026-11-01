@@ -364,7 +364,7 @@ internal class HealthDashboard(
                 ExerciseDetail(
                     r.startTime.toEpochMilli(),
                     r.endTime.toEpochMilli(),
-                    r.title?.take(100) ?: "Exercise · type ${r.exerciseType}",
+                    r.title?.takeIf { it.isNotBlank() }?.take(100) ?: "Exercise · type ${r.exerciseType}",
                     r.metadata.dataOrigin.packageName,
                 )
             )
