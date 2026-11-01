@@ -12,9 +12,16 @@ APK, so approving the merge is approving these permissions.
 | `android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE` | Normal (install-time, no prompt) | Android 14+ requires a declared service type. `connectedDevice` is the type for an ongoing link to a Bluetooth device. Android only lets this type start when the app already holds `BLUETOOTH_CONNECT` | Does not grant Bluetooth, location, health or network access. Not usable from the background or from boot |
 | `android.permission.POST_NOTIFICATIONS` | Runtime (prompt, Android 13+) | Shows the ongoing session notification with the Stop action. Asked once, together with Nearby Devices, on the Direct BLE screen | Not used for any other notification. If declined, Direct BLE stays foreground-only (see below) |
 
-Unchanged: `BLUETOOTH_SCAN` (with `neverForLocation`) and `BLUETOOTH_CONNECT`. Still absent:
-location, `BLUETOOTH_ADVERTISE`, `BLUETOOTH_ADMIN`, boot receivers, `WAKE_LOCK`, exact alarms,
-and any health write permission. Tests enforce this list (`docs/android-ble.test.mjs`,
+Unchanged: `BLUETOOTH_SCAN` (with `neverForLocation`) and `BLUETOOTH_CONNECT`. The app's own
+manifest declares no location, `BLUETOOTH_ADVERTISE`, `BLUETOOTH_ADMIN`, boot receiver,
+`WAKE_LOCK`, exact alarm or health write permission.
+
+**Correction (Nov 1, 2026, found by inspecting the signed 0.7.0-beta.1 APK):** the merged APK
+also carries `WAKE_LOCK`, `RECEIVE_BOOT_COMPLETED` and `FOREGROUND_SERVICE` from the AndroidX
+WorkManager library (used by the existing dashboard background refresh). They are byte-for-byte
+the same in 0.6.0-beta.5, so they are not new in this release, and Direct BLE does not use
+them. Compared with beta.5, the only added permissions are `FOREGROUND_SERVICE_CONNECTED_DEVICE`
+and `POST_NOTIFICATIONS`. Tests enforce this list (`docs/android-ble.test.mjs`,
 `docs/glass-overlap.test.mjs`, `BleTest.kt`); `scripts/android_release.py` still rejects any
 other Bluetooth or location permission in a release APK.
 
@@ -39,12 +46,13 @@ other Bluetooth or location permission in a release APK.
   (typically about once a second) plus an encrypted write at most every 5 s. Expect battery use
   similar to other apps that stream from a heart-rate strap. It lasts only until the member
   stops it.
-- No wake lock or alarm is held. Retry back-off (2 s, 4 s) and the 15 s connection timeout run
+- Direct BLE holds no wake lock or alarm (WorkManager's library permission is not used by it).
+  Retry back-off (2 s, 4 s) and the 15 s connection timeout run
   on the main looper's uptime clock, so if the phone's CPU sleeps right after a disconnect,
   the retry or the stop can be delayed until the next wake. Android's own GATT timeouts still
   report failures, and nothing is collected while waiting. The notification may say
-  "Reconnecting" during that time. Fixing it would need `WAKE_LOCK` or alarms, which this
-  change deliberately does not request.
+  "Reconnecting" during that time. Fixing it would mean using wake locks or alarms in Direct
+  BLE, which needs owner approval.
 - Samsung's battery management ("Sleeping apps", "Deep sleeping apps") can stop background
   services. That needs checking on the S26 Ultra; it is in the physical checklist.
 - Android 15's foreground-service time limits apply to `dataSync` and `mediaProcessing`, not
