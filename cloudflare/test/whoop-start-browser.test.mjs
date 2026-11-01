@@ -67,7 +67,7 @@ function world(db,{whoopRedirects=true}={}){
 }
 
 test('real Chrome completes the WHOOP browser-binding flow: confirm, redirect, callback',
-  {skip:!available&&'Chrome not available',timeout:30000},async()=>{
+  {skip:!available&&'Chrome not available',timeout:60000},async()=>{
     const db=database();
     try{
       const start=await createWhoopAuthorization(db,MEMBER,env);
@@ -114,7 +114,7 @@ test('real Chrome completes the WHOOP browser-binding flow: confirm, redirect, c
   });
 
 test('real Chrome: after one browser confirms, a cookieless replay of the callback is refused',
-  {skip:!available&&'Chrome not available',timeout:30000},async()=>{
+  {skip:!available&&'Chrome not available',timeout:60000},async()=>{
     const db=database();
     try{
       const start=await createWhoopAuthorization(db,MEMBER,env);

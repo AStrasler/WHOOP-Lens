@@ -94,7 +94,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    # Configure required reviewers and four signing secrets before the first run.
+    # Requires the android-release environment (required reviewers) and the two release-key secrets.
     environment: android-release
     permissions:
       contents: write
@@ -111,12 +111,13 @@ jobs:
         with:
           name: android-unsigned-${{ needs.validate.outputs.sha }}
           path: unsigned
-      - name: Sign and verify established identity; publish one APK and checksum
+      - name: Sign with the rotated release identity; verify; publish one APK and checksum
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_SIGNING_KEYSTORE_BASE64 }}
-          KS_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # Dedicated release key only (alias whooplens-release, PKCS12: one password).
+          # The original debug key is not needed in CI: the committed lineage proves
+          # the rotation, and v1/v2 (which would need the original key) are off.
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_KS_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
           VERSION: ${{ needs.validate.outputs.version }}
           CODE: ${{ needs.validate.outputs.code }}
           FILE: ${{ needs.validate.outputs.filename }}
@@ -126,20 +127,29 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test -n "$KEYSTORE_BASE64" && test -n "$KS_PASSWORD" && test -n "$KEY_ALIAS" && test -n "$KEY_PASSWORD"
+          test -n "$RELEASE_KEYSTORE_BASE64" && test -n "$RELEASE_KS_PASSWORD"
           umask 077
-          key="$RUNNER_TEMP/android-release-key.jks"
-          trap 'rm -f -- "$key"' EXIT
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$key"
+          release_key="$RUNNER_TEMP/android-release-key.p12"
+          trap 'rm -f -- "$release_key"' EXIT
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$release_key"
+          # Public rotation proof (original -> release key), from the trusted workflow revision.
+          lineage=android/signing/whooplens-lineage.bin
+          test -s "$lineage"
           tools="$ANDROID_HOME/build-tools/36.0.0"
           test -x "$tools/apksigner"
           mkdir -p release
-          "$tools/apksigner" sign --ks "$key" --ks-pass env:KS_PASSWORD --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD --out "release/$FILE" unsigned/app-release-unsigned.apk
+          # APK Signature Scheme v3 key rotation: installs signed by the original key update in place.
+          # minSdk is 34, so v3 alone covers every supported device (v1/v2 would need the original key).
+          "$tools/apksigner" sign \
+            --v1-signing-enabled false --v2-signing-enabled false --v3-signing-enabled true \
+            --ks "$release_key" --ks-pass env:RELEASE_KS_PASSWORD --ks-key-alias whooplens-release --key-pass env:RELEASE_KS_PASSWORD \
+            --lineage "$lineage" --rotation-min-sdk-version 34 \
+            --out "release/$FILE" unsigned/app-release-unsigned.apk
           python scripts/android_release.py apk --apk "release/$FILE" --build-tools "$tools" --version "$VERSION" --code "$CODE" > "$RUNNER_TEMP/apk-verification.json"
           # Never overwrite a release or move/reuse an existing tag.
           existing=$(git ls-remote --tags "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$TAG")
           test -z "$existing"
           prerelease=()
           if [ "$CHANNEL" = experimental ]; then prerelease=(--prerelease --latest=false); fi
-          printf 'Source commit: %s\nAndroid versionCode: %s\n\nDirect BLE: standard HR and optional R-R only; foreground, local encrypted storage. No cloud uploads or proprietary device writes.\n\nHardware/firmware compatibility requires the owner device checklist. BLE is experimental; no generation is marked hardware-verified by this workflow. Existing official WHOOP, Health Connect and widgets remain separate.\n\nInstall over the current app; do not uninstall or clear data. Established signing certificate is verified.\n' "$SOURCE_SHA" "$CODE" > "$RUNNER_TEMP/release-notes.md"
+          printf 'Source commit: %s\nAndroid versionCode: %s\n\nDirect BLE: standard HR and optional R-R only; foreground, local encrypted storage. No cloud uploads or proprietary device writes.\n\nHardware/firmware compatibility requires the owner device checklist. BLE is experimental; no generation is marked hardware-verified by this workflow. Existing official WHOOP, Health Connect and widgets remain separate.\n\nInstall over the current app; do not uninstall or clear data. Signed by the WhoopLens release key with verified key rotation from the original key.\n' "$SOURCE_SHA" "$CODE" > "$RUNNER_TEMP/release-notes.md"
           gh release create "$TAG" "release/$FILE" "release/$FILE.sha256" --repo "$GITHUB_REPOSITORY" --target "$SOURCE_SHA" --title "WHOOP Lens Android $VERSION" --notes-file "$RUNNER_TEMP/release-notes.md" "${prerelease[@]}"
