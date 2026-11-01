@@ -440,7 +440,7 @@ internal class WhoopDashboard(private val request: (String, JSONObject) -> JSONO
                         }
                 }
             } catch (_: Exception) {
-                notices.add("${tool.removePrefix("get_")} unavailable. Retry WHOOP reads.")
+                notices.add(tool.removePrefix("get_") + WHOOP_READ_FAILED_NOTICE)
                 complete = false
             }
         }
