@@ -1,6 +1,19 @@
 # MCP-first feature parity — implementation workstream
 
-Status: **MCP implementation complete in this PR; website editing blocked on an owner decision (see audit)**. Converted from issue #121; its full description and prior discussion are retained in the pull request.
+Status: **not complete.** The MCP requirements are implemented and tested; the website settings requirement is blocked on an owner decision (see audit). Do not close #121 until that decision is made and carried out, or the requirement is formally dropped.
+
+## Original acceptance criteria (from #121) vs this PR
+
+| # | Original requirement | State | Evidence |
+| --- | --- | --- | --- |
+| 1a | `set_life_schedule` accepts only the reviewed values | Done | `fixed`/`flexible`/`unpredictable` enum; exact-keys validation (`lifeScheduleWriteArguments`) |
+| 1b | Writes only for the authenticated member | Done | `userId` comes from the verified identity, never an argument; `user_id` argument rejected; SQL binds the verified ID |
+| 1c | Explicit user request only; never inferred | Done | Required confirmation constant, tool description and host instructions; inferred/reason fields rejected |
+| 1d | Gated by `LIFE_SCHEDULE_ENABLED` | Done | Not listed and not callable when off |
+| 1e | Tests: isolation, invalid values, feature off, missing schema, revoked session | Done | `life-schedule.test.mjs`: handler-level tests, plus an end-to-end `/mcp` route test where a revoked grant (401), missing session (401) and inactive member (403) write nothing; mid-write revocation fence test |
+| 2 | Website view/edit of Life Schedule | **Blocked** | The site has no member sign-in; adding one is an auth change, which #121's constraints exclude. Owner decision required |
+| 3 | Parity audit; follow-ups for other app-only gaps | Done | `mcp-parity-audit.md`. The two companion-sync gaps the audit found were built here (`get_companion_sync_status`, `pause_companion_sync`) at the owner's direction on Nov 1, 2026, instead of separate follow-ups. They are self-contained and can be split into their own PR if preferred |
+| C | No auth change, no 0021, no Android permission change, no paid services | Met | MCP tools only; no migration; no Android change in this PR |
 
 ## Principle
 
@@ -14,7 +27,7 @@ WHOOP Lens is **MCP-first, with Android optional**. A member using only MCP must
 - [x] Require an **explicit user instruction in the conversation**. Never infer or change a schedule from background data, patterns, a summary, or an AI suggestion. (Required confirmation constant, exact-keys validation, tool description and host instructions.)
 - [ ] Add member-facing web view/edit of Life Schedule through the existing authenticated WHOOP Lens API; no new external service. **Blocked:** the website has no member sign-in, and adding one is an auth change this workstream excludes. Owner decision in `mcp-parity-audit.md`.
 - [x] Ensure Android, web and MCP use one consistent member-owned value and keep the app optional. (MCP and the app's `/v1/preferences/life-schedule` read and write the same row; tested.)
-- [x] Test valid/invalid values, other-member isolation, flag off, missing D1 schema, revoked session and authorization failures. (`cloudflare/test/life-schedule.test.mjs`.)
+- [x] Test valid/invalid values, other-member isolation, flag off, missing D1 schema, revoked session and authorization failures. (`cloudflare/test/life-schedule.test.mjs`, including the `/mcp` route with a revoked grant.)
 
 ## Broader parity audit
 

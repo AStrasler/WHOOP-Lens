@@ -30,6 +30,9 @@ Audited November 1, 2026 against the Android app as shipped in `0.6.0-beta.5` (P
 
 ## Findings
 
+Parity is not complete: the website settings requirement (Finding 3) is still open.
+
+
 1. **Closed by this PR:** Life Schedule was the only member *setting* reachable only from the app. `set_life_schedule` closes it, and `get_capabilities` now advertises the feature (it previously did not mention Life Schedule at all, so MCP-only members could not discover it).
 2. **Closed by this PR:** companion sync status and the non-destructive pause were member-visible server controls with no MCP tool. `get_companion_sync_status` and `pause_companion_sync` close them. Status is listed with `WEB_HEALTH_IMPORT_ENABLED`; pause is listed when either Health Connect path is on, the same rule as withdrawal, so a member can always stop uploads. Both are caller-scoped, check active membership and the lifecycle schema, and fail with safe messages that say nothing changed. Uploading phone data stays phone-side.
 3. **Website settings — blocked by this workstream's own constraint.** The website has no member sign-in today: the legacy Supabase web sign-in was retired, and members authenticate only through MCP clients and the Android app (Cloudflare Access + OAuth). A web Life Schedule editor needs a new browser OAuth client for `auth.whooplens.tech` (public client with PKCE, consent, token storage in the browser). That is an auth-surface change, which #121 excludes ("No change to auth"). **Owner decision required:** approve a separate, reviewed web sign-in workstream, or drop web parity in favor of MCP plus the app.

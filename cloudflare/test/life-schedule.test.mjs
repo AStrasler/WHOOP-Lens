@@ -280,3 +280,32 @@ test('get_capabilities advertises Life Schedule to MCP-only members only when en
   assert.notEqual(off.server_features.find(f=>f.id==='life_schedule').state,'enabled');
  }finally{db.sqlite.close();}
 });
+
+test('set_life_schedule over the /mcp route: revoked or missing sessions and inactive members write nothing',async()=>{
+ const db=database();try{
+  const CONFIRM='member-requested-life-schedule-change';
+  // A revoked OAuth grant reaches the router as an identity failure (AccessDenied 401).
+  const revoked=new Set();
+  const router=createStagingRouter({verifyIdentity:async req=>{
+   const id=req.headers.get('authorization')?.replace('Bearer ','');
+   if(![A,B,INACTIVE].includes(id)||revoked.has(id))throw new AccessDenied(401);
+   return id;
+  }});
+  const call=(id,value='fixed')=>router(new Request('https://whooplens.tech/mcp',{method:'POST',headers:{
+   ...(id?{authorization:'Bearer '+id}:{}),'content-type':'application/json','accept':'application/json, text/event-stream'},
+   body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'set_life_schedule',arguments:{life_schedule:value,confirm:CONFIRM}}})}),
+   {...ON,DB:db});
+  const rows=()=>db.sqlite.prepare('SELECT user_id,life_schedule FROM member_life_schedule ORDER BY user_id').all().map(r=>({...r}));
+  const ok=await call(A,'flexible');assert.equal(ok.status,200);
+  assert.equal(JSON.parse((await ok.json()).result.content[0].text).life_schedule,'flexible');
+  assert.equal((await call(null)).status,401);
+  assert.equal((await call('not-a-member')).status,401);
+  revoked.add(A);
+  assert.equal((await call(A,'fixed')).status,401);
+  assert.equal((await call(INACTIVE)).status,403);
+  assert.deepEqual(rows(),[{user_id:A,life_schedule:'flexible'}]);
+  // Another member is unaffected by A's revocation and can only write their own row.
+  assert.equal((await call(B,'unpredictable')).status,200);
+  assert.deepEqual(rows(),[{user_id:A,life_schedule:'flexible'},{user_id:B,life_schedule:'unpredictable'}]);
+ }finally{db.sqlite.close();}
+});
