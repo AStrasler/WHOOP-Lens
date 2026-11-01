@@ -83,6 +83,9 @@ test("Liquid glass keeps the merged repair contracts", () => {
     "android.permission.USE_BIOMETRIC",
     "android.permission.BLUETOOTH_SCAN",
     "android.permission.BLUETOOTH_CONNECT",
+    "android.permission.FOREGROUND_SERVICE",
+    "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
+    "android.permission.POST_NOTIFICATIONS",
     "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND",
     "android.permission.health.READ_DISTANCE",
     "android.permission.health.READ_ACTIVE_CALORIES_BURNED",
@@ -100,7 +103,7 @@ test("Liquid glass keeps the merged repair contracts", () => {
     "android.permission.health.READ_HEART_RATE",
     "android.permission.health.READ_EXERCISE",
   ]);
-  assert.doesNotMatch(manifest, /ACCESS_FINE_LOCATION|BLUETOOTH_ADVERTISE|health\.WRITE_|CAMERA|RECORD_AUDIO|POST_NOTIFICATIONS/);
+  assert.doesNotMatch(manifest, /ACCESS_FINE_LOCATION|BLUETOOTH_ADVERTISE|health\.WRITE_|CAMERA|RECORD_AUDIO/);
   assert.equal(existsSync(new URL("../android/app/src/main/res/font/covered_by_your_grace.ttf", import.meta.url)), true);
   assert.equal(existsSync(new URL("../android/app/src/main/assets/COVERED-BY-YOUR-GRACE-OFL.txt", import.meta.url)), true);
   const retired = read("../android/app/src/main/res/values/lens_glass_colors.xml") + read("../android/app/src/main/java/io/github/astrasler/whooplens/GlassSurface.kt");

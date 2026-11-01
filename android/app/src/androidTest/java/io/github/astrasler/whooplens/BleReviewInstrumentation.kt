@@ -116,6 +116,7 @@ class BleReviewInstrumentation : Instrumentation() {
                                     { scanned = true },
                                     { selected = it },
                                     { stopped = true },
+                                    {},
                                 )
                                 fun texts(v: View): List<TextView> =
                                     if (v is TextView) listOf(v)
@@ -175,7 +176,7 @@ class BleReviewInstrumentation : Instrumentation() {
                         viewport.addView(content)
                         host.addView(viewport, android.widget.FrameLayout.LayoutParams(-1, -1))
                         val live = BleViewState(phase = BlePhase.LIVE, sample = sample)
-                        val binding = renderBleScreen(ui, content, live, 1100, {}, {}, {})
+                        val binding = renderBleScreen(ui, content, live, 1100, {}, {}, {}, {})
                         host.measure(
                             View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
                             View.MeasureSpec.makeMeasureSpec(900, View.MeasureSpec.EXACTLY),

@@ -359,6 +359,158 @@ class BleTest {
     }
 
     @Test
+    fun stopKeepsSelectionAndReconnectResumesTheSameStrapWithoutScanning() {
+        val f = Fixture()
+        f.live()
+        f.c.stop()
+        assertEquals(BlePhase.STOPPED, f.c.state.phase)
+        assertTrue(BleBackgroundPolicy.canReconnect(f.c.state))
+        f.c.reconnect()
+        assertEquals(1, f.transport.scans)
+        assertEquals(2, f.transport.connections)
+        assertEquals(BlePhase.CONNECTING, f.c.state.phase)
+        assertEquals(device, f.c.state.selected)
+        f.transport.events!!.subscribed("HR CCCD confirmed")
+        f.transport.events!!.packet(packet)
+        assertEquals(62, f.c.state.sample!!.measurement.bpm)
+    }
+
+    @Test
+    fun reconnectNeedsAPriorSelectionAndAnEndedSession() {
+        val f = Fixture()
+        f.c.reconnect()
+        assertEquals(0, f.transport.connections)
+        f.live()
+        f.c.reconnect()
+        assertEquals("No second connection while live", 1, f.transport.connections)
+        assertEquals(BlePhase.LIVE, f.c.state.phase)
+    }
+
+    @Test
+    fun reconnectAfterRetriesAreExhaustedStartsAFreshRetryBudget() {
+        val f = Fixture()
+        f.live()
+        repeat(3) {
+            f.transport.events!!.failed("Lost", true)
+            if (f.timer.tasks.isNotEmpty()) f.timer.fire()
+        }
+        assertEquals(BlePhase.ERROR, f.c.state.phase)
+        f.c.reconnect()
+        assertEquals(BlePhase.CONNECTING, f.c.state.phase)
+        f.transport.events!!.failed("Lost", true)
+        assertEquals(BlePhase.RETRYING, f.c.state.phase)
+    }
+
+    @Test
+    fun reconnectCannotCarryAStrapAcrossAccounts() {
+        val f = Fixture()
+        f.live()
+        f.c.stop()
+        f.account = "B"
+        f.c.reconnect()
+        assertEquals(1, f.transport.connections)
+        assertNull(f.c.state.selected)
+        assertNull(f.c.state.sample)
+    }
+
+    @Test
+    fun reconnectStillRequiresPermissionAndBluetooth() {
+        val f = Fixture()
+        f.live()
+        f.c.stop()
+        f.allowed = false
+        f.c.reconnect()
+        assertEquals(1, f.transport.connections)
+        assertEquals(BlePhase.UNAVAILABLE, f.c.state.phase)
+        f.allowed = true
+        f.transport.issue = "Bluetooth off"
+        f.c.reconnect()
+        assertEquals(1, f.transport.connections)
+        f.transport.issue = null
+        f.c.reconnect()
+        assertEquals(2, f.transport.connections)
+    }
+
+    @Test
+    fun leavingTheScreenStopsOnlyScanningAndKeepsCandidates() {
+        val f = Fixture()
+        f.discover()
+        val stops = f.transport.stops
+        f.c.stopScan()
+        assertEquals(BlePhase.IDLE, f.c.state.phase)
+        assertEquals(listOf(device), f.c.state.candidates)
+        assertTrue(f.transport.stops > stops)
+        assertTrue("Scan timeout cancelled", f.timer.tasks.isEmpty())
+        f.c.connect(device.id)
+        assertEquals(1, f.transport.connections)
+        f.transport.events!!.subscribed("HR CCCD confirmed")
+        val liveStops = f.transport.stops
+        f.c.stopScan()
+        assertEquals("A live session survives backgrounding", BlePhase.LIVE, f.c.state.phase)
+        assertEquals(liveStops, f.transport.stops)
+        f.transport.events!!.packet(packet)
+        assertEquals(62, f.c.state.sample!!.measurement.bpm)
+    }
+
+    @Test
+    fun foregroundServiceCoversExactlyTheSessionPhases() {
+        BlePhase.values().forEach {
+            assertEquals(
+                it.name,
+                it in setOf(BlePhase.CONNECTING, BlePhase.LIVE, BlePhase.RETRYING),
+                BleBackgroundPolicy.keepsService(it),
+            )
+        }
+    }
+
+    @Test
+    fun backgroundContinuationNeedsAVisibleNotification() {
+        BlePhase.values().forEach { phase ->
+            assertFalse(phase.name, BleBackgroundPolicy.continuesInBackground(phase, false))
+            assertEquals(
+                phase.name,
+                BleBackgroundPolicy.keepsService(phase),
+                BleBackgroundPolicy.continuesInBackground(phase, true),
+            )
+        }
+        val f = Fixture()
+        f.live()
+        f.c.stop("Stopped when you left WhoopLens: notifications are off.")
+        assertEquals(BlePhase.STOPPED, f.c.state.phase)
+        assertTrue(f.c.state.message.contains("notifications are off"))
+        assertTrue("Reconnect stays available", BleBackgroundPolicy.canReconnect(f.c.state))
+    }
+
+    @Test
+    fun blockingTheNotificationAfterBackgroundingEndsTheSession() {
+        // Codex P1: a channel blocked after the app left the screen must stop collection.
+        val f = Fixture()
+        f.live()
+        assertTrue(BleBackgroundPolicy.stopsForHiddenNotification(f.c.state.phase, appVisible = false, notificationVisible = false))
+        assertFalse("visible notification keeps it", BleBackgroundPolicy.stopsForHiddenNotification(f.c.state.phase, false, true))
+        assertFalse("app on screen keeps it until onStop", BleBackgroundPolicy.stopsForHiddenNotification(f.c.state.phase, true, false))
+        val stops = f.transport.stops
+        f.c.stop("Stopped: Direct BLE notifications were turned off while WhoopLens was in the background.")
+        assertTrue(f.transport.stops > stops)
+        f.transport.events?.packet(packet)
+        assertEquals(BlePhase.STOPPED, f.c.state.phase)
+        listOf(BlePhase.IDLE, BlePhase.SCANNING, BlePhase.STOPPED, BlePhase.ERROR).forEach {
+            assertFalse(it.name, BleBackgroundPolicy.stopsForHiddenNotification(it, false, false))
+        }
+    }
+
+    @Test
+    fun sessionNotificationNeverCarriesMeasurements() {
+        val f = Fixture()
+        f.live()
+        f.transport.events!!.packet(bytes(0x10, 173, 0x00, 0x04))
+        val (title, text) = BleBackgroundPolicy.notification(f.c.state)
+        assertEquals("Direct BLE connected", title)
+        assertTrue(text.contains(device.name))
+        assertFalse(title.any { it.isDigit() } || text.contains("173") || text.contains("bpm"))
+    }
+
+    @Test
     fun encryptedCacheUsesAuthenticatedCiphertextAndRejectsCorruption() {
         var blob: ByteArray? = null
         val key = SecretKeySpec(ByteArray(32) { it.toByte() }, "AES")

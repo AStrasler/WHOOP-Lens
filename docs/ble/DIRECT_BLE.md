@@ -45,16 +45,32 @@ packet/snapshot, written at most once per five seconds (first valid reading
 immediately). Sudden process death may therefore leave a saved observation up
 to five seconds behind; it is always shown as saved after restart.
 
-Leaving Direct BLE, pausing/locking/backgrounding the app or user Stop cancels
-scan/retry timers, closes GATT and rejects old connection callbacks. Logout and
-account change additionally clear BLE cache and revoke the local device/session
-selection. Every callback checks account, permission and connection generation.
+Scanning is screen-only: leaving Direct BLE or pausing the app ends a scan and
+keeps its candidate list. A member-started session (connecting, live or
+retrying) runs in a `connectedDevice` foreground service, so it survives leaving
+the screen, switching apps, system dialogs such as OS pairing, and screen lock.
+The service shows an ongoing low-importance notification with the phase and the
+selected strap label only, never readings; its lock-screen public version says
+only "Direct BLE session active". The notification opens Direct BLE and has a
+Stop action. If notifications are off or the channel is blocked, a session stops
+when WhoopLens leaves the screen, so collection is never invisible. Stop (in app
+or notification), swiping the notification away, swiping WhoopLens from Recents,
+retries running out, Bluetooth off or permission revocation end the session and
+the service. The service is `START_NOT_STICKY` and never starts from boot or a
+schedule; it starts only from an explicit Connect or Reconnect tap. After a
+session ends, Reconnect resumes the same selected strap without a new scan, under
+the same account, permission and Bluetooth checks, with a fresh two-retry budget.
+Stop cancels scan/retry timers, closes GATT and rejects old connection callbacks.
+Logout and account change additionally clear BLE cache and revoke the local
+device/session selection. Every callback checks account, permission and
+connection generation. The permission and security review is in
+`BACKGROUND_BLE_SECURITY_REVIEW.md`.
 Offline BLE uses the existing locally selected signed-in account; it never
 creates a parallel login or exports tokens over Bluetooth.
 
 Official WHOOP API and Health Connect models/cache/widget routing remain
-unchanged. BLE does not enter their two-source enum. No Bluetooth background
-service, WorkManager BLE collection, cloud upload, health deletion, history
+unchanged. BLE does not enter their two-source enum. Apart from the member-started
+connected-device session above, there is no WorkManager BLE collection, cloud upload, health deletion, history
 drain/ACK, trim/read-pointer change, clock write, firmware operation or new
 third-party runtime library is added. Official WHOOP requests retain their
 existing OAuth/membership checks. Existing dashboard background refresh remains.
@@ -106,9 +122,12 @@ reset the strap, unpair existing devices, or send speculative control commands.
 5. Observe actual HR and compare a contemporaneous trusted reading. Confirm
    source and receipt timestamp. R-R may be absent; do not fabricate it.
 6. Test Stop, unexpected disconnect, two-retry limit, Bluetooth off/on, permission
-   revocation, navigation away, screen lock and app exit. No background BLE
-   notifications/collection should persist. Reconnection requires an active
-   session or a new manual action.
+   revocation, navigation away, screen lock, switching apps and the OS pairing
+   prompt. A live session must keep receiving with the ongoing notification
+   shown; the lock-screen notification must not show readings. Notification Stop
+   and swiping WhoopLens from Recents must end the session and remove the
+   notification. After a stop or exhausted retries, Reconnect must resume the same
+   strap without scanning. No notification or collection may persist after Stop.
 7. Test offline operation and freshness after 15 seconds without packets. Test
    app/process restart: saved observations must not say Live.
 8. Switch/logout accounts during scan, connection and streaming. Old candidates,
