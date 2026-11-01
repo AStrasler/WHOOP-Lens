@@ -13,6 +13,16 @@ References:
 - `docs/android-s26-ultra-widgets.md`
 - `docs/android-companion.test.mjs`
 
+## Session readiness (November 1, 2026)
+
+- **Build to test:** published `android-v0.6.0-beta.5` (versionCode 12), already on the owner's Galaxy S26 Ultra. Its Nov 1 device acceptance covered install, sign-in, data, permissions and screens (`docs/releases/0.6.0-beta.5.md`, PR #112). **Widget placement and lock-screen behavior were not part of it.**
+- **Install rule (new):** after the signing-key rotation, a locally built debug APK cannot install over the app without uninstalling and losing local data. Test only the published release build.
+- **Metadata to expect** (`android/app/src/main/res/xml/widget_*.xml` on PR #112): `targetCellWidth/Height` 1×1, `minResizeWidth/Height` 40dp, `maxResizeWidth/Height` 320×250dp, `widgetCategory` `home_screen` (plus `not_keyguard` on API 36). One UI may cache old widget metadata, so remove and re-add each widget before recording sizes.
+- **Before the session:** record Android/One UI build, home-screen grid (for example 4×5 or 5×6), font size and display zoom, and the app version from Settings → About & help.
+- **4×2 maximum:** Android has no maximum-cell attribute. Record the largest size One UI actually allows per widget. If it exceeds 4×2, the follow-up is to lower `maxResizeWidth/Height` from the measured One UI cell size, not to guess a value now.
+- **Lock screen:** record what Settings → Wallpaper and style → Lock screen → Add widgets offers. Absence of WHOOP Lens there is the expected, accurately documented result for the current build.
+- **Engineering status:** no code change is pending before the session. Any sizing change waits for measured One UI cell sizes.
+
 ## Physical-device acceptance record (owner-controlled)
 
 Record the Android version, One UI build, installed app build, launcher grid and font scale before testing. Only claim passes when witnessed on an actual Galaxy S26 Ultra.
