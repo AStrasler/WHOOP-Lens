@@ -32,4 +32,10 @@ Not changed: state expiry (10 minutes), the cap of 5 pending states per member, 
 
 Rollback: set the flag back to `false`. Links issued while the flag was on stop working, so the member asks for a new one; existing connections are unaffected.
 
-Tests: `cloudflare/test/whoop-start.test.mjs`.
+Tests: `cloudflare/test/whoop-start.test.mjs` (unit) and `cloudflare/test/whoop-start-browser.test.mjs` (real headless Chrome through the confirmation form, the WHOOP redirect and the callback; CI runs it with the runner's Chrome and fails if it can't).
+
+## Incident: "Not allowed" on Continue to WHOOP (Nov 1, 2026)
+
+Worker `77db9671` returned 403 "Not allowed. Please continue from the WhoopLens page." when a member clicked **Continue to WHOOP**. Production logs showed Chrome sent the form POST with `Origin: null` and `Sec-Fetch-Site: same-origin`. The confirmation page was served with `Referrer-Policy: no-referrer`, and browsers send `Origin: null` on form submissions from such documents. The start endpoint accepts only `https://whooplens.tech` or a missing Origin, so it rejected the request before reading the form. The state was in the POST body as intended; the URL showing no state was expected.
+
+Fix: the confirmation page alone is served with `Referrer-Policy: same-origin` (the approach the OAuth consent page already uses). The strict Origin check is unchanged and `Origin: null` is still rejected. The state-bearing URL is still never sent to another origin; the browser test asserts WHOOP receives no referrer. No state was bound or consumed by the failed attempts, so no data needed repair.

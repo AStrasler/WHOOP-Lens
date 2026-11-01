@@ -23,6 +23,11 @@ jobs:
         with:
           node-version: '22'
       - name: Test staged authentication and tenant isolation (in-memory SQLite)
+        env:
+          # Real-browser tests (WHOOP connect form, OAuth consent redirects) use the
+          # runner's preinstalled Chrome and must not silently skip in CI.
+          WHOOP_TEST_CHROME: /usr/bin/google-chrome
+          WHOOP_REQUIRE_BROWSER_TESTS: '1'
         run: node --test cloudflare/test/*.test.mjs
       - name: Verify staged Worker source parses
         run: |
