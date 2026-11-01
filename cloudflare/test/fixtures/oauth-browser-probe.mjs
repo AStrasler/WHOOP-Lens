@@ -22,19 +22,29 @@ auth=await listen((q,s)=>{
  else{if(q.method==='POST')consumed=true;const location=q.method==='POST'?auth+'/upstream-start':q.url==='/upstream-start'?access+'/login':destination;s.writeHead(302,{location});s.end();}
 });
 const profile=mkdtempSync(join(tmpdir(),'whoop-oauth-chrome-'));
-const chrome=spawn(chromePath,['--headless=new','--disable-gpu','--remote-debugging-port=0','--user-data-dir='+profile,'--no-first-run','--no-default-browser-check','--disable-background-networking','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1','about:blank'],{windowsHide:true,stdio:'ignore'});
+const chrome=spawn(chromePath,['--headless=new','--disable-gpu','--remote-debugging-port=0','--user-data-dir='+profile,'--no-first-run','--no-default-browser-check','--disable-background-networking','--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1','about:blank'],{windowsHide:true,stdio:['ignore','ignore','pipe']});
+// Keep the tail of Chrome's stderr and its exit status so a failed start says why.
+let chromeErr='',chromeExit=null;
+chrome.stderr.on('data',c=>{chromeErr=(chromeErr+c).slice(-2000);});
+chrome.once('exit',(code,signal)=>{chromeExit={code,signal};});
 let ws;
 try{
  const portfile=join(profile,'DevToolsActivePort');let port;
  // On Windows Chrome can hold its newly-created port file open briefly.
- for(let i=0;i<100;i++){
+ // Cold CI runners can take well over 10 s to start a first headless Chrome.
+ for(let i=0;i<300&&!chromeExit;i++){
   try{const candidate=readFileSync(portfile,'utf8').split('\n')[0];if(/^\d+$/.test(candidate)){port=candidate;break;}}
   catch(error){if(!['ENOENT','EBUSY','EACCES'].includes(error.code))throw error;}
   await pause(100);
  }
- if(!port)throw Error('Test Chrome did not start');
- const targets=await (await fetch('http://127.0.0.1:'+port+'/json/list')).json();
- ws=new WebSocket(targets.find(t=>t.type==='page').webSocketDebuggerUrl);
+ if(!port)throw Error('Test Chrome did not start ('+(chromeExit?'exited '+JSON.stringify(chromeExit):'no DevTools port after 30 s')+'): '+chromeErr.trim().slice(-600));
+ let target;
+ for(let i=0;i<50&&!target;i++){
+  target=(await (await fetch('http://127.0.0.1:'+port+'/json/list')).json()).find(t=>t.type==='page');
+  if(!target)await pause(100);
+ }
+ if(!target)throw Error('Test Chrome opened no page');
+ ws=new WebSocket(target.webSocketDebuggerUrl);
  await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;});
  const pending=new Map();let seq=0;
  ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);pending.delete(m.id);m.error?p?.reject(Error('CDP command failed')):p?.resolve(m.result);}if(m.method==='Log.entryAdded'&&m.params.entry.text.includes('form-action'))blocked=true; if(m.method==='Network.loadingFailed'){failures.push({reason:m.params.blockedReason,error:m.params.errorText});if(m.params.blockedReason==='csp')blocked=true;}};
