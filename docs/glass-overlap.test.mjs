@@ -11,8 +11,8 @@ test("Vitals baseline uses history while its chart stays limited to today", () =
   assert.match(vitals, /history\.filter\s*\{\s*it\.time > now - 86400000/);
   assert.match(vitals, /chart\(c, p, DataSource\.HEALTH_CONNECT\)/);
   assert.match(vitals, /baselineDelta\(latest, personalBaseline\(snapshot\?\.health\?\.baselineSeries\("heart"\)\.orEmpty\(\), now\)\)/);
-  assert.match(activity, /personalBaseline\(b\?\.baselineSeries\(k\)\.orEmpty\(\)/);
-  assert.match(activity, /snapshot\?\.health\?\.baselineSeries\(key\)\.orEmpty\(\)/);
+  assert.match(activity, /personalBaseline\(b\?\.let \{ it\.presentationPoints\(k, it\.baselineSeries\(k\)\) \}\.orEmpty\(\)/);
+  assert.match(activity, /snapshot\?\.health\?\.let \{ it\.presentationPoints\(key, it\.baselineSeries\(key\)\) \}\.orEmpty\(\)/);
   const health = read("../android/app/src/main/java/io/github/astrasler/whooplens/HealthDashboard.kt");
   assert.match(health, /heartPoints\.takeLast\(2000\)/);
   assert.match(health, /series\[HEART_RATE_DAILY\] = emptyList\(\)/);

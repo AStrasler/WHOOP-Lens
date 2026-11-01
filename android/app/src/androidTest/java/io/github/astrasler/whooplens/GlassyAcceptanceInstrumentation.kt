@@ -59,9 +59,20 @@ class GlassyAcceptanceInstrumentation : Instrumentation() {
                         }, { parent ->
                             tiles += ui.statsCard(parent, "Resting HR", "52 bpm", "◉", null, DataSource.WHOOP) { opened++ }
                         })
+                        // Reproduce the Home recovery heading/badge row. A pill radius
+                        // must never become a ~2000dp background minimum width.
+                        val sourceRow = ui.row()
+                        val recoveryHeading = ui.text("Recovery",24f,role=TextRole.HAND)
+                        sourceRow.addView(recoveryHeading,android.widget.LinearLayout.LayoutParams(0,-2,1f))
+                        ui.chip(sourceRow,DataSource.WHOOP)
+                        val sourceBadge=sourceRow.getChildAt(1)
+                        ui.add(root,sourceRow)
                         val pixels = ui.dp(width)
                         root.measure(View.MeasureSpec.makeMeasureSpec(pixels, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED))
                         root.layout(0, 0, pixels, root.measuredHeight)
+                        check(sourceBadge.width < pixels / 2) { "Source badge expanded across the card" }
+                        check(recoveryHeading.width > ui.dp(80)) { "Source badge collapsed the recovery title" }
+                        check(sourceRow.height < ui.dp(100)) { "Source row stretched the recovery card" }
                         check(button.height >= ui.dp(48))
                         button.performClick()
                         for (tile in tiles) {

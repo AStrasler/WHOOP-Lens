@@ -131,7 +131,10 @@ internal class GlassSurface(private val context: Context) {
         return LayerDrawable(layers).apply {
             val h = layers.size - 1
             setLayerGravity(h, android.view.Gravity.TOP or android.view.Gravity.FILL_HORIZONTAL)
-            setLayerInset(h, r.toInt(), dp(1).toInt(), r.toInt(), 0)
+            // A pill's 999dp corner radius is not a layout inset. Using it here
+            // gives badges a ~2000dp minimum width and crushes adjacent titles.
+            val inset = if (role == GlassRole.CHIP) dp(12).toInt() else r.toInt()
+            setLayerInset(h, inset, dp(1).toInt(), inset, 0)
         }
     }
 

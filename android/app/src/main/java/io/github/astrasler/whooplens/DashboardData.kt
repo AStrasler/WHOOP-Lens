@@ -22,13 +22,19 @@ internal data class Metric(
     val measuredAt: Long?,
     val origin: String? = null,
 ) {
+    fun forDisplay(): Metric = if (unit == "°C") copy(value = value?.let { it * 9.0 / 5.0 + 32.0 }, unit = "°F") else this
+
     fun display(): String =
-        value?.let {
+        forDisplay().value?.let {
             if (unit == "min") duration(it)
             else
-                java.text.DecimalFormat("#,##0.#").format(it) + if (unit.isBlank()) "" else " $unit"
+                java.text.DecimalFormat("#,##0.#").format(it) + if (unit.isBlank()) "" else " ${forDisplay().unit}"
         } ?: "Not shared"
 }
+
+// Convert presentation only: cached/provider values retain their original units.
+internal fun DataBatch.presentationPoints(key: String, points: List<Point>): List<Point> =
+    if (metric(key)?.unit == "°C") points.map { it.copy(value = it.value?.let { c -> c * 9.0 / 5.0 + 32.0 }) } else points
 
 internal fun duration(minutes: Double): String =
     "${minutes.toLong() / 60}h ${minutes.toLong() % 60}m"

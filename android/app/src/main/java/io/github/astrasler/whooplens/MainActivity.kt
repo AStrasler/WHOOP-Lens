@@ -926,7 +926,8 @@ class MainActivity : ComponentActivity() {
             metricDetail(root)
             return
         }
-        if (page in setOf("Home", "Activity", "Sleep", "Vitals")) sourceWarnings(root)
+        if (page == "Home") homeSourceStatus(root)
+        else if (page in setOf("Activity", "Sleep", "Vitals")) sourceWarnings(root)
         when (page) {
             "Home" -> home(root)
             "Activity" -> activity(root)
@@ -987,8 +988,8 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun metric(key: String, source: DataSource) =
-        if (source == DataSource.WHOOP) snapshot?.whoop?.metric(key)
-        else snapshot?.health?.metric(key)
+        if (source == DataSource.WHOOP) snapshot?.whoop?.metric(key)?.forDisplay()
+        else snapshot?.health?.metric(key)?.forDisplay()
 
     private fun metricCard(root: LinearLayout, key: String, title: String, source: DataSource) {
         val card =
@@ -999,8 +1000,8 @@ class MainActivity : ComponentActivity() {
                 render()
             }
         val series =
-            if (source == DataSource.WHOOP) snapshot?.whoop?.baselineSeries(key).orEmpty()
-            else snapshot?.health?.baselineSeries(key).orEmpty()
+            if (source == DataSource.WHOOP) snapshot?.whoop?.let { it.presentationPoints(key, it.baselineSeries(key)) }.orEmpty()
+            else snapshot?.health?.let { it.presentationPoints(key, it.baselineSeries(key)) }.orEmpty()
         ui.add(
             card,
             ui.text(
@@ -1039,6 +1040,13 @@ class MainActivity : ComponentActivity() {
             ),
         )
         b.notices.forEach { ui.add(root, ui.text(it, 12f, LensColors.amber)) }
+    }
+
+    private fun homeSourceStatus(root: LinearLayout) {
+        val batches = listOfNotNull(snapshot?.whoop, snapshot?.health)
+        if (batches.none { it.stale(System.currentTimeMillis()) || !it.complete || it.notices.isNotEmpty() }) return
+        ui.add(root, ui.text("Some readings are unavailable, saved or limited. View source status for details and refresh options.", 12f, LensColors.amber), 4)
+        ui.button(root, "View source status") { page = "Sources & freshness"; render() }
     }
 
     private fun sourceWarnings(root: LinearLayout, batches: List<DataBatch> = listOfNotNull(snapshot?.whoop, snapshot?.health)) {
@@ -1723,9 +1731,9 @@ class MainActivity : ComponentActivity() {
             render()
         }
         ui.metric(root, metric(k, detailSource), metric(k, detailSource)?.title ?: k, detailSource, showHeading = false)
-        val p = chartSlots(b?.series?.get(k).orEmpty(), rangeDays, System.currentTimeMillis())
+        val p = chartSlots(b?.let { it.presentationPoints(k, it.series[k].orEmpty()) }.orEmpty(), rangeDays, System.currentTimeMillis())
         ui.card(root) { c ->
-            val baseline = personalBaseline(b?.baselineSeries(k).orEmpty(), System.currentTimeMillis())
+            val baseline = personalBaseline(b?.let { it.presentationPoints(k, it.baselineSeries(k)) }.orEmpty(), System.currentTimeMillis())
             chart(c, p, detailSource, baseline = baseline)
             ui.add(
                 c,
@@ -1744,7 +1752,7 @@ class MainActivity : ComponentActivity() {
                 c,
                 ui.text(
                     statistics(p)?.let {
-                        "Average %.1f · High %.1f · Low %.1f".format(it.first, it.second, it.third)
+                        "Average %.1f · High %.1f · Low %.1f".format(it.first, it.second, it.third) + (metric(k, detailSource)?.unit?.takeIf { unit -> unit == "°F" }?.let { unit -> " $unit" } ?: "")
                     } ?: "No shared readings",
                     14f,
                     LensColors.muted,
@@ -1761,8 +1769,7 @@ class MainActivity : ComponentActivity() {
             )
         }
         ui.heading(root, "Measurements")
-        b?.series
-            ?.get(k)
+        b?.let { it.presentationPoints(k, it.series[k].orEmpty()) }
             .orEmpty()
             .filter { it.time > System.currentTimeMillis() - rangeDays * 86400000L }
             .takeLast(100)
@@ -1773,7 +1780,7 @@ class MainActivity : ComponentActivity() {
                     ui.text(
                             dateTime(r.time) +
                                 "\n" +
-                                (r.value?.let { java.text.DecimalFormat("0.##").format(it) }
+                                (r.value?.let { java.text.DecimalFormat("0.##").format(it) + (metric(k, detailSource)?.unit?.takeIf { unit -> unit == "°F" }?.let { unit -> " $unit" } ?: "") }
                                     ?: "Not shared") +
                                 (r.origin?.let { "\nWriting app: " + it } ?: ""),
                             14f,
