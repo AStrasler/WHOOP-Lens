@@ -37,20 +37,47 @@ internal fun concealAfterScreenBroadcast(
         Intent.ACTION_SCREEN_ON, Intent.ACTION_USER_PRESENT -> deviceLocked || keyguardLocked
         else -> currentlyConcealed
     }
+/**
+ * Vertical budget in dp, scaled by font: 12dp padding; stacked title row about 28dp (20sp
+ * handwritten); primary needs at least 28dp; each supporting line about 18dp (13sp); footer about
+ * 17dp (12sp). The wide layout has a 16dp title and footer and puts supporting lines beside the
+ * primary. Budgets were checked against native renders (WidgetFitInstrumentation).
+ */
 internal data class WidgetSpace(val width: Float, val height: Float, val fontScale: Float = 1f) {
+    private val f
+        get() = fontScale.coerceAtLeast(1f)
+
+    val wide
+        get() = width >= 260 * fontScale && height >= 110
+
     val labeled
-        get() = width >= 110 * fontScale && height >= 60 * fontScale
+        get() = width >= 110 * fontScale && height >= PADDING + (TITLE + PRIMARY) * f
+
+    private val titleHeight
+        get() = if (wide) SMALL_ROW * f else if (labeled) TITLE * f else 0f
 
     val footer
-        get() = width >= 140 * fontScale && height >= 64 * fontScale
+        get() =
+            width >= 140 * fontScale &&
+                height >= PADDING + titleHeight + (if (wide) SMALL_ROW else PRIMARY + FOOTER) * f
 
     val supporting
-        get() =
-            if (!footer) 0
-            else
-                ((height - 60 * fontScale) / (20 * fontScale))
-                    .toInt()
-                    .coerceIn(0, if (width >= 260) 4 else 2)
+        get(): Int {
+            if (!footer) return 0
+            val room =
+                if (wide) height - PADDING - titleHeight - SMALL_ROW * f
+                else height - PADDING - titleHeight - (FOOTER + PRIMARY) * f
+            return (room / (LINE * f)).toInt().coerceIn(0, if (width >= 260) 4 else 2)
+        }
+
+    private companion object {
+        const val PADDING = 12f
+        const val TITLE = 28f
+        const val PRIMARY = 28f
+        const val LINE = 18f
+        const val FOOTER = 17f
+        const val SMALL_ROW = 16f
+    }
 }
 
 internal data class WidgetPresentation(
@@ -158,7 +185,7 @@ internal fun widgetPresentation(
             (if (isDailyTotal(metric)) dailyTotalPeriodLabel(metric, now) + " · " else "") + sourceLabel else "",
         label + ": " + exact + ". " + allDescription + ". Tap to open WhoopLens.",
         stale,
-        space.width >= 260 * space.fontScale && space.height >= 110,
+        space.wide,
         glyph =
             when (source) {
                 DataSource.WHOOP -> WidgetSource.WHOOP.glyph

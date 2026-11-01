@@ -4,14 +4,18 @@ All six home providers (Daily, Recovery, Steps, Sleep, Vitals, Expanded) declare
 1 x 1 cell footprint. The picker uses a separate one-cell preview that shows an em
 dash and no sample measurement. Issue #102 corrected the lock-screen claim: no
 provider opts into `keyguard`, and API 36 resources add `not_keyguard`. Samsung
-Brief widgets and Now Bar are not provided. Evidence, inference, and the Galaxy
+Brief widgets and Now Bar are not provided. The seventh provider, the non-numeric
+WhoopLens status widget, uses the same 1 x 1 target, 40dp minimums and maximum
+hints (it previously required 180 x 80dp, about three cells, with no maximum).
+Settings -> Widgets & privacy -> Placed widget sizes lists each placed widget's
+launcher-reported dp bounds for recording One UI cell sizes. Evidence, inference, and the Galaxy
 S26 Ultra checklist are in `docs/android-s26-ultra-widgets.md`. Emulator renders
 are not One UI cell measurements and are not results from the phone.
 
 ## Sizing and content
 
 - `targetCellWidth=1`, `targetCellHeight=1`; minimum/fallback resize bounds 40 x 40dp.
-- Both resize axes are enabled. Maximum hints are 320 x 250dp. On the handset
+- Both resize axes are enabled. Maximum hints are 284 x 180dp (were 320 x 250dp; see the 4 x 2 section). On the handset
   table in Android's widget layout guide, portrait 4 cells are 276dp wide and 5
   cells are 349dp; portrait 2 cells are 220dp tall and 3 cells are 337dp. The
   hints sit between those published estimates. They are **not Samsung cells** and
@@ -73,6 +77,67 @@ and stale-account WorkManager checks also run. No new background transfers run.
 Local evidence and an installable debug APK are saved under the development
 worktree's ignored `repair-results/widget-sizing/` directory. The previous APK,
 original implementation commit and backups are retained.
+
+## Can the 4 x 2 maximum be enforced? (#102 investigation, Nov 1, 2026)
+
+**Short answer: not reliably from the app.** The original requirement (1 x 1 minimum,
+4 x 2 maximum on the placed widget) is **not complete**. The 1 x 1 minimum is met for all
+seven providers. The 4 x 2 maximum depends on the launcher.
+
+What the platform offers:
+
+- Android's widget layout guide describes `maxResizeWidth`/`maxResizeHeight` (API 31+) as
+  the maximum size the launcher allows the user to resize to, in **dp**. There is no
+  maximum-cell attribute. The guide also says cell size and widget margins vary across
+  devices.
+- AOSP Launcher3 turns the dp maximum into a cell span with
+  `ceil((maxResize + padding + spacing) / (cellSize + spacing))`, capped by the grid. Because
+  it rounds **up**, a dp value lands on a different span on each grid: the same 320dp can be
+  3, 4 or 5 columns depending on column count, screen width and the user's display size.
+  (Source: Launcher3 `LauncherAppWidgetProviderInfo.initSpans`/`getSpanX`.)
+- Samsung One UI Home is closed source and publishes no widget-span rule. Whether it uses
+  the same rounding, and its cell sizes on the Galaxy S26 Ultra, can only be measured on
+  the phone.
+
+So no single dp pair yields exactly 4 x 2 on every grid (4x5, 4x6, 5x5, 5x6) and display
+size. A value tight enough to stop a fifth column on a 5-column grid can stop the fourth
+column on a 4-column grid.
+
+Alternatives considered:
+
+| Option | Effect | Verdict |
+| --- | --- | --- |
+| Tune `maxResizeWidth/Height` from measured S26 Ultra cell sizes | Exact 4 x 2 on the measured grid; other grids may differ | **Recommended.** Needs the physical session |
+| Width-qualified provider XML (`xml-w400dp` etc.) | Adjusts for screen width only, not the user's grid or display-size choice | Partial; only after measurements |
+| Render 4 x 2 content centered in larger frames | Does not stop the launcher; adds empty space the requirement forbids | Rejected |
+| Disable resizing | Breaks the 1 x 1 to 4 x 2 range | Rejected |
+
+**Constraint chosen (Nov 1, 2026):** `maxResizeWidth="284dp"`, `maxResizeHeight="180dp"` on
+all seven providers (were 320 x 250dp). Under the Launcher3 rule, modeled in
+`WidgetSpanModelTest`:
+
+- Height 180dp gives exactly two rows for row pitches of 100-165dp (4- to 6-row phone grids)
+  with the 12-20dp padding and spacing Launcher3 adds. The old 250dp allowed three rows on
+  5- and 6-row grids.
+- Width 284dp reaches four columns on 4-column grids with column pitch up to 96dp, and stays
+  at four on 5-column grids with pitch of 76dp or more (about 400dp-wide phones). On narrower
+  5-column layouts a fifth column remains possible. That is the residual risk; no single dp
+  value avoids it without capping some 4-column grids at three.
+
+This is the safest reasonable constraint available from the app. It is **not** a passed
+4 x 2 requirement until the S26 Ultra checks below confirm it on One UI.
+
+Settings -> Widgets & privacy -> Placed widget sizes is a **measurement aid**, not a
+completion of this requirement. It shows the launcher-reported dp bounds per placed widget
+so the S26 session can record what each cell span maps to. Once recorded, the follow-up is
+to set the hints so the S26 Ultra's default grid stops at 4 x 2, and document the grids it
+was verified on.
+
+Automated coverage (`WidgetFitInstrumentation`, emulator workflow `android-widget-fit.yml`):
+all seven providers' installed metadata; native renders at launcher-like sizes from one
+cell to 4 x 2 at 100/130/200% fonts; primary text fit; no clipped status lines; full status
+text and widget descriptions available to accessibility; Summary descriptions carry no
+measurements. It cannot measure One UI placement or spans.
 
 ## Physical Samsung checks still required
 

@@ -94,8 +94,8 @@ test('All six home widgets declare compact picker previews and bounded two-axis 
     const v36 = read('../android/app/src/main/res/xml-v36/widget_' + name + '.xml');
     for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.match(xml, new RegExp('android:' + attr + '="1"'));
     for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.match(xml, new RegExp('android:' + attr + '="40dp"'));
-    assert.match(xml, /maxResizeWidth="320dp"/);
-    assert.match(xml, /maxResizeHeight="250dp"/);
+    assert.match(xml, /maxResizeWidth="284dp"/);
+    assert.match(xml, /maxResizeHeight="180dp"/);
     assert.match(xml, /resizeMode="horizontal\|vertical"/);
     assert.match(xml, /previewLayout="@layout\/lens_widget_preview"/);
     assert.match(xml, /initialLayout="@layout\/lens_widget_responsive"/);
@@ -113,6 +113,28 @@ test('All six home widgets declare compact picker previews and bounded two-axis 
   const activity = read('../android/app/src/main/java/io/github/astrasler/whooplens/MainActivity.kt');
   assert.doesNotMatch(activity, /Lock-screen provider/);
   assert.match(activity, /Measurements stay off the lock screen/);
+});
+
+test('The status widget follows the same 1x1 minimum and resize bounds as the six home widgets', () => {
+  // #102: it previously declared 180x80dp minimums (about three cells) and no maximum.
+  const xml = read('../android/app/src/main/res/xml/widget_private_lock.xml');
+  const v36 = read('../android/app/src/main/res/xml-v36/widget_private_lock.xml');
+  for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.match(xml, new RegExp('android:' + attr + '="1"'));
+  for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.match(xml, new RegExp('android:' + attr + '="40dp"'));
+  assert.match(xml, /maxResizeWidth="284dp"/);
+  assert.match(xml, /maxResizeHeight="180dp"/);
+  assert.match(xml, /previewLayout="@layout\/lens_widget_preview"/);
+  assert.match(xml, /initialLayout="@layout\/lens_widget_compact"/);
+  assert.equal(v36.replace('home_screen|not_keyguard', 'home_screen'), xml);
+  const widgets = read('../android/app/src/main/java/io/github/astrasler/whooplens/LensWidgets.kt');
+  assert.match(widgets, /statusWidgetTight\(widthDp, heightDp, context\.resources\.configuration\.fontScale\)/);
+  // One cell: a single autosized word, full text kept for accessibility.
+  const tiny = read('../android/app/src/main/res/layout/lens_widget_status_tiny.xml');
+  assert.match(tiny, /autoSizeTextType="uniform"/);
+  assert.match(tiny, /maxLines="1"/);
+  assert.match(widgets, /statusWidgetShortText\(text\)/);
+  assert.match(widgets, /clickable\(statusViews\(context, text, size\.width, size\.height\)\)/);
+  assert.match(widgets, /setContentDescription\(R\.id\.widget_body, text\)/);
 });
 
 test('No provider opts into the keyguard, including the status widget', () => {
@@ -152,14 +174,23 @@ test('Widgets remain cache-only consumers and resize/background callbacks update
 
 test("Widget layouts declare valid autosize ranges for native inflation", () => {
   // Confirmed on One UI: uniform TextView inflation throws if max <= min.
-  for (const name of ["lens_widget_preview", "lens_widget_responsive", "lens_widget_wide"]) {
+  for (const name of ["lens_widget_preview", "lens_widget_responsive", "lens_widget_wide", "lens_widget_compact", "lens_widget_status_tiny"]) {
     const layout = read(`../android/app/src/main/res/layout/${name}.xml`);
     for (const match of layout.matchAll(/<TextView\b[^>]*>/g)) {
       const view = match[0];
       if (!view.includes('android:autoSizeTextType="uniform"')) continue;
-      const min = Number(view.match(/android:autoSizeMinTextSize="([\d.]+)sp"/)?.[1]);
-      const max = Number(view.match(/android:autoSizeMaxTextSize="([\d.]+)sp"/)?.[1]);
-      assert.ok(Number.isFinite(min) && min > 0 && max > min, `${name}: invalid autosize range`);
+      // A dp minimum (not scaled by the font) keeps the primary fitting at 200% text.
+      // Check max > min across the font-scale range Android offers.
+      const size = attr => {
+        const m = view.match(new RegExp(`android:${attr}="([\\d.]+)(sp|dp)"`));
+        return m ? { value: Number(m[1]), unit: m[2] } : null;
+      };
+      const min = size('autoSizeMinTextSize'), max = size('autoSizeMaxTextSize');
+      assert.ok(min && max && min.value > 0, `${name}: missing autosize bounds`);
+      for (const scale of [0.85, 1, 1.3, 2]) {
+        const px = s => s.value * (s.unit === 'sp' ? scale : 1);
+        assert.ok(px(max) > px(min), `${name}: invalid autosize range at font ${scale}`);
+      }
     }
   }
 });

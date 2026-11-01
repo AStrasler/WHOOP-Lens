@@ -1,0 +1,12 @@
+<!-- One-cell status widget: one short status word that autosizes to the cell. The dp minimum
+     keeps it on one line at 200% text in the smallest landscape cell (57x51dp). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:gravity="center" android:padding="4dp"
+    android:background="@drawable/widget_surface">
+    <TextView android:id="@+id/widget_body" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:gravity="center" android:textColor="#EEF6F5" android:fontFamily="@font/jetbrains_mono"
+        android:maxLines="1" android:includeFontPadding="false"
+        android:autoSizeTextType="uniform" android:autoSizeMinTextSize="8dp"
+        android:autoSizeMaxTextSize="13sp" android:autoSizeStepGranularity="1sp" />
+</LinearLayout>
