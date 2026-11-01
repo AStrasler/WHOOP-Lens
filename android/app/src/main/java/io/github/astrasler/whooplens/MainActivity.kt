@@ -2239,7 +2239,8 @@ class MainActivity : ComponentActivity() {
             val ready = state?.ready == true
             val status = when {
                 state == null -> "Checking service…"
-                ready -> if (state?.paused != false || prefs.getBoolean("sync-paused", true)) "Paused · manual review required" else "Ready · manual uploads only"
+                ready && state.lastSyncAt == null && state.stored == 0 -> "Not synced yet · manual review required"
+                ready -> if (state.paused || prefs.getBoolean("sync-paused", true)) "Paused · manual review required" else "Ready · manual uploads only"
                 state.code in setOf("activation_required", "feature_disabled", "migration_required") -> "Service activation required"
                 state.code == "sign_in_required" -> "Sign in again to check cloud sync"
                 else -> "Connection unavailable · retry status"
@@ -2280,7 +2281,9 @@ class MainActivity : ComponentActivity() {
 
     private fun reviewCloudSync() {
         val owner = account ?: return
-        val selected = prefs.getStringSet("sync-categories", emptySet()).orEmpty().intersect(ManualSync.categories.keys)
+        // Categories saved under a previous account never carry over (same rule as the card).
+        val selected = if (prefs.getString("sync-account", null) == owner) prefs.getStringSet("sync-categories", emptySet()).orEmpty().intersect(ManualSync.categories.keys) else emptySet()
+        if (selected.isEmpty()) { message = "Choose sync categories for this account before review."; render(); return }
         val preview = try {
             ManualSync.draft(snapshot ?: error("Refresh first"), owner, selected,
                 healthCategories.filter { it.permission in granted }.map { it.key }.toSet(), System.currentTimeMillis())

@@ -25,6 +25,11 @@ internal data class CloudSyncDraft(val account: String, val categories: Set<Stri
             "${record.category} · ${row.getString("observed_at")} · ${row.getJSONObject("payload")} ${row.getString("unit")} · ${row.optString("origin_package", "mixed/unknown origin")}"
         }
 }
+// The server requires a 1-80 character exercise_type; a blank Health Connect title would
+// otherwise reject the whole reviewed upload.
+internal fun syncExerciseType(title: String): String =
+    title.filterNot { it.isISOControl() }.trim().ifBlank { "Exercise" }.take(80)
+
 internal fun interface CloudSyncTransport {
     fun request(method: String, path: String, authorization: String, body: String?): Pair<Int, String>
 }
@@ -67,7 +72,7 @@ internal object ManualSync {
                 add("sleep","sleep_session",sleep.start,sleep.end,sleep.origin,"seconds",JSONObject().put("duration_seconds",minutes*60),"${sleep.origin}|${sleep.start}")
         }
         batch.exercises.forEach { exercise ->
-            add("exercise","exercise_session",exercise.start,exercise.end,exercise.origin,"seconds",JSONObject().put("duration_seconds",(exercise.end-exercise.start)/1000.0).put("exercise_type",exercise.title.take(80)),"${exercise.origin}|${exercise.start}")
+            add("exercise","exercise_session",exercise.start,exercise.end,exercise.origin,"seconds",JSONObject().put("duration_seconds",(exercise.end-exercise.start)/1000.0).put("exercise_type",syncExerciseType(exercise.title)),"${exercise.origin}|${exercise.start}")
         }
         val bounded=rows.distinctBy { it.key() }.groupBy { it.category }.values.flatMap { it.sortedByDescending { r -> JSONObject(r.payload).getString("observed_at") }.take(25) }
         return CloudSyncDraft(owner,selected,bounded,now,rows.size-bounded.size)

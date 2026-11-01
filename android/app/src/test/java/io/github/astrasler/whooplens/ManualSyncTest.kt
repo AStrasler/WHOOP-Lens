@@ -32,6 +32,15 @@ class ManualSyncTest {
         assertThrows(IllegalArgumentException::class.java) { ManualSync.draft(snapshot(),"b".repeat(43),all,all,now) }
         assertThrows(IllegalArgumentException::class.java) { ManualSync.draft(snapshot(),owner,all,emptySet(),now) }
     }
+    @Test fun blankOrOverlongExerciseTitlesStillProduceAnAcceptedType() {
+        assertEquals("Exercise",syncExerciseType(""))
+        assertEquals("Exercise",syncExerciseType("   \n"))
+        assertEquals("Run",syncExerciseType(" Run\u0000 "))
+        assertEquals(80,syncExerciseType("x".repeat(200)).length)
+        val blank=snapshot().let { it.copy(health=it.health!!.copy(exercises=listOf(ExerciseDetail(now-300000,now-1000," ","com.example.writer")))) }
+        val type=JSONObject(ManualSync.draft(blank,owner,setOf("exercise"),all,now).records.single().payload).getJSONObject("payload").getString("exercise_type")
+        assertEquals("Exercise",type)
+    }
     @Test fun consentPausePermissionsAndExpiryPrecedeAnyNetwork() {
         val draft=ManualSync.draft(snapshot(),owner,all,all,now)
         val client=CloudSyncClient(session(),owner,transport=CloudSyncTransport { _,_,_,_ -> throw AssertionError("No network without consent") },now={now})
