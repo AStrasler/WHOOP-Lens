@@ -28,7 +28,8 @@ to force it. Publish a newer-code approved stable build when needed.
 
 ## Signing compatibility
 
-Established SHA-256 certificate fingerprint:
+Original SHA-256 certificate fingerprint (rotated to the release key; see
+"Signing key rotation" below):
 
 ```text
 C3:E4:F5:6D:7E:BC:66:32:95:85:19:7C:49:26:35:FF:B4:57:E7:C0:D0:D2:73:E1:6F:16:A4:3E:72:CC:F5:78
@@ -55,36 +56,47 @@ proves what certificate is installed on the Samsung or long-term OAuth/Keystore
 continuity there; owner verification is required before claiming phone upgrade
 success. Never uninstall or clear data for this test.
 
-## Planned: move off the Debug signing certificate
+## Signing key rotation (Nov 1, 2026)
 
-The established certificate is an Android Debug certificate. Debug keystores
-usually live unprotected on a development machine with a well-known default
-password, and every debug build from that machine is signed with the same key.
-Any such build can install over the companion app and inherit its encrypted
-session and cached health data. App Links on `whooplens.tech` also trust it.
+Releases are signed by a dedicated release key, rotated from the original
+Android Debug key with APK Signature Scheme v3 key rotation. Installs signed by
+the original key update in place, keeping their data.
 
-Rotate to a dedicated release key with APK Signature Scheme v3 key rotation, so
-existing installs update in place without uninstalling or losing data. The
-owner performs this; it needs the old private key and owner approval.
+| Role | SHA-256 certificate fingerprint |
+|---|---|
+| Original (Android Debug, `androiddebugkey`) | `C3:E4:F5:6D:7E:BC:66:32:95:85:19:7C:49:26:35:FF:B4:57:E7:C0:D0:D2:73:E1:6F:16:A4:3E:72:CC:F5:78` |
+| Release (`whooplens-release`, RSA 4096, PKCS12) | `8A:A3:A7:BD:9A:CD:71:19:1D:E1:51:D6:C4:AE:4D:04:DD:3E:08:EF:57:24:E6:D1:33:A9:03:0B:36:7E:7C:80` |
 
-1. Create a new release keystore offline with a strong, unique password. Keep
-   an offline backup. It never goes in the repository.
-2. Create the rotation proof from the old key to the new key:
-   `apksigner rotate --out lineage.bin --old-signer --ks debug.keystore --new-signer --ks release.jks`
-3. Sign with both signers and the lineage:
-   `apksigner sign --ks debug.keystore --next-signer --ks release.jks --lineage lineage.bin --rotation-min-sdk-version 34 app-release-unsigned.apk`
-   (`minSdk` is already 34, so every supported device honors v3.1 rotation.)
-4. Check with `apksigner verify -v --print-certs`. It should show the new
-   certificate as the current signer and the old one in the lineage.
-5. Update `CERT` in `scripts/android_release.py` (and its tests) to accept the
-   rotated signer, and update the `android-release` GitHub Environment
-   secrets to the new keystore together with `lineage.bin` (base64).
-6. Add the new SHA-256 fingerprint to `/.well-known/assetlinks.json` in
-   `cloudflare/oauth/resource/src/index.mjs` (and the `site` copy) **alongside**
-   the old one. Remove the old fingerprint only after every install runs a
-   rotated build.
-7. Delete the old key from GitHub secrets. Stop using debug builds on the
-   phone that runs the published app.
+- **Rotation proof:** `android/signing/whooplens-lineage.bin` (original → release).
+  It holds only public certificates and the original key's signature over the
+  release certificate, the same data every rotated APK carries, so it is committed.
+- **Signing (CI):** `apksigner sign --v1-signing-enabled false --v2-signing-enabled false
+  --v3-signing-enabled true --ks <release> --lineage android/signing/whooplens-lineage.bin
+  --rotation-min-sdk-version 34`. `minSdk` is 34, so v3 alone covers every
+  supported device, and the original key is not needed: the lineage proves the
+  rotation. Verified on build-tools 36 that this produces the same v3 signer,
+  lineage and capabilities as signing with both keys.
+- **Lineage capabilities:** the original key may hand over installed data,
+  permissions and auth; **rollback is off**. An APK signed only by the original
+  key (for example a local debug build) can no longer install over a rotated
+  install. Uninstall first, or sign local test builds with the release key.
+- **Verification:** `scripts/android_release.py` requires the APK's signer to be
+  exactly the release key and its embedded lineage to be exactly original →
+  release. An APK signed only by the original key is rejected as a release
+  (`--allow-debug` still accepts it for local debug builds).
+- **App Links:** `/.well-known/assetlinks.json` lists both fingerprints. Keep
+  both until every install runs a rotated build, then remove the original.
+- **Secrets (`android-release` environment):** `ANDROID_RELEASE_KEYSTORE_BASE64`
+  and `ANDROID_RELEASE_KEYSTORE_PASSWORD` (key alias is fixed: `whooplens-release`).
+  The four original-key secrets (`ANDROID_SIGNING_KEYSTORE_BASE64`,
+  `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`) are
+  no longer used and should be deleted after the first rotated release.
+- **Environment protection (verified Nov 1 2026):** `android-release` deploys only
+  from `main` and requires approval by `AStrasler`, so a dispatch from another
+  branch cannot supply its own workflow or lineage. Keep it that way.
+- **Key custody:** both keystores and the release password are in the owner's
+  password manager with an offline copy. Losing the release key would again
+  require uninstalling the app. Never commit a keystore.
 
 ## Workflow and exact remaining setup
 
@@ -111,7 +123,7 @@ Before any approved publication:
 2. Create GitHub Environment **`android-release`**, configure required owner
    reviewers and appropriate branch policies. It did not exist at inspection;
    the repository only had `github-pages` with a branch policy.
-3. Add these **environment secrets**, using the established keystore:
+3. Add these **environment secrets** (superseded Nov 1 2026; see "Signing key rotation"). Originally, using the established keystore:
    `ANDROID_SIGNING_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`,
    `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. No repository signing secrets
    existed at inspection. Secret values/key bytes are never committed, printed
@@ -177,5 +189,5 @@ Official WHOOP API, Health Connect and widgets remain separate.
 No uploads, health deletion, proprietary unlock/clock/history commands or firmware changes.
 Hardware tested: <exact phone, strap generation, firmware, measurements actually verified>.
 Untested hardware and limitations: <explicit list; do not infer MG support>.
-Install over the existing same-certificate application; do not uninstall/reset.
+Install over the existing application; do not uninstall/reset. Releases from Nov 1 2026 carry the original → release key rotation, so installs update in place.
 ```

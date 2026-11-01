@@ -52,7 +52,8 @@ test('published App Links use the signing certificate and fallback never reflect
   const links = JSON.parse(await readFile(join(OUT, '.well-known/assetlinks.json'), 'utf8'));
   assert.deepEqual(links, [{relation: ['delegate_permission/common.handle_all_urls'], target: {
     namespace: 'android_app', package_name: 'io.github.astrasler.whooplens',
-    sha256_cert_fingerprints: ['C3:E4:F5:6D:7E:BC:66:32:95:85:19:7C:49:26:35:FF:B4:57:E7:C0:D0:D2:73:E1:6F:16:A4:3E:72:CC:F5:78']
+    sha256_cert_fingerprints: ['C3:E4:F5:6D:7E:BC:66:32:95:85:19:7C:49:26:35:FF:B4:57:E7:C0:D0:D2:73:E1:6F:16:A4:3E:72:CC:F5:78',
+      '8A:A3:A7:BD:9A:CD:71:19:1D:E1:51:D6:C4:AE:4D:04:DD:3E:08:EF:57:24:E6:D1:33:A9:03:0B:36:7E:7C:80']
   }}]);
   const fallback = await readFile(join(OUT, 'android/oauth/callback.html'), 'utf8');
   assert.doesNotMatch(fallback, /<script|https?:|http-equiv=["']refresh/i);

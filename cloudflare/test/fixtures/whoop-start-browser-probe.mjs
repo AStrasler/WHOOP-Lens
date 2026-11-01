@@ -55,16 +55,21 @@ export async function probeWhoopStart(chromePath,{startUrl,handle,done,timeoutMs
   const rules=HOSTS.map(h=>`MAP ${h}:443 127.0.0.1:${port}`).join(', ')+', MAP * ~NOTFOUND, EXCLUDE 127.0.0.1';
   const chrome=spawn(chromePath,['--headless=new','--disable-gpu','--no-sandbox','--remote-debugging-port=0',
     '--user-data-dir='+join(dir,'profile'),'--no-first-run','--no-default-browser-check','--disable-background-networking',
-    '--ignore-certificate-errors','--no-proxy-server','--host-resolver-rules='+rules,'about:blank'],{stdio:'ignore'});
+    '--ignore-certificate-errors','--no-proxy-server','--host-resolver-rules='+rules,'about:blank'],{stdio:['ignore','ignore','pipe']});
+  // Keep the tail of Chrome's stderr and its exit status so a failed start says why.
+  let stderr='',exit=null;
+  chrome.stderr.on('data',chunk=>{stderr=(stderr+chunk).slice(-2000);});
+  chrome.once('exit',(code,signal)=>{exit={code,signal};});
   let ws;
   try{
     let devtools;
-    for(let i=0;i<150&&!devtools;i++){
+    // Cold CI runners can take well over 10 s to start a first headless Chrome.
+    for(let i=0;i<300&&!devtools&&!exit;i++){
       try{const line=readFileSync(join(dir,'profile','DevToolsActivePort'),'utf8').split('\n')[0];if(/^\d+$/.test(line))devtools=line;}
       catch(error){if(!['ENOENT','EBUSY','EACCES'].includes(error.code))throw error;}
       if(!devtools)await pause(100);
     }
-    if(!devtools)throw Error('Test Chrome did not start');
+    if(!devtools)throw Error('Test Chrome did not start ('+(exit?'exited '+JSON.stringify(exit):'no DevTools port after 30 s')+'): '+stderr.trim().slice(-600));
     let target;
     for(let i=0;i<50&&!target;i++){
       target=(await (await fetch('http://127.0.0.1:'+devtools+'/json/list')).json()).find(t=>t.type==='page');
@@ -93,7 +98,7 @@ export async function probeWhoopStart(chromePath,{startUrl,handle,done,timeoutMs
     return {confirmation,result,requests};
   }finally{
     ws?.close();
-    const exited=new Promise(r=>chrome.once('exit',r));
+    const exited=exit?Promise.resolve():new Promise(r=>chrome.once('exit',r));
     chrome.kill();
     await Promise.race([exited,pause(3000)]);
     server.closeAllConnections();
