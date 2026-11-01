@@ -134,11 +134,9 @@ internal class BleSessionController(
         publish(BleViewState())
     }
 
-    fun stop() {
+    fun stop(message: String = "Stopped. Saved readings are not live.") {
         invalidate()
-        publish(
-            state.copy(phase = BlePhase.STOPPED, message = "Stopped. Saved readings are not live.")
-        )
+        publish(state.copy(phase = BlePhase.STOPPED, message = message))
     }
 
     /** Scanning is screen-only; an established or connecting session is left running. */
@@ -368,6 +366,14 @@ internal object BleBackgroundPolicy {
         setOf(BlePhase.IDLE, BlePhase.STOPPED, BlePhase.ERROR, BlePhase.UNAVAILABLE)
 
     fun keepsService(phase: BlePhase) = phase in SESSION_PHASES
+
+    /**
+     * A session continues after the app leaves the screen only when its ongoing notification can
+     * be shown. Without it the member could not see or stop background collection, so the session
+     * ends instead (the original foreground-only behaviour).
+     */
+    fun continuesInBackground(phase: BlePhase, notificationVisible: Boolean) =
+        keepsService(phase) && notificationVisible
 
     fun canReconnect(state: BleViewState) = state.selected != null && state.phase in RESUMABLE
 

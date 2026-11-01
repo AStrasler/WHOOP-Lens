@@ -52,7 +52,9 @@ the screen, switching apps, system dialogs such as OS pairing, and screen lock.
 The service shows an ongoing low-importance notification with the phase and the
 selected strap label only, never readings; its lock-screen public version says
 only "Direct BLE session active". The notification opens Direct BLE and has a
-Stop action. Stop (in app or notification), swiping WhoopLens from Recents,
+Stop action. If notifications are off or the channel is blocked, a session stops
+when WhoopLens leaves the screen, so collection is never invisible. Stop (in app
+or notification), swiping the notification away, swiping WhoopLens from Recents,
 retries running out, Bluetooth off or permission revocation end the session and
 the service. The service is `START_NOT_STICKY` and never starts from boot or a
 schedule; it starts only from an explicit Connect or Reconnect tap. After a
@@ -61,7 +63,8 @@ the same account, permission and Bluetooth checks, with a fresh two-retry budget
 Stop cancels scan/retry timers, closes GATT and rejects old connection callbacks.
 Logout and account change additionally clear BLE cache and revoke the local
 device/session selection. Every callback checks account, permission and
-connection generation.
+connection generation. The permission and security review is in
+`BACKGROUND_BLE_SECURITY_REVIEW.md`.
 Offline BLE uses the existing locally selected signed-in account; it never
 creates a parallel login or exports tokens over Bluetooth.
 

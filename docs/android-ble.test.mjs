@@ -39,6 +39,10 @@ test('BLE lifecycle and copied parser notices are present in repository and APK 
   assert.match(runtime,/override fun onTaskRemoved[\s\S]*?\.stop\(\)/);
   assert.match(runtime,/VISIBILITY_PRIVATE/);assert.match(runtime,/setPublicVersion/);
   assert.doesNotMatch(runtime,/bpm|measurement|rrTicks/,'the notification must not show readings');
+  // No invisible collection: dismissing the notification stops, and without a visible notification the session ends on leaving the app.
+  assert.match(runtime,/setDeleteIntent\(stop\)/);
+  const onStop=activity.match(/override fun onStop\(\)[\s\S]*?\n    }\n/)[0];
+  assert.match(onStop,/continuesInBackground\([\s\S]*?notificationVisible\(this\)/);assert.match(onStop,/ble\.stop\(/);
   assert.match(activity,/ble\.forget\(\)/);
   const mit=read('android/app/src/main/assets/licenses/whoop4-ble-MIT.txt');
   assert.match(mit,/Copyright \(c\) 2026 Andy Guzman/);assert.match(mit,/Permission is hereby granted/);

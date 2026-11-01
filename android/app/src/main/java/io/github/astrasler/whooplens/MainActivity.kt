@@ -175,6 +175,15 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        // The app is no longer visible. A session continues only if its notification can be seen.
+        if (
+            BleBackgroundPolicy.keepsService(ble.state.phase) &&
+                !BleBackgroundPolicy.continuesInBackground(
+                    ble.state.phase,
+                    BleRuntime.notificationVisible(this),
+                )
+        )
+            ble.stop("Stopped when you left WhoopLens: notifications are off, so Direct BLE runs only while it is open.")
         stopAppearance?.invoke()
         stopAppearance = null
         super.onStop()

@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 
@@ -57,6 +58,14 @@ internal object BleRuntime {
     fun observe(listener: (BleViewState) -> Unit): () -> Unit {
         listeners.add(listener)
         return { listeners.remove(listener) }
+    }
+
+    /** True when the session notification would actually be visible to the member. */
+    fun notificationVisible(context: Context): Boolean {
+        val manager = NotificationManagerCompat.from(context)
+        if (!manager.areNotificationsEnabled()) return false
+        val channel = manager.getNotificationChannel(BleSessionService.CHANNEL)
+        return channel == null || channel.importance != NotificationManagerCompat.IMPORTANCE_NONE
     }
 
     internal fun serviceStopped() {
@@ -198,6 +207,9 @@ class BleSessionService : Service() {
             .setPublicVersion(public)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .setContentIntent(open)
+            // Android 14+ lets the member swipe this notification away; treat that as Stop so a
+            // session never keeps running without its notification.
+            .setDeleteIntent(stop)
             .addAction(0, "Stop", stop)
             .build()
     }
@@ -206,7 +218,7 @@ class BleSessionService : Service() {
         const val ACTION_STOP = "io.github.astrasler.whooplens.ble.STOP"
         const val EXTRA_PAGE = "io.github.astrasler.whooplens.PAGE"
         const val PAGE = "Direct BLE"
-        private const val CHANNEL = "direct-ble-session"
+        internal const val CHANNEL = "direct-ble-session"
         private const val NOTIFICATION_ID = 4107
     }
 }

@@ -464,6 +464,24 @@ class BleTest {
     }
 
     @Test
+    fun backgroundContinuationNeedsAVisibleNotification() {
+        BlePhase.values().forEach { phase ->
+            assertFalse(phase.name, BleBackgroundPolicy.continuesInBackground(phase, false))
+            assertEquals(
+                phase.name,
+                BleBackgroundPolicy.keepsService(phase),
+                BleBackgroundPolicy.continuesInBackground(phase, true),
+            )
+        }
+        val f = Fixture()
+        f.live()
+        f.c.stop("Stopped when you left WhoopLens: notifications are off.")
+        assertEquals(BlePhase.STOPPED, f.c.state.phase)
+        assertTrue(f.c.state.message.contains("notifications are off"))
+        assertTrue("Reconnect stays available", BleBackgroundPolicy.canReconnect(f.c.state))
+    }
+
+    @Test
     fun sessionNotificationNeverCarriesMeasurements() {
         val f = Fixture()
         f.live()
