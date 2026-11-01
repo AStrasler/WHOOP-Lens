@@ -39,6 +39,28 @@ class ExpandedWidget : LensWidget()
 
 class PrivateLockWidget : LensWidget()
 
+/** Below these bounds (scaled with the font) the status widget shows a one-word status. */
+internal fun statusWidgetTight(widthDp: Float, heightDp: Float, fontScale: Float = 1f): Boolean {
+    val scale = fontScale.coerceAtLeast(1f)
+    return widthDp < 110f * scale || heightDp < 90f * scale
+}
+
+/**
+ * The status widget is a lock surface, so its full text is only a sign-in or unlock prompt. At one
+ * cell it shows one autosized word; the full text stays in the accessibility description.
+ */
+internal fun statusWidgetShortText(full: String): String =
+    if (full.startsWith("Sign in")) "Sign in" else "Unlock"
+
+/**
+ * One line per placed widget for the owner's One UI sizing check (#102): the launcher's reported
+ * portrait (min width x max height) and landscape (max width x min height) bounds in dp. No
+ * measurements, account or widget ids.
+ */
+internal fun widgetSizeLine(label: String, minW: Int, maxW: Int, minH: Int, maxH: Int): String =
+    if (minW <= 0 || maxW <= 0 || minH <= 0 || maxH <= 0) "$label: size not reported by the launcher"
+    else "$label: portrait ${minW}×${maxH} dp, landscape ${maxW}×${minH} dp"
+
 internal object LensWidgets {
     @Volatile internal var screenConcealed: Boolean = false
     internal fun widgetViews(
@@ -66,6 +88,15 @@ internal object LensWidgets {
         )
         return views
     }
+
+    /** Status widget views for one launcher size; the same path the instrumentation measures. */
+    internal fun statusViews(context: Context, text: String, widthDp: Float, heightDp: Float): RemoteViews =
+        if (statusWidgetTight(widthDp, heightDp, context.resources.configuration.fontScale))
+            RemoteViews(context.packageName, R.layout.lens_widget_status_tiny).apply {
+                setTextViewText(R.id.widget_body, statusWidgetShortText(text))
+                setContentDescription(R.id.widget_body, text)
+            }
+        else widgetViews(context, text, true, true, false)
 
     internal val profiles =
         mapOf<Class<out LensWidget>, List<String>>(
@@ -132,6 +163,27 @@ internal object LensWidgets {
         return views
     }
 
+    /** Reported sizes of every placed WhoopLens widget, for recording One UI cell sizes. */
+    fun placedSizes(context: Context): List<String> {
+        val m = AppWidgetManager.getInstance(context)
+        return profiles.keys.flatMap { type ->
+            val label = m.installedProviders
+                .firstOrNull { it.provider == ComponentName(context, type) }
+                ?.loadLabel(context.packageManager)
+                ?: type.simpleName
+            m.getAppWidgetIds(ComponentName(context, type)).map { id ->
+                val o = m.getAppWidgetOptions(id)
+                widgetSizeLine(
+                    label,
+                    o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH),
+                    o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH),
+                    o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT),
+                    o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT),
+                )
+            }
+        }
+    }
+
     fun updateAll(context: Context) {
         val m = AppWidgetManager.getInstance(context)
         profiles.keys.forEach { type ->
@@ -189,49 +241,37 @@ internal object LensWidgets {
             )
         fun clickable(view: RemoteViews) =
             view.apply { setOnClickPendingIntent(R.id.widget_root, open) }
+        val sizes =
+            options
+                .getParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, SizeF::class.java)
+                ?.filter { it.width > 0 && it.height > 0 }
+                ?.distinct()
+                ?.take(16)
+        val supported =
+            if (!sizes.isNullOrEmpty()) sizes
+            else
+                listOf(
+                        SizeF(
+                            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 56).toFloat(),
+                            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 56).toFloat(),
+                        ),
+                        SizeF(
+                            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 56).toFloat(),
+                            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 56).toFloat(),
+                        ),
+                    )
+                    .distinct()
         val views =
             if (nonNumeric) {
-                clickable(
-                    widgetViews(
-                        context,
-                        widgetText(cache, account, privacy, conceal, true, keys, now),
-                        true,
-                        true,
-                        false,
-                    )
+                val text = widgetText(cache, account, privacy, conceal, true, keys, now)
+                // The status widget is non-numeric at every size. At one cell the title is
+                // dropped so the status line is not clipped.
+                RemoteViews(
+                    supported.associateWith { size ->
+                        clickable(statusViews(context, text, size.width, size.height))
+                    }
                 )
             } else {
-                val sizes =
-                    options
-                        .getParcelableArrayList(
-                            AppWidgetManager.OPTION_APPWIDGET_SIZES,
-                            SizeF::class.java,
-                        )
-                        ?.filter { it.width > 0 && it.height > 0 }
-                        ?.distinct()
-                        ?.take(16)
-                val supported =
-                    if (!sizes.isNullOrEmpty()) sizes
-                    else
-                        listOf(
-                                SizeF(
-                                    options
-                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 56)
-                                        .toFloat(),
-                                    options
-                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 56)
-                                        .toFloat(),
-                                ),
-                                SizeF(
-                                    options
-                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 56)
-                                        .toFloat(),
-                                    options
-                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 56)
-                                        .toFloat(),
-                                ),
-                            )
-                            .distinct()
                 RemoteViews(
                     supported.associateWith { size ->
                         val space =

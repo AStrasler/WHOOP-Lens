@@ -2127,11 +2127,24 @@ class MainActivity : ComponentActivity() {
             ui.add(
                 c,
                 ui.text(
-                    "Six resizable home widgets, from 1\u00d71 through an intended 4\u00d72. Samsung lock screen, Brief widgets, and Now Bar are not part of this app. Measurements stay off the lock screen.",
+                    "Seven resizable home widgets (six measurement widgets and a status widget), from 1\u00d71 through an intended 4\u00d72. Samsung lock screen, Brief widgets, and Now Bar are not part of this app. Measurements stay off the lock screen.",
                     12f,
                     LensColors.muted,
                 ),
             )
+            ui.button(c, "Placed widget sizes") {
+                val lines = LensWidgets.placedSizes(this)
+                AlertDialog.Builder(this)
+                    .setTitle("Placed widget sizes")
+                    .setMessage(
+                        if (lines.isEmpty()) "No WhoopLens widgets are on the home screen."
+                        else
+                            lines.joinToString("\n") +
+                                "\n\nSizes are what the launcher reports for each widget's current cells. No measurements are shown."
+                    )
+                    .setPositiveButton("Done", null)
+                    .show()
+            }
             ui.button(c, "Choose widget measurements") {
                 val keys =
                     listOf(

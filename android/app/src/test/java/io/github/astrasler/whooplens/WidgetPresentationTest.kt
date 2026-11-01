@@ -236,4 +236,48 @@ class WidgetPresentationTest {
                 .primary,
         )
     }
+
+    @Test
+    fun statusWidgetDropsItsTitleOnlyAtOneCell() {
+        assertTrue(statusWidgetTight(57f, 102f))
+        assertTrue(statusWidgetTight(130f, 70f))
+        assertTrue(statusWidgetTight(40f, 40f))
+        assertFalse(statusWidgetTight(130f, 102f))
+        assertFalse(statusWidgetTight(276f, 220f))
+        // Large fonts move the cut-off up, so 2x text never meets a two-cell box.
+        assertTrue(statusWidgetTight(130f, 102f, 2f))
+        assertFalse(statusWidgetTight(276f, 220f, 2f))
+        assertFalse("Small fonts never shrink the threshold", statusWidgetTight(130f, 102f, 0.85f))
+    }
+
+    @Test
+    fun oneCellStatusIsASingleShortWordForEveryLockSurfaceText() {
+        val texts =
+            WidgetPrivacy.values().flatMap { privacy ->
+                listOf(null, "account").flatMap { account ->
+                    listOf(true, false).map { locked ->
+                        widgetText(null, account, privacy, locked, true, emptyList(), now)
+                    }
+                }
+            }.distinct()
+        assertTrue(texts.size > 1)
+        texts.forEach { full ->
+            val short = statusWidgetShortText(full)
+            assertTrue(full, short == "Sign in" || short == "Unlock")
+            assertTrue(short.length <= 7)
+        }
+        assertEquals("Sign in", statusWidgetShortText(widgetText(null, null, WidgetPrivacy.SUMMARY, false, true, emptyList(), now)))
+    }
+
+    @Test
+    fun placedSizeLinesCarryOnlyLauncherBounds() {
+        assertEquals(
+            "Daily overview: portrait 96×262 dp, landscape 180×120 dp",
+            widgetSizeLine("Daily overview", 96, 180, 120, 262),
+        )
+        assertEquals(
+            "WhoopLens status: size not reported by the launcher",
+            widgetSizeLine("WhoopLens status", 0, 0, 0, 0),
+        )
+    }
 }
