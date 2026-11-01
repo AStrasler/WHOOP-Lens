@@ -8,7 +8,8 @@ import { activeMembership, connectionStatus, readHistory } from "./storage.mjs";
 import { callWhoop } from "./whoop-api.mjs";
 import { memberLimitMessage } from "./member-rate-limit.mjs";
 import { SeatsFull } from "./seat-limit.mjs";
-import { createWhoopAuthorization, acceptWhoopCallback } from "./whoop-oauth.mjs";
+import { createWhoopAuthorization, acceptWhoopCallback, whoopBrowserBinding } from "./whoop-oauth.mjs";
+import { whoopStartHttp, whoopResultPage, WHOOP_START } from "./whoop-start.mjs";
 import { handleMcpRpc, validateMcpTransport } from "./mcp.mjs";
 import { CursorError, cursorShapeOk, readHistoryPages } from "./history-pagination.mjs";
 import { healthConnectHttp } from "./health-import.mjs";
@@ -158,6 +159,12 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
         return json({error:"Service announcements are not available right now."},503);
       }
     }
+    if (preliminaryUrl.pathname === WHOOP_START) {
+      const response = await whoopStartHttp(request, env);
+      if (response.status >= 500)
+        await capture(env,env?.DB,{category:"auth",subsystem:"whoop_oauth",code:"whoop_start_failed",outcome:"fail",retryable:true,requestId});
+      return response;
+    }
     if (request.method !== "GET")
       return json({error:"Unsupported method"},405);
     let url;
@@ -178,14 +185,20 @@ export function createStagingRouter({ verifyIdentity = async()=>{throw new Acces
       if (env?.WHOOP_OAUTH_ENABLED !== "true")
         return json({error:"WHOOP Cloudflare OAuth not activated"},503);
       if (!env?.DB) return json({error:"Staging unavailable"},503);
+      // Browser binding also switches the member-facing result to an HTML page.
+      const html = whoopBrowserBinding(env);
       try {
-        const result = await whoopCallback(env.DB,url,env);
+        const result = await whoopCallback(env.DB,url,env,{cookie:request.headers.get("cookie")});
+        if (html) return whoopResultPage("WHOOP connected","Your WHOOP account is connected to WhoopLens. You can close this tab and return to your chat.",200,{clear:true});
         return json(result);
       } catch (error) {
         await capture(env,env.DB,{category:error instanceof SeatsFull?"authorization":"auth",subsystem:"whoop_oauth",
           code:error instanceof SeatsFull?"seats_full":"whoop_callback_failed",outcome:"fail",retryable:false,requestId});
-        if (error instanceof SeatsFull) return json({error:error.message,seat_limit:error.limit},409);
+        if (error instanceof SeatsFull) return html?
+          whoopResultPage("No seats available",error.message,409,{clear:true}):
+          json({error:error.message,seat_limit:error.limit},409);
         // Never disclose WHOOP authorization codes, states or exchanged tokens.
+        if (html) return whoopResultPage("WHOOP not connected","WHOOP authorization could not be completed. Ask WhoopLens to connect WHOOP again from your own chat, and finish in the same browser.",400);
         return json({error:"WHOOP authorization could not be completed"},400);
       }
     }

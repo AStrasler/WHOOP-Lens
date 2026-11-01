@@ -55,6 +55,37 @@ proves what certificate is installed on the Samsung or long-term OAuth/Keystore
 continuity there; owner verification is required before claiming phone upgrade
 success. Never uninstall or clear data for this test.
 
+## Planned: move off the Debug signing certificate
+
+The established certificate is an Android Debug certificate. Debug keystores
+usually live unprotected on a development machine with a well-known default
+password, and every debug build from that machine is signed with the same key.
+Any such build can install over the companion app and inherit its encrypted
+session and cached health data. App Links on `whooplens.tech` also trust it.
+
+Rotate to a dedicated release key with APK Signature Scheme v3 key rotation, so
+existing installs update in place without uninstalling or losing data. The
+owner performs this; it needs the old private key and owner approval.
+
+1. Create a new release keystore offline with a strong, unique password. Keep
+   an offline backup. It never goes in the repository.
+2. Create the rotation proof from the old key to the new key:
+   `apksigner rotate --out lineage.bin --old-signer --ks debug.keystore --new-signer --ks release.jks`
+3. Sign with both signers and the lineage:
+   `apksigner sign --ks debug.keystore --next-signer --ks release.jks --lineage lineage.bin --rotation-min-sdk-version 34 app-release-unsigned.apk`
+   (`minSdk` is already 34, so every supported device honors v3.1 rotation.)
+4. Check with `apksigner verify -v --print-certs`. It should show the new
+   certificate as the current signer and the old one in the lineage.
+5. Update `CERT` in `scripts/android_release.py` (and its tests) to accept the
+   rotated signer, and update the `android-release` GitHub Environment
+   secrets to the new keystore together with `lineage.bin` (base64).
+6. Add the new SHA-256 fingerprint to `/.well-known/assetlinks.json` in
+   `cloudflare/oauth/resource/src/index.mjs` (and the `site` copy) **alongside**
+   the old one. Remove the old fingerprint only after every install runs a
+   rotated build.
+7. Delete the old key from GitHub secrets. Stop using debug builds on the
+   phone that runs the published app.
+
 ## Workflow and exact remaining setup
 
 `.github/workflows/android-release.yml` is manual-only, with immutable
