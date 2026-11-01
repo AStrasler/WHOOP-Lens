@@ -41,6 +41,7 @@ test('BLE lifecycle and copied parser notices are present in repository and APK 
   assert.doesNotMatch(runtime,/bpm|measurement|rrTicks/,'the notification must not show readings');
   // No invisible collection: dismissing the notification stops, and without a visible notification the session ends on leaving the app.
   assert.match(runtime,/setDeleteIntent\(stop\)/);
+  assert.match(runtime,/ACTION_NOTIFICATION_CHANNEL_BLOCK_STATE_CHANGED/);assert.match(runtime,/ACTION_APP_BLOCK_STATE_CHANGED/);assert.match(runtime,/RECEIVER_NOT_EXPORTED/);
   const onStop=activity.match(/override fun onStop\(\)[\s\S]*?\n    }\n/)[0];
   assert.match(onStop,/continuesInBackground\([\s\S]*?notificationVisible\(this\)/);assert.match(onStop,/ble\.stop\(/);
   assert.match(activity,/ble\.forget\(\)/);
