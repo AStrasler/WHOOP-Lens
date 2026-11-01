@@ -236,4 +236,25 @@ class WidgetPresentationTest {
                 .primary,
         )
     }
+
+    @Test
+    fun statusWidgetDropsItsTitleOnlyAtOneCell() {
+        assertTrue(statusWidgetTight(57f, 102f))
+        assertTrue(statusWidgetTight(130f, 70f))
+        assertTrue(statusWidgetTight(40f, 40f))
+        assertFalse(statusWidgetTight(130f, 102f))
+        assertFalse(statusWidgetTight(276f, 220f))
+    }
+
+    @Test
+    fun placedSizeLinesCarryOnlyLauncherBounds() {
+        assertEquals(
+            "Daily overview: portrait 96\u00d7262 dp, landscape 180\u00d7120 dp",
+            widgetSizeLine("Daily overview", 96, 180, 120, 262),
+        )
+        assertEquals(
+            "WhoopLens status: size not reported by the launcher",
+            widgetSizeLine("WhoopLens status", 0, 0, 0, 0),
+        )
+    }
 }

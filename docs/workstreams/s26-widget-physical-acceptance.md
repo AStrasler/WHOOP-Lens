@@ -23,7 +23,8 @@ References:
 - **Before the session:** record Android/One UI build, home-screen grid (for example 4×5 or 5×6), font size and display zoom, and the app version from Settings → About & help.
 - **4×2 maximum:** Android has no maximum-cell attribute. Record the largest size One UI actually allows per widget. If it exceeds 4×2, the follow-up is to lower `maxResizeWidth/Height` from the measured One UI cell size, not to guess a value now.
 - **Lock screen:** record what Settings → Wallpaper and style → Lock screen → Add widgets offers. Absence of WHOOP Lens there is the expected, accurately documented result for the current build.
-- **Engineering status:** no code change is pending before the session. Any sizing change waits for measured One UI cell sizes.
+- **Engineering status:** the seventh provider, the non-numeric **WhoopLens status** widget, declared 180×80dp minimums (about three cells on the Android sizing table) and no maximum, so it did not meet the 1×1 minimum or the 4×2 bound. It now uses the same 1×1 target, 40dp minimums and 320×250dp maximum hints as the six measurement widgets, a zero-data picker preview, and drops its title at one cell. Settings → Widgets & privacy → **Placed widget sizes** lists the launcher's reported portrait and landscape dp bounds for every placed WhoopLens widget (no measurements). These ship in the next build after this PR merges, not in beta.5.
+- **Recording cell sizes:** for each widget, after placing and resizing it, open Placed widget sizes and record the line with the grid and the cell span you see. Those numbers are what a follow-up uses to set `maxResizeWidth/Height` for a true 4×2 cap on One UI. Android's span rounding means the current 320×250dp hints may allow more or fewer than 4×2 depending on the grid; only these measurements settle it.
 
 ## Physical-device acceptance record (owner-controlled)
 

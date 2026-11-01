@@ -4,7 +4,11 @@ All six home providers (Daily, Recovery, Steps, Sleep, Vitals, Expanded) declare
 1 x 1 cell footprint. The picker uses a separate one-cell preview that shows an em
 dash and no sample measurement. Issue #102 corrected the lock-screen claim: no
 provider opts into `keyguard`, and API 36 resources add `not_keyguard`. Samsung
-Brief widgets and Now Bar are not provided. Evidence, inference, and the Galaxy
+Brief widgets and Now Bar are not provided. The seventh provider, the non-numeric
+WhoopLens status widget, uses the same 1 x 1 target, 40dp minimums and maximum
+hints (it previously required 180 x 80dp, about three cells, with no maximum).
+Settings -> Widgets & privacy -> Placed widget sizes lists each placed widget's
+launcher-reported dp bounds for recording One UI cell sizes. Evidence, inference, and the Galaxy
 S26 Ultra checklist are in `docs/android-s26-ultra-widgets.md`. Emulator renders
 are not One UI cell measurements and are not results from the phone.
 

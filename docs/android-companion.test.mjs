@@ -118,6 +118,21 @@ test('All six home widgets declare compact picker previews and bounded two-axis 
   assert.match(activity, /Measurements stay off the lock screen/);
 });
 
+test('The status widget follows the same 1x1 minimum and resize bounds as the six home widgets', () => {
+  // #102: it previously declared 180x80dp minimums (about three cells) and no maximum.
+  const xml = read('../android/app/src/main/res/xml/widget_private_lock.xml');
+  const v36 = read('../android/app/src/main/res/xml-v36/widget_private_lock.xml');
+  for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.match(xml, new RegExp('android:' + attr + '="1"'));
+  for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.match(xml, new RegExp('android:' + attr + '="40dp"'));
+  assert.match(xml, /maxResizeWidth="320dp"/);
+  assert.match(xml, /maxResizeHeight="250dp"/);
+  assert.match(xml, /previewLayout="@layout\/lens_widget_preview"/);
+  assert.match(xml, /initialLayout="@layout\/lens_widget_compact"/);
+  assert.equal(v36.replace('home_screen|not_keyguard', 'home_screen'), xml);
+  const widgets = read('../android/app/src/main/java/io/github/astrasler/whooplens/LensWidgets.kt');
+  assert.match(widgets, /statusWidgetTight\(size\.width, size\.height\)/);
+});
+
 test('No provider opts into the keyguard, including the status widget', () => {
   for (const folder of ['xml', 'xml-v36']) {
     const xml = read(`../android/app/src/main/res/${folder}/widget_private_lock.xml`);

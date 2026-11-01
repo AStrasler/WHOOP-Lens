@@ -39,6 +39,18 @@ class ExpandedWidget : LensWidget()
 
 class PrivateLockWidget : LensWidget()
 
+/** One-cell status widget bounds: below these, only the status line is shown. */
+internal fun statusWidgetTight(widthDp: Float, heightDp: Float) = widthDp < 110f || heightDp < 90f
+
+/**
+ * One line per placed widget for the owner's One UI sizing check (#102): the launcher's reported
+ * portrait (min width x max height) and landscape (max width x min height) bounds in dp. No
+ * measurements, account or widget ids.
+ */
+internal fun widgetSizeLine(label: String, minW: Int, maxW: Int, minH: Int, maxH: Int): String =
+    if (minW <= 0 || maxW <= 0 || minH <= 0 || maxH <= 0) "$label: size not reported by the launcher"
+    else "$label: portrait ${minW}\u00d7${maxH} dp, landscape ${maxW}\u00d7${minH} dp"
+
 internal object LensWidgets {
     @Volatile internal var screenConcealed: Boolean = false
     internal fun widgetViews(
@@ -132,6 +144,27 @@ internal object LensWidgets {
         return views
     }
 
+    /** Reported sizes of every placed WhoopLens widget, for recording One UI cell sizes. */
+    fun placedSizes(context: Context): List<String> {
+        val m = AppWidgetManager.getInstance(context)
+        return profiles.keys.flatMap { type ->
+            val label = m.installedProviders
+                .firstOrNull { it.provider == ComponentName(context, type) }
+                ?.loadLabel(context.packageManager)
+                ?: type.simpleName
+            m.getAppWidgetIds(ComponentName(context, type)).map { id ->
+                val o = m.getAppWidgetOptions(id)
+                widgetSizeLine(
+                    label,
+                    o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH),
+                    o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH),
+                    o.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT),
+                    o.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT),
+                )
+            }
+        }
+    }
+
     fun updateAll(context: Context) {
         val m = AppWidgetManager.getInstance(context)
         profiles.keys.forEach { type ->
@@ -189,49 +222,42 @@ internal object LensWidgets {
             )
         fun clickable(view: RemoteViews) =
             view.apply { setOnClickPendingIntent(R.id.widget_root, open) }
+        val sizes =
+            options
+                .getParcelableArrayList(AppWidgetManager.OPTION_APPWIDGET_SIZES, SizeF::class.java)
+                ?.filter { it.width > 0 && it.height > 0 }
+                ?.distinct()
+                ?.take(16)
+        val supported =
+            if (!sizes.isNullOrEmpty()) sizes
+            else
+                listOf(
+                        SizeF(
+                            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 56).toFloat(),
+                            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 56).toFloat(),
+                        ),
+                        SizeF(
+                            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 56).toFloat(),
+                            options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 56).toFloat(),
+                        ),
+                    )
+                    .distinct()
         val views =
             if (nonNumeric) {
-                clickable(
-                    widgetViews(
-                        context,
-                        widgetText(cache, account, privacy, conceal, true, keys, now),
-                        true,
-                        true,
-                        false,
-                    )
+                val text = widgetText(cache, account, privacy, conceal, true, keys, now)
+                // The status widget is non-numeric at every size. At one cell the title is
+                // dropped so the status line is not clipped.
+                RemoteViews(
+                    supported.associateWith { size ->
+                        clickable(
+                            widgetViews(context, text, true, true, false).apply {
+                                if (statusWidgetTight(size.width, size.height))
+                                    setViewVisibility(R.id.widget_title, View.GONE)
+                            }
+                        )
+                    }
                 )
             } else {
-                val sizes =
-                    options
-                        .getParcelableArrayList(
-                            AppWidgetManager.OPTION_APPWIDGET_SIZES,
-                            SizeF::class.java,
-                        )
-                        ?.filter { it.width > 0 && it.height > 0 }
-                        ?.distinct()
-                        ?.take(16)
-                val supported =
-                    if (!sizes.isNullOrEmpty()) sizes
-                    else
-                        listOf(
-                                SizeF(
-                                    options
-                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 56)
-                                        .toFloat(),
-                                    options
-                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 56)
-                                        .toFloat(),
-                                ),
-                                SizeF(
-                                    options
-                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH, 56)
-                                        .toFloat(),
-                                    options
-                                        .getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 56)
-                                        .toFloat(),
-                                ),
-                            )
-                            .distinct()
                 RemoteViews(
                     supported.associateWith { size ->
                         val space =
