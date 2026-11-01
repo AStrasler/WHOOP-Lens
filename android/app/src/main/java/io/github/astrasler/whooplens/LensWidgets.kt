@@ -39,8 +39,15 @@ class ExpandedWidget : LensWidget()
 
 class PrivateLockWidget : LensWidget()
 
-/** One-cell status widget bounds: below these, only the status line is shown. */
+/** One-cell status widget bounds: below these, only a one-word status is shown. */
 internal fun statusWidgetTight(widthDp: Float, heightDp: Float) = widthDp < 110f || heightDp < 90f
+
+/**
+ * The status widget is a lock surface, so its full text is only a sign-in or unlock prompt. At one
+ * cell it shows one autosized word; the full text stays in the accessibility description.
+ */
+internal fun statusWidgetShortText(full: String): String =
+    if (full.startsWith("Sign in")) "Sign in" else "Unlock"
 
 /**
  * One line per placed widget for the owner's One UI sizing check (#102): the launcher's reported
@@ -49,7 +56,7 @@ internal fun statusWidgetTight(widthDp: Float, heightDp: Float) = widthDp < 110f
  */
 internal fun widgetSizeLine(label: String, minW: Int, maxW: Int, minH: Int, maxH: Int): String =
     if (minW <= 0 || maxW <= 0 || minH <= 0 || maxH <= 0) "$label: size not reported by the launcher"
-    else "$label: portrait ${minW}\u00d7${maxH} dp, landscape ${maxW}\u00d7${minH} dp"
+    else "$label: portrait ${minW}×${maxH} dp, landscape ${maxW}×${minH} dp"
 
 internal object LensWidgets {
     @Volatile internal var screenConcealed: Boolean = false
@@ -250,10 +257,13 @@ internal object LensWidgets {
                 RemoteViews(
                     supported.associateWith { size ->
                         clickable(
-                            widgetViews(context, text, true, true, false).apply {
-                                if (statusWidgetTight(size.width, size.height))
-                                    setViewVisibility(R.id.widget_title, View.GONE)
-                            }
+                            if (statusWidgetTight(size.width, size.height))
+                                RemoteViews(context.packageName, R.layout.lens_widget_status_tiny)
+                                    .apply {
+                                        setTextViewText(R.id.widget_body, statusWidgetShortText(text))
+                                        setContentDescription(R.id.widget_body, text)
+                                    }
+                            else widgetViews(context, text, true, true, false)
                         )
                     }
                 )

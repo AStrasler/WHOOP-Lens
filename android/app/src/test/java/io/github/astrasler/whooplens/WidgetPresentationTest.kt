@@ -247,9 +247,28 @@ class WidgetPresentationTest {
     }
 
     @Test
+    fun oneCellStatusIsASingleShortWordForEveryLockSurfaceText() {
+        val texts =
+            WidgetPrivacy.values().flatMap { privacy ->
+                listOf(null, "account").flatMap { account ->
+                    listOf(true, false).map { locked ->
+                        widgetText(null, account, privacy, locked, true, emptyList(), now)
+                    }
+                }
+            }.distinct()
+        assertTrue(texts.size > 1)
+        texts.forEach { full ->
+            val short = statusWidgetShortText(full)
+            assertTrue(full, short == "Sign in" || short == "Unlock")
+            assertTrue(short.length <= 7)
+        }
+        assertEquals("Sign in", statusWidgetShortText(widgetText(null, null, WidgetPrivacy.SUMMARY, false, true, emptyList(), now)))
+    }
+
+    @Test
     fun placedSizeLinesCarryOnlyLauncherBounds() {
         assertEquals(
-            "Daily overview: portrait 96\u00d7262 dp, landscape 180\u00d7120 dp",
+            "Daily overview: portrait 96×262 dp, landscape 180×120 dp",
             widgetSizeLine("Daily overview", 96, 180, 120, 262),
         )
         assertEquals(
