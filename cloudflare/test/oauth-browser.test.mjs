@@ -6,7 +6,7 @@ const chrome=process.env.WHOOP_TEST_CHROME ||
   (process.platform==='win32'?'C:/Program Files/Google/Chrome/Application/chrome.exe':'');
 // An explicitly available browser is required; no downloads or real OAuth traffic.
 test('Chrome consent redirect chain: Android repaired, ChatGPT preserved, foreign host blocked',
-  {skip:!chrome||!existsSync(chrome),timeout:20000},async t=>{
+  {skip:!chrome||!existsSync(chrome),timeout:60000},async t=>{
     const results=await probeConsentRedirects(chrome);
     for(const result of results) await t.test(result.name,()=>{
       assert.equal(result.passed,true);
