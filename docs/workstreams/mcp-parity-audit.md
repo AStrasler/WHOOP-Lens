@@ -30,7 +30,7 @@ Audited November 1, 2026 against the Android app as shipped in `0.6.0-beta.5` (P
 
 ## Findings
 
-Parity is not complete: the website settings requirement (Finding 3) is still open.
+Parity is not complete: the website settings requirement (Finding 3) is still open and tracked in #128.
 
 
 1. **Closed by this PR:** Life Schedule was the only member *setting* reachable only from the app. `set_life_schedule` closes it, and `get_capabilities` now advertises the feature (it previously did not mention Life Schedule at all, so MCP-only members could not discover it).
