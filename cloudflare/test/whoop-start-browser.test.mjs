@@ -46,11 +46,19 @@ function world(db,{whoopRedirects=true}={}){
     const url=new URL(request.url);
     if(url.origin==='https://api.prod.whoop.com'&&url.pathname==='/oauth/oauth2/auth'){
       whoopAuthorize.push(url);
+      // Like real WHOOP, authorize hands off to a separate sign-in host. CSP form-action
+      // would block this hop if it were part of the form submission's redirect chain.
+      const login=new URL('https://id.whoop.com/login');
+      login.searchParams.set('return_to',url.toString());
+      return new Response(null,{status:302,headers:{location:login.toString()}});
+    }
+    if(url.origin==='https://id.whoop.com'&&url.pathname==='/login'){
       if(!whoopRedirects)return new Response('<h1>WHOOP sign-in</h1>',{headers:{'content-type':'text/html'}});
-      // Simulate the member approving at WHOOP.
-      const back=new URL(url.searchParams.get('redirect_uri'));
+      // Simulate the member signing in and approving at WHOOP.
+      const authorize=new URL(url.searchParams.get('return_to'));
+      const back=new URL(authorize.searchParams.get('redirect_uri'));
       back.searchParams.set('code','synthetic-whoop-code');
-      back.searchParams.set('state',url.searchParams.get('state'));
+      back.searchParams.set('state',authorize.searchParams.get('state'));
       return new Response(null,{status:302,headers:{location:back.toString()}});
     }
     return router(request,{...env,DB:db});
@@ -67,7 +75,8 @@ test('real Chrome completes the WHOOP browser-binding flow: confirm, redirect, c
       assert.equal(startUrl.origin+startUrl.pathname,'https://whooplens.tech/api/whoop/start');
       const state=startUrl.searchParams.get('state');
       const {handle,whoopAuthorize,tokenCalls}=world(db);
-      const run=await probeWhoopStart(chrome,{startUrl:startUrl.toString(),handle});
+      const run=await probeWhoopStart(chrome,{startUrl:startUrl.toString(),handle,
+        done:'location.pathname==="/api/whoop/callback"&&!!document.querySelector("h1")'});
 
       // Confirmation page carries the state in a same-origin POST form.
       assert.equal(run.confirmation.title,'Connect your WHOOP account');
@@ -82,7 +91,7 @@ test('real Chrome completes the WHOOP browser-binding flow: confirm, redirect, c
       assert.equal(post.secFetchSite,'same-origin');
       assert.equal(post.origin,'https://whooplens.tech','a same-origin form post must carry the real origin, not "null"');
       assert.equal(new URLSearchParams(post.body).get('state'),state,'state survives the form submission');
-      assert.equal(post.status,303);
+      assert.equal(post.status,200,'the POST answers with the Opening WHOOP page, not a redirect');
 
       // WHOOP authorization started with the same state and our registered redirect.
       assert.equal(whoopAuthorize.length,1);
@@ -90,6 +99,7 @@ test('real Chrome completes the WHOOP browser-binding flow: confirm, redirect, c
       assert.equal(whoopAuthorize[0].searchParams.get('redirect_uri'),'https://whooplens.tech/api/whoop/callback');
       const atWhoop=run.requests.find(r=>r.url.startsWith('https://api.prod.whoop.com/'));
       assert.equal(atWhoop.referer,null,'the state-bearing start URL is never sent to WHOOP as a referrer');
+      assert.ok(run.requests.some(r=>r.url.startsWith('https://id.whoop.com/login')),'WHOOP hand-off to its sign-in host was not blocked');
 
       // The callback carried the browser-binding cookie and completed.
       const callback=run.requests.find(r=>r.url.startsWith('https://whooplens.tech/api/whoop/callback'));
@@ -103,7 +113,7 @@ test('real Chrome completes the WHOOP browser-binding flow: confirm, redirect, c
     }finally{db.sqlite.close();}
   });
 
-test('real Chrome: a link opened in another browser cannot complete the callback',
+test('real Chrome: after one browser confirms, a cookieless replay of the callback is refused',
   {skip:!available&&'Chrome not available',timeout:30000},async()=>{
     const db=database();
     try{
@@ -111,10 +121,12 @@ test('real Chrome: a link opened in another browser cannot complete the callback
       const state=new URL(start.authorization_url).searchParams.get('state');
       // Browser 1 confirms and reaches WHOOP, then stops (the member never finishes there).
       const first=world(db,{whoopRedirects:false});
-      const run=await probeWhoopStart(chrome,{startUrl:start.authorization_url,handle:first.handle});
+      const run=await probeWhoopStart(chrome,{startUrl:start.authorization_url,handle:first.handle,
+        done:'location.host==="id.whoop.com"'});
       assert.equal(first.whoopAuthorize.length,1);
-      assert.equal(run.requests.find(r=>r.method==='POST')?.status,303);
-      // Browser 2 (fresh profile, no cookie) presents the leaked callback URL.
+      assert.equal(run.requests.find(r=>r.method==='POST')?.status,200);
+      assert.equal(run.result.title,'WHOOP sign-in');
+      // Anyone else holding the callback URL (no cookie from browser 1) presents it.
       const second=world(db);
       const leaked='https://whooplens.tech/api/whoop/callback?'+new URLSearchParams({state,code:'leaked-code'});
       const response=await second.handle(new Request(leaked));

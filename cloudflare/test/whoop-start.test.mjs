@@ -94,8 +94,16 @@ test("confirming binds one browser, redirects to WHOOP and cannot be repeated",a
   try{
     const state=startState(await createWhoopAuthorization(d,A,env,{now:()=>base}));
     const res=await whoopStartHttp(confirm(state),{...env,DB:d},{now:()=>base});
-    assert.equal(res.status,303);
-    const to=new URL(res.headers.get("location"));
+    // 200 + Refresh, not 303: form-action would block WHOOP's onward redirect.
+    assert.equal(res.status,200);
+    assert.equal(res.headers.get("location"),null);
+    assert.equal(res.headers.get("referrer-policy"),"no-referrer");
+    const refresh=/^0;url=(.+)$/.exec(res.headers.get("refresh")||"");
+    assert.ok(refresh,"Refresh header navigates to WHOOP");
+    const html=await res.text();
+    assert.match(html,/Continue to WHOOP<\/a>/);
+    const to=new URL(refresh[1]);
+    assert.ok(html.includes('href="'+refresh[1].replaceAll("&","&amp;")+'"'),"link fallback points to the same WHOOP URL");
     assert.equal(to.origin+to.pathname,"https://api.prod.whoop.com/oauth/oauth2/auth");
     assert.equal(to.searchParams.get("state"),state);
     assert.equal(to.searchParams.get("redirect_uri"),"https://whooplens.tech/api/whoop/callback");
