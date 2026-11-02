@@ -212,6 +212,39 @@ test('dashboard overview reads only the caller, labels sources and never fabrica
   }finally{db.sqlite.close();}
 });
 
+test('dashboard daily steps sum the latest local day of interval records instead of returning one bucket',async()=>{
+  const db=database();try{
+    const insert=(key,observed,ended,localDate,payload)=>db.sqlite.prepare("INSERT INTO health_connect_records(id,user_id,metric,record_key,observed_at,ended_at,local_date,unit,payload_json) VALUES(?,?,'steps_daily',?,?,?,?,'steps',?)")
+      .run('hc-'+key,KIM,key,observed,ended,localDate,JSON.stringify(payload));
+    // Phone ingest sends 15-minute buckets without a local date (synthetic values).
+    insert('b0','2026-11-01T05:45:00.000Z','2026-11-01T06:00:00.000Z',null,{count:999,ingest:'hc_webhook'}); // 23:45 on Oct 31 at -06:00
+    insert('b1','2026-11-01T06:00:00.000Z','2026-11-01T06:15:00.000Z',null,{count:100,ingest:'hc_webhook'});
+    insert('b2','2026-11-01T20:00:00.000Z','2026-11-01T20:15:00.000Z',null,{count:5000,ingest:'hc_webhook'});
+    insert('b3','2026-11-02T03:15:00.000Z','2026-11-02T03:30:00.000Z',null,{count:46,ingest:'hc_webhook'});
+    // A file import holding the same local day is not added on top of phone ingest.
+    insert('f1','2026-11-01T06:00:00.000Z','2026-11-02T05:59:00.000Z','2026-11-01',{count:7777});
+    // Not connected: no WHOOP offset, so the day falls back to UTC and says so.
+    let h=harness(db);
+    let steps=JSON.parse((await h.call(KIM,'get_dashboard_overview')).body.result.content[0].text).health_connect.daily_steps;
+    assert.equal(steps.day_basis,'utc');assert.equal(steps.local_date,'2026-11-02');assert.equal(steps.value,46);
+    // Connected: the WHOOP cycle offset sets the member's local day.
+    db.sqlite.prepare("INSERT INTO whoop_connections(user_id,expires_at,scope,encrypted_access_token,encrypted_refresh_token,encryption_key_version,seat_role) VALUES(?,'2099-01-01T00:00:00Z','read:recovery','x','y','v1','public')").run(KIM);
+    h=harness(db,PROD,{whoop:(userId,resource)=>{
+      assert.equal(userId,KIM);
+      if(resource==='cycles')return {records:[{start:'2026-11-01T19:00:00.000Z',timezone_offset:'-06:00',score_state:'PENDING_SCORE'}]};
+      return {records:[]};
+    }});
+    steps=JSON.parse((await h.call(KIM,'get_dashboard_overview')).body.result.content[0].text).health_connect.daily_steps;
+    assert.equal(steps.day_basis,'whoop_timezone_offset');assert.equal(steps.local_date,'2026-11-01');
+    assert.equal(steps.value,5146);assert.equal(steps.records_summed,3);assert.equal(steps.ingest,'phone_ingest');
+    assert.equal(steps.measured_at,'2026-11-02T03:30:00.000Z');
+    assert.match(steps.note,/not added, to avoid counting steps twice/);
+    // Another member's records never enter the sum.
+    const mom=JSON.parse((await h.call(MOM,'get_dashboard_overview')).body.result.content[0].text).health_connect.daily_steps;
+    assert.equal(mom.value,2222);assert.equal(mom.day_basis,'record_local_date');
+  }finally{db.sqlite.close();}
+});
+
 test('feature flags hide and disable gated member tools; core member tools stay available',async()=>{
   const db=database();try{
     const off={...PROD,LIFE_SCHEDULE_ENABLED:'false',WEB_HEALTH_IMPORT_ENABLED:'false',HEALTH_CONNECT_WEBHOOK_ENABLED:'false',
