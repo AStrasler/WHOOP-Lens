@@ -7,7 +7,7 @@ const readOnly=Object.freeze({readOnlyHint:true,destructiveHint:false,idempotent
 
 export const dashboardOverviewTool=Object.freeze({
   name:'get_dashboard_overview',
-  description:'Dashboard snapshot for the signed-in member, matching the Android Home screen: latest WHOOP recovery (score, HRV, resting heart rate, SpO2, skin temperature), latest cycle strain, latest main (non-nap) sleep, and the latest stored Health Connect daily steps. Every value carries its source, measured time and a stale flag. Missing values are reported as missing and are never filled from another source. Read-only.',
+  description:'Dashboard snapshot for the signed-in member, matching the Android Home screen: latest WHOOP recovery (score, HRV, resting heart rate, SpO2, skin temperature), latest cycle strain, latest main (non-nap) sleep, and the Health Connect step total for the latest stored local day, summed from that day\'s step records. Every value carries its source, measured time and a stale flag. Missing values are reported as missing and are never filled from another source. Read-only.',
   inputSchema:noArgs,
   annotations:{...readOnly,openWorldHint:true}
 });
@@ -31,6 +31,48 @@ function measured(value,unit,at,now,staleAfter){
   if(value===null)return {value:null,unit,missing:true};
   const time=iso(at);
   return {value,unit,measured_at:time,stale:time?now-Date.parse(time)>staleAfter:true,missing:false};
+}
+
+// WHOOP gives each record's local offset as "+hh:mm" / "-hh:mm".
+function whoopOffset(record){
+  const m=/^([+-])(\d{2}):(\d{2})$/.exec(record?.timezone_offset??'');
+  return m?(m[1]==='-'?-1:1)*(Number(m[2])*3600000+Number(m[3])*60000):null;
+}
+const countOf=json=>{try{return num(JSON.parse(json??'null')?.count);}catch{return null;}};
+const STEP_DAY_ROWS=2000;
+
+// Health Connect step records are intervals (the phone sends 15-minute buckets), so the
+// daily figure is the sum of the latest local day's records, not the latest record.
+async function dailySteps(db,userId,whoopOffsetMs,now){
+  const latest=await db.prepare("SELECT local_date,observed_at FROM health_connect_records WHERE user_id=?1 AND metric='steps_daily' ORDER BY COALESCE(observed_at,local_date) DESC LIMIT 1").bind(userId).first();
+  if(!latest)return null;
+  const offset=whoopOffsetMs??0;
+  const basis=latest.local_date?'record_local_date':whoopOffsetMs!==null?'whoop_timezone_offset':'utc';
+  const latestAt=Date.parse(latest.observed_at);
+  const day=latest.local_date??(Number.isFinite(latestAt)?new Date(latestAt+offset).toISOString().slice(0,10):null);
+  if(!day)return null;
+  const from=new Date(Date.parse(day+'T00:00:00Z')-offset).toISOString();
+  const to=new Date(Date.parse(from)+DAY).toISOString();
+  const {results=[]}=await db.prepare("SELECT payload_json,observed_at,ended_at FROM health_connect_records WHERE user_id=?1 AND metric='steps_daily' AND (local_date=?2 OR (local_date IS NULL AND observed_at>=?3 AND observed_at<?4)) LIMIT ?5")
+    .bind(userId,day,from,to,STEP_DAY_ROWS).all();
+  // Phone ingest and a file import can both hold the same day; sum one source only.
+  const bySource={};
+  for(const row of results){
+    const count=countOf(row.payload_json);if(count===null)continue;
+    let ingest='file_import';try{ingest=JSON.parse(row.payload_json)?.ingest==='hc_webhook'?'phone_ingest':'file_import';}catch{}
+    const b=bySource[ingest]??={sum:0,records:0,last:null};
+    b.sum+=count;b.records+=1;
+    const end=iso(row.ended_at)??iso(row.observed_at);if(end&&(!b.last||end>b.last))b.last=end;
+  }
+  const used=bySource.phone_ingest?'phone_ingest':bySource.file_import?'file_import':null;
+  if(!used)return {value:null,unit:'steps',missing:true,local_date:day};
+  const b=bySource[used];
+  const today=new Date(now+offset).toISOString().slice(0,10);
+  return {...measured(b.sum,'steps',b.last,now,1.5*DAY),local_date:day,day_basis:basis,partial_day:day===today,
+    records_summed:b.records,ingest:used,
+    note:'Sum of the stored Health Connect step records for this local day. It can differ from the phone\'s own total when several apps record overlapping steps.'+
+      (bySource.phone_ingest&&bySource.file_import?' A file import for the same day was not added, to avoid counting steps twice.':'')+
+      (results.length>=STEP_DAY_ROWS?' The day has more records than this summary reads, so the total may be low.':'')};
 }
 
 export async function buildDashboardOverview({db,userId,env,whoopRequest,now=Date.now()}){
@@ -76,10 +118,8 @@ export async function buildDashboardOverview({db,userId,env,whoopRequest,now=Dat
   }:{missing:true};
   let health_connect;
   try{
-    const row=await db.prepare("SELECT local_date,payload_json,observed_at,ended_at FROM health_connect_records WHERE user_id=?1 AND metric='steps_daily' ORDER BY COALESCE(local_date,observed_at) DESC LIMIT 1").bind(userId).first();
-    let count=null;try{count=num(JSON.parse(row?.payload_json??'null')?.count);}catch{count=null;}
-    health_connect=row?{source:'health_connect',source_authority:'supplementary',
-      daily_steps:{...measured(count,'steps',row.ended_at??row.observed_at,now,1.5*DAY),local_date:row.local_date??null}}:
+    const daily_steps=await dailySteps(db,userId,whoopOffset(cycles?.[0])??whoopOffset(s),now);
+    health_connect=daily_steps?{source:'health_connect',source_authority:'supplementary',daily_steps}:
       {source:'health_connect',source_authority:'supplementary',daily_steps:{value:null,missing:true},
        note:'No Health Connect step records are stored for this account.'};
   }catch{health_connect={source:'health_connect',unavailable:true,note:'Health Connect records could not be read right now.'};}
