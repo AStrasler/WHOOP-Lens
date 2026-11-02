@@ -116,3 +116,17 @@ Never plain `wrangler deploy`. No migration, secret, binding, route or DNS chang
     - The connector that was already open still cached the 41-tool list. The five new tools appear only after reconnecting, or in a new chat.
   - **Not yet verified live:** a call to `get_dashboard_overview` or `get_account_data_summary` through a reconnected client, and the ordinary-member catalog (#137).
   - The temporary snapshots and release script on the PC were deleted. No API token remained in the environment.
+
+### Nov 1, 2026 (late): announcements, self-service deletion, website settings
+| Change | How | Version | Rollback |
+|---|---|---|---|
+| #136: migration `0020_service_announcements` | Additive SQL on D1 `whoop-lens-migration`; recorded as `d1_migrations` id 24 | n/a | Leave the tables; turn the flag off |
+| #136: `ANNOUNCEMENTS_ENABLED=true` | Full-bindings settings PATCH, 40 → 41 bindings, each one verified | `f8c97a3c-df0c-4532-9cf5-d197ba50ef8b` | Same PATCH with `false` |
+| #141 + #142 (self-service deletion, `/settings/`) | `release-worker-content.mjs`, `main` @ `7f59527`, bundle `5c6f80f0…204b` | `46661f2d-3db3-45aa-80e5-5cced652ab04` | `wrangler rollback f8c97a3c-df0c-4532-9cf5-d197ba50ef8b --name whoop-lens` |
+| #143 (settings script fix) | `release-worker-content.mjs`, `main` @ `5282d64`, bundle `ab4290f0…cab8` | `57f99cb2-6d3f-4637-a139-8b691de4ec5c` | `wrangler rollback 46661f2d-3db3-45aa-80e5-5cced652ab04 --name whoop-lens` |
+
+- **Every release:** each bundle hash was reproduced from a clean build in a second environment; the settings identity check passed; the cron stayed `17 9 * * *`; bindings ended at 41; unauthenticated `/mcp` and the API return 401.
+- **Catalog after release:** live `get_capabilities` for the owner lists 52 tools (46 member + 6 owner-only).
+- **Website settings:** the live `/settings/` script is byte-identical to the one that passed the Chromium end-to-end run (`9adac8cb…855b`), and its CSP hashes match. The public OAuth client `Ski8wTDIO6CqM746` is registered with redirect `https://whooplens.tech/settings/`.
+- **Lesson (#143):** never build served browser code with `Function.toString()` in Worker source. The bundler rewrites it. Verify bundled output, not just source.
+- **Still open:** ordinary-member live check (#137), the first real member web sign-in (owner), and the S26 physical checks (#129, #130, #133).
