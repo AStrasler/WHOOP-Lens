@@ -77,3 +77,25 @@ Never plain `wrangler deploy`. No migration, secret, binding, route or DNS chang
 ### Pending (not requestable yet)
 - **#93** @ e8bd3f4 (Codex clean): needs owner confirmation that `whoop-lens@outlook.com` is approved and monitored for private deletion requests. Site pages only; no automated-deletion or turnaround promises.
 - **#97** @ b968067: two-mode runbook (health-data-only keeps sign-in mappings; full deletion removes all 24 member-keyed tables + KV grants). Codex completed 1:46 PM CT on b968067, no major issues. Docs only. Merge request: "Approve merging #97 at b968067." Ships alongside #93 once the mailbox is confirmed; no production deletion is part of it.
+
+### R-MCP — #121 + #134 MCP member parity (Nov 1, 2026)
+- **Commit:** `main` @ `9359b4f` (contains #121 `9dc162c` and #134 `3ef7b76`). CI green. Codex code review and a security-focused code review are clean on `3ef7b76`. Codex Security Review (the separate research-preview service) did not run; see `docs/mcp/AUTHORIZATION.md`.
+- **Production now:** version `fa7bef7a-cb35-41b8-8edc-c1fe69c34b55` (rollback target). 40 bindings. Schedules `[{"cron":"17 9 * * *"}]`.
+- **Bundle:** `wrangler deploy --dry-run --config cloudflare/oauth/resource/wrangler.jsonc --outdir <dir>` at `9359b4f` → `index.js` 527,337 bytes, sha256 `0145712650cae841c70cd3546b5811aa8b6835442ee4e35dcfa74bb4054e2cbb`. Rebuild on the PC and compare the hash; a different Wrangler or esbuild version may change it, so record the actual hash.
+- **Changes:**
+  - Members gain `set_life_schedule`, `get_companion_sync_status`, `pause_companion_sync`, `get_dashboard_overview` and `get_account_data_summary`.
+  - The owner-only boundary moves into a central guard.
+  - **Unchanged:** bindings, flags, secrets, migrations, routes, schedules and the auth Worker. Every flag these tools need is already on in production. Announcements stay off: migration `0020` has not been applied.
+- **Expected catalogs after release:** owner 46 tools (43 member + `review_issue_reports`, `update_issue_report`, `get_reportable_links`); member 43, with no owner tools.
+- **PowerShell on the PC** (token from the environment only):
+  1. `cd C:\Users\Aaron\WHOOP-Lens; git pull; git checkout 9359b4f`
+  2. Capture `pre.json` as in step 2.
+  3. `cloudflare\node_modules\.bin\wrangler deploy --dry-run --config cloudflare/oauth/resource/wrangler.jsonc --outdir $env:TEMP\wl-bundle`
+  4. `node cloudflare/scripts/release-worker-content.mjs --worker whoop-lens --snapshot pre.json --bundle $env:TEMP\wl-bundle\index.js`. The plan must show `bindingCount 40` and `rollbackVersion fa7bef7a-…`.
+  5. Same command with `--apply`.
+- **Verify:**
+  - The step 6–7 checks.
+  - Schedules still `17 9 * * *`.
+  - As the owner, after refreshing the connector: `tools/list` shows 46 tools; `get_dashboard_overview` and `get_account_data_summary` run; `review_issue_reports` runs.
+  - As a member: 43 tools, no owner tools, and `review_issue_reports` returns `Unknown tool`.
+- **Rollback:** `wrangler rollback fa7bef7a-cb35-41b8-8edc-c1fe69c34b55 --name whoop-lens`, then repeat steps 6–7.
