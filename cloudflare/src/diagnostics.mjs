@@ -149,6 +149,7 @@ export function toolSubsystem(name){
   if(name==='withdraw_health_connect_import')return 'hc_consent';
   if(name==='pause_companion_sync')return 'hc_consent';
   if(name==='get_dashboard_overview'||name==='get_account_data_summary')return 'member_overview';
+  if(name==='delete_my_samsung_health_records'||name==='delete_my_issue_reports')return 'self_service_deletion';
   if(name==='get_companion_sync_status')return 'hc_storage';
   if(name==='get_health_connect')return 'hc_storage';
   if(name==='connect_whoop'||name==='disconnect_whoop')return 'whoop_oauth';

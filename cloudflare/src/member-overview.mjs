@@ -145,14 +145,16 @@ const PROBES=Object.freeze([
   ['life_schedule','SELECT life_schedule,updated_at FROM member_life_schedule WHERE user_id=?1',
     r=>({selection:r?.life_schedule??null,explicit:!!r,updated_at:iso(r?.updated_at)}),'set_life_schedule'],
   ['notion','SELECT updated_at FROM notion_accounts WHERE user_id=?1 AND credentials IS NOT NULL',r=>({connected:!!r}),'disconnect_notion'],
-  ['samsung_health_records','SELECT COUNT(*) AS n FROM samsung_health_records WHERE user_id=?1',r=>({stored:Number(r?.n??0)}),null],
+  ['samsung_health_records','SELECT COUNT(*) AS n FROM samsung_health_records WHERE user_id=?1',r=>({stored:Number(r?.n??0)}),'delete_my_samsung_health_records'],
   ['medical_context','SELECT COUNT(*) AS n FROM medical_context WHERE user_id=?1',r=>({stored:Number(r?.n??0)}),null],
-  ['issue_reports','SELECT COUNT(*) AS n FROM issue_reports WHERE user_id=?1',r=>({submitted:Number(r?.n??0)}),null]
+  ['issue_reports','SELECT COUNT(*) AS n FROM issue_reports WHERE user_id=?1',r=>({submitted:Number(r?.n??0)}),'delete_my_issue_reports']
 ]);
-export async function buildAccountDataSummary({db,userId,now=Date.now()}){
+export async function buildAccountDataSummary({db,userId,env,now=Date.now()}){
   if(!await activeMembership(db,userId))throw Error('Not authorized');
   const categories={};
-  for(const [name,sql,shape,tool] of PROBES){
+  for(const [name,sql,shape,listed] of PROBES){
+    // Name a tool only when this server lists it.
+    const tool=listed==='delete_my_issue_reports'&&env?.ISSUE_REPORTS_ENABLED!=='true'?null:listed;
     try{
       const row=await db.prepare(sql).bind(userId).first();
       categories[name]={...shape(row),self_service:tool};

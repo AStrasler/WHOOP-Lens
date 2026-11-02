@@ -9,6 +9,7 @@ import {createStagingRouter} from '../src/router.mjs';
 import {AccessDenied} from '../src/access-denied.mjs';
 import {OWNER_ONLY_TOOLS,isVerifiedOwner} from '../src/roles.mjs';
 import {COMPANION_PAUSE_CONFIRMATION} from '../src/companion-sync.mjs';
+import {SAMSUNG_DELETE_CONFIRMATION,ISSUE_REPORTS_DELETE_CONFIRMATION} from '../src/self-service-deletion.mjs';
 
 const OWNER='0a0a0a0a-0000-4000-8000-00000000000a';
 const MOM='0b0b0b0b-0000-4000-8000-00000000000b';
@@ -26,7 +27,7 @@ const MEMBER_TOOLS=['get_profile','get_body_measurements','get_recovery','get_sl
   'revoke_health_connect_ingest_token','get_dashboard_overview','get_account_data_summary','get_ai_usage','get_weekly_digest',
   'set_flare_consent','save_flare_context','save_flare_entry','get_flare_journal','delete_flare_entry','pause_flare_analysis',
   'withdraw_flare_journal','analyze_flare_patterns','get_life_schedule_insights','set_life_schedule',
-  'get_companion_sync_status','pause_companion_sync','report_issue','report_error','list_service_announcements',
+  'get_companion_sync_status','pause_companion_sync','delete_my_samsung_health_records','delete_my_issue_reports','report_issue','report_error','list_service_announcements',
   'connect_notion','get_notion_status','disconnect_notion','list_notion_databases','get_notion_database_schema',
   'configure_notion_daily_log','get_notion_daily_log','preview_notion_daily_log_update','save_notion_daily_log_update'];
 
@@ -242,6 +243,54 @@ test('dashboard daily steps sum the latest local day of interval records instead
     // Another member's records never enter the sum.
     const mom=JSON.parse((await h.call(MOM,'get_dashboard_overview')).body.result.content[0].text).health_connect.daily_steps;
     assert.equal(mom.value,2222);assert.equal(mom.day_basis,'record_local_date');
+  }finally{db.sqlite.close();}
+});
+
+test('self-service deletion removes only the caller\'s Samsung records and past issue reports, after exact confirmation',async()=>{
+  const db=database();try{
+    const samsung=(id,n)=>db.sqlite.prepare("INSERT INTO samsung_health_records(id,user_id,metric,source_record_hash,exported_at,sdk_record_json) VALUES(?,?,'steps',?,'2026-10-30T00:00:00Z','{}')")
+      .run('s-'+id+'-'+n,id,(id.replace(/-/g,'')+String(n).padStart(32,'0')).slice(0,64).padEnd(64,'0'));
+    for(const id of [MOM,KIM])for(const n of [1,2,3])samsung(id,n);
+    const report=(id,ref,day)=>db.sqlite.prepare("INSERT INTO issue_reports(reference,user_id,category,severity,description,dedupe_key,request_id,evidence_json,day_key,last_submitted_at,created_at,updated_at) VALUES(?,?,'other','low','synthetic',?,'req_syn_0001','{}',?,?,?,?)")
+      .run(ref,id,ref.slice(3).toLowerCase().replace(/[^0-9a-f]/g,'a').padEnd(64,'0'),day,day+'T00:00:00Z',day+'T00:00:00Z',day+'T00:00:00Z');
+    const today=new Date().toISOString().slice(0,10);
+    report(MOM,'WL-AAAAAAA1','2026-10-01');report(MOM,'WL-AAAAAAA2','2026-10-02');report(MOM,'WL-AAAAAAA3',today);
+    report(KIM,'WL-BBBBBBB1','2026-10-01');
+    const h=harness(db);
+    const n=(sql,id)=>db.sqlite.prepare(sql).get(id).n;
+    // Without the exact confirmation, or with extra keys or forged ids, nothing is deleted.
+    for(const args of [{},{confirm:'yes'},{confirm:SAMSUNG_DELETE_CONFIRMATION,user_id:KIM},{confirm:ISSUE_REPORTS_DELETE_CONFIRMATION}]){
+      const r=await h.call(MOM,'delete_my_samsung_health_records',args);
+      assert.equal(r.body.error?.message,'Invalid tool arguments');
+    }
+    assert.equal(n('SELECT COUNT(*) n FROM samsung_health_records WHERE user_id=?',MOM),3);
+    // Forged identity headers do not change the caller.
+    const del=await h.call(MOM,'delete_my_samsung_health_records',{confirm:SAMSUNG_DELETE_CONFIRMATION},{'x-user-id':KIM,'x-whoop-lens-role':'owner'});
+    const out=JSON.parse(del.body.result.content[0].text);
+    assert.equal(out.deleted,3);assert.equal(out.changed_by,'member_request');
+    assert.equal(n('SELECT COUNT(*) n FROM samsung_health_records WHERE user_id=?',MOM),0);
+    assert.equal(n('SELECT COUNT(*) n FROM samsung_health_records WHERE user_id=?',KIM),3);
+    // Issue reports: past days deleted, today's kept so the daily limit cannot be reset; other members untouched.
+    const ir=JSON.parse((await h.call(MOM,'delete_my_issue_reports',{confirm:ISSUE_REPORTS_DELETE_CONFIRMATION})).body.result.content[0].text);
+    assert.equal(ir.deleted,2);assert.equal(ir.kept_until_tomorrow,1);assert.match(ir.note,/count toward today/);
+    assert.equal(n('SELECT COUNT(*) n FROM issue_reports WHERE user_id=?',MOM),1);
+    assert.equal(n('SELECT COUNT(*) n FROM issue_reports WHERE user_id=?',KIM),1);
+    // Repeating is harmless (idempotent) and the account summary names the tools.
+    assert.equal(JSON.parse((await h.call(MOM,'delete_my_samsung_health_records',{confirm:SAMSUNG_DELETE_CONFIRMATION})).body.result.content[0].text).deleted,0);
+    const summary=JSON.parse((await h.call(MOM,'get_account_data_summary')).body.result.content[0].text);
+    assert.equal(summary.categories.samsung_health_records.self_service,'delete_my_samsung_health_records');
+    assert.equal(summary.categories.issue_reports.self_service,'delete_my_issue_reports');
+    assert.equal(summary.categories.medical_context.self_service,null);
+    // Inactive members cannot delete; the tools stay unavailable without a session.
+    assert.equal((await h.call(INACTIVE,'delete_my_samsung_health_records',{confirm:SAMSUNG_DELETE_CONFIRMATION})).status,403);
+    assert.equal((await h.call(null,'delete_my_samsung_health_records',{confirm:SAMSUNG_DELETE_CONFIRMATION})).status,401);
+    // Issue-report deletion follows its feature flag; Samsung deletion stays available.
+    const off=harness(db,{...PROD,ISSUE_REPORTS_ENABLED:'false'});
+    const names=await off.names(MOM);
+    assert.ok(!names.includes('delete_my_issue_reports'));assert.ok(names.includes('delete_my_samsung_health_records'));
+    assert.equal((await off.call(MOM,'delete_my_issue_reports',{confirm:ISSUE_REPORTS_DELETE_CONFIRMATION})).body.error?.message,'Unknown tool');
+    const offSummary=JSON.parse((await off.call(MOM,'get_account_data_summary')).body.result.content[0].text);
+    assert.equal(offSummary.categories.issue_reports.self_service,null);
   }finally{db.sqlite.close();}
 });
 
