@@ -37,6 +37,7 @@
   - a full fake-browser run: code exchange, nothing persisted, 401 → one refresh → retry, exact PUT body, no save without a selection, and sign-out and page-leave revocation;
   - inactive member, feature disabled and session ended.
 - `cloudflare/test/browser/settings-e2e.mjs` (manual, needs Playwright) runs the real page in Chromium with the CSP enforced, against intercepted endpoints.
+- The browser script is a plain string (`CLIENT_SOURCE`). The first release built it with `Function.toString()`, and the Worker bundler injected esbuild's `__name()` helper, which broke the live page (#143). A test now pins the string form, and the release check compares the bundled literal with the source.
 - The existing Life Schedule suites cover the API: isolation, invalid values, flag off, missing schema, and cross-origin PUT rejected.
 
 ## Rollback

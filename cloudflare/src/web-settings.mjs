@@ -9,8 +9,7 @@
 // sign-in redirect, and they are removed as soon as the callback is read. Sign-out and
 // leaving the page revoke the grant at the authorization server.
 //
-// The browser code below is written as plain functions so Node tests exercise the same source
-// that is served (see test/web-settings.test.mjs).
+// The browser code is a plain string (CLIENT_SOURCE); Node tests evaluate that exact string.
 
 export const SETTINGS_PATH='/settings/';
 export const WEB_CLIENT_ID='Ski8wTDIO6CqM746'; // public client registered Nov 1, 2026; no secret
@@ -19,19 +18,22 @@ export const RESOURCE='https://whooplens.tech/mcp';
 export const REDIRECT_URI='https://whooplens.tech/settings/';
 const LIFE_SCHEDULE_API='/v1/preferences/life-schedule';
 
-// ---- browser helpers (pure; serialized into the page) ----
-export function base64Url(bytes){
+// ---- browser code ----
+// Kept as a plain string, not built with Function.toString(): the Worker bundler rewrites function
+// source (for example it injects esbuild's __name() helper), which would break the page and its CSP hash.
+// Tests evaluate this exact string, so they exercise what is served.
+export const CLIENT_SOURCE=String.raw`function base64Url(bytes){
   let s='';for(const b of bytes)s+=String.fromCharCode(b);
   return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
 }
-export function randomToken(cryptoApi){
+function randomToken(cryptoApi){
   const bytes=new Uint8Array(32);cryptoApi.getRandomValues(bytes);return base64Url(bytes);
 }
-export async function pkceChallenge(verifier,cryptoApi){
+async function pkceChallenge(verifier,cryptoApi){
   const digest=await cryptoApi.subtle.digest('SHA-256',new TextEncoder().encode(verifier));
   return base64Url(new Uint8Array(digest));
 }
-export function authorizeUrl(cfg,challenge,state){
+function authorizeUrl(cfg,challenge,state){
   const u=new URL(cfg.authOrigin+'/authorize');
   u.search=new URLSearchParams({response_type:'code',client_id:cfg.clientId,redirect_uri:cfg.redirectUri,
     scope:'mcp:read',code_challenge:challenge,code_challenge_method:'S256',state,resource:cfg.resource}).toString();
@@ -39,7 +41,7 @@ export function authorizeUrl(cfg,challenge,state){
 }
 // Returns {code} only when the callback carries exactly one code and the state matches the
 // one this tab stored before redirecting. Anything else is rejected.
-export function readCallback(search,expectedState){
+function readCallback(search,expectedState){
   const p=new URLSearchParams(search);
   if(!p.has('code')&&!p.has('error'))return {none:true};
   if(p.has('error'))return {error:'denied'};
@@ -48,13 +50,12 @@ export function readCallback(search,expectedState){
     return {error:'state'};
   return {code:codes[0]};
 }
-export function scheduleBody(value){
+function scheduleBody(value){
   if(!['fixed','flexible','unpredictable'].includes(value))throw Error('invalid');
   return JSON.stringify({life_schedule:value,confirmation:'user_selected_life_schedule'});
 }
 
-// ---- page controller (runs in the browser) ----
-export function settingsApp(cfg,win){
+function settingsApp(cfg,win){
   const doc=win.document,$=id=>doc.getElementById(id);
   const session={access:null,refresh:null}; // memory only
   const KEY='wl-settings-pkce';
@@ -135,11 +136,15 @@ export function settingsApp(cfg,win){
   }
   return {start,session,load,save,signIn,revoke};
 }
+`;
+// Node tests (and only tests) get the helpers by evaluating the served source.
+export function clientHelpers(){
+  return new Function(CLIENT_SOURCE+'\nreturn {base64Url,randomToken,pkceChallenge,authorizeUrl,readCallback,scheduleBody,settingsApp};')();
+}
 
 // ---- server side ----
 const CLIENT_CONFIG={authOrigin:AUTH_ORIGIN,clientId:WEB_CLIENT_ID,redirectUri:REDIRECT_URI,resource:RESOURCE,api:LIFE_SCHEDULE_API};
-export const clientScript=[base64Url,randomToken,pkceChallenge,authorizeUrl,readCallback,scheduleBody,settingsApp]
-  .map(f=>f.toString()).join('\n')+`\nsettingsApp(${JSON.stringify(CLIENT_CONFIG)},window).start();`;
+export const clientScript=CLIENT_SOURCE+`settingsApp(${JSON.stringify(CLIENT_CONFIG)},window).start();`;
 
 const STYLE=`body{font:16px/1.5 system-ui,sans-serif;max-width:34rem;margin:2rem auto;padding:0 1rem;color:#14181f;background:#fafbfc}
 h1{font-size:1.4rem}fieldset{border:1px solid #c9d1d9;border-radius:8px;padding:1rem}label{display:block;margin:.4rem 0}
