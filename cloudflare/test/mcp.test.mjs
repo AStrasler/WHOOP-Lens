@@ -59,14 +59,14 @@ test("MCP is entirely inert until its third switch is enabled",async()=>{
   assert.match(cfg,/"preview_urls"\s*:\s*false/);
 });
 
-test("MCP 2026 protocol discovers sixteen bounded account tools",async()=>{
+test("MCP 2026 protocol discovers eighteen bounded account tools",async()=>{
   const route=router();
   const result=await route(req(payload("tools/list")),enabled(db()));
   assert.equal(result.status,200);
   const body=await result.json();
   assert.equal(body.result.resultType,"complete");
   assert.equal(body.result.cacheScope,"private");
-  assert.equal(body.result.tools.length,16);
+  assert.equal(body.result.tools.length,18);
   assert.deepEqual(body.result.tools.map(x=>x.name),mcpTools.map(x=>x.name));
   const writes=new Set(['connect_whoop','disconnect_whoop','import_health_connect_file','withdraw_health_connect_import','issue_health_connect_ingest_token','revoke_health_connect_ingest_token']);
   const destructive=new Set(['disconnect_whoop','withdraw_health_connect_import','revoke_health_connect_ingest_token']);
@@ -129,7 +129,7 @@ test("Legacy initialization and tools/list continue without exposing arbitrary m
   assert.match(onText,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
   const result=await route(req(payload("tools/list"),{version:legacy}),enabled(db()));
   const list=(await result.json()).result;
-  assert.equal(list.tools.length,16);assert.equal(Object.hasOwn(list,"resultType"),false);
+  assert.equal(list.tools.length,18);assert.equal(Object.hasOwn(list,"resultType"),false);
   const forbidden=await route(req(payload("resources/read"),{version:legacy}),enabled(db()));
   assert.equal((await forbidden.json()).error.code,-32601);
   const notification={jsonrpc:"2.0",method:"notifications/initialized",params:{}};
@@ -149,7 +149,7 @@ test("ChatGPT protocol versions initialize with the same host instructions",asyn
     assert.match(body.result.instructions,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
     const listed=await route(req(payload("tools/list"),{version}),enabled(db()));
     assert.equal(listed.status,200);
-    assert.equal((await listed.json()).result.tools.length,16);
+    assert.equal((await listed.json()).result.tools.length,18);
   }
   const modernInit=await route(req(payload("initialize",1,{protocolVersion:"2026-07-28",capabilities:{},
     clientInfo:{name:"test",version:"1"}})),enabled(db()));
