@@ -1,3 +1,5 @@
+import {isVerifiedOwner,ownerOnly,memberSafeCatalog} from './roles.mjs';
+import {memberOverviewTools,isMemberOverviewTool,memberOverviewArguments,buildDashboardOverview,buildAccountDataSummary} from './member-overview.mjs';
 import {companionToolsFor,isCompanionTool,companionSyncArguments,runCompanionSyncTool,companionToolError} from './companion-sync.mjs';
 import {lifeScheduleEnabled,lifeScheduleWriteTool,lifeScheduleWriteArguments,runLifeScheduleWrite,LifeScheduleRejected} from './life-schedule.mjs';
 import {contextualLifeSchedule} from './life-schedule-insights.mjs';
@@ -96,7 +98,7 @@ export const mcpTools=Object.freeze([...Object.keys(toolToResource).map(name=>({
   name,description:toolLabels[name]+WHOOP_NOTE+" Interpret this member’s measurements against their own dated baseline and stated context. Do not impose a universal target or infer chronotype, ability or personal motivation.",
   inputSchema:historyTools.has(name)?schemaHistory:schemaNoArgs,
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
-})),...extraTools]);
+})),...extraTools,...memberOverviewTools]);
 const toolsByName=new Map(mcpTools.map(x=>[x.name,x]));
 const own=(x,p)=>Object.prototype.hasOwnProperty.call(x,p);
 function isObject(x){return x!==null&&typeof x==="object"&&!Array.isArray(x);}
@@ -121,6 +123,9 @@ const lifeScheduleTool=Object.freeze({
   annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:true}
 });
 function listedTools(env,userId){
+  return memberSafeCatalog(assembledTools(env,userId),env,userId);
+}
+function assembledTools(env,userId){
   const issueTools=[...issueToolsFor(env,userId),...errorReportToolsFor(env,userId)];
   const notices=announcementToolsFor(env,userId);
   let tools=baseListedTools(env);
@@ -145,6 +150,7 @@ function baseListedTools(env){
   return tools;
 }
 function optionalTool(name,env,userId){
+  if(ownerOnly(name)&&!isVerifiedOwner(env,userId))return false;
   if(name==='get_life_schedule_insights'||name==='set_life_schedule')return lifeScheduleEnabled(env);
   if(isCompanionTool(name))return companionToolsFor(env).some(t=>t.name===name);
   if(isAnnouncementTool(name))return announcementToolsFor(env,userId).some(t=>t.name===name);
@@ -175,6 +181,7 @@ function toolError(id,message,modern) {
 }
 function checkArguments(name,args,env,userId) {
   if(!isObject(args))return null;
+  if(isMemberOverviewTool(name))return memberOverviewArguments(name,args);
   if(name==='get_life_schedule_insights')return lifeScheduleEnabled(env)&&Object.keys(args).length===0?{}:null;
   if(name==='set_life_schedule')return lifeScheduleEnabled(env)?lifeScheduleWriteArguments(args):null;
   if(isCompanionTool(name))return companionToolsFor(env).some(t=>t.name===name)?companionSyncArguments(name,args):null;
@@ -286,6 +293,13 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
   }
   if(message.method!=="tools/call")return fail(-32601,"Method not found",id);
   const name=params.name;
+  // Owner-only tools: the verified identity must equal the server's owner setting on every call,
+  // whatever the client sent or listed. A member sees the same reply as for an unknown tool.
+  if(typeof name==="string"&&ownerOnly(name)&&!isVerifiedOwner(env,userId)){
+    await capture(env,db,{category:"authorization",subsystem:"mcp",code:"owner_tool_denied",
+      outcome:"fail",retryable:false,requestId,userId});
+    return fail(-32602,"Unknown tool",id);
+  }
   if(typeof name!=="string"||(!toolsByName.has(name)&&!optionalTool(name,env,userId)))
     return fail(-32602,"Unknown tool",id);
   const args=checkArguments(name,params.arguments??{},env,userId);
@@ -311,6 +325,10 @@ export async function handleMcpRpc(message,{db,userId,env,whoopRequest,whoopAuth
       data=await contextualLifeSchedule({db,userId,env,now},records,complete);
     }else if(name==='set_life_schedule'){
       data=await runLifeScheduleWrite(args,{db,userId,env});
+    }else if(name==='get_dashboard_overview'){
+      data=await buildDashboardOverview({db,userId,env,whoopRequest});
+    }else if(name==='get_account_data_summary'){
+      data=await buildAccountDataSummary({db,userId});
     }else if(isCompanionTool(name)){
       data=await runCompanionSyncTool(name,args,{db,userId,env});
     }else if(isErrorReportTool(name)){

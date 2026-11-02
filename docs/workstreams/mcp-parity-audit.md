@@ -1,5 +1,7 @@
 # MCP-first parity audit (#121)
 
+> Superseded by the full matrix in `docs/mcp/PARITY_MATRIX.md` (Nov 1, 2026), which adds production status, member eligibility and the new `get_dashboard_overview` and `get_account_data_summary` tools.
+
 Audited November 1, 2026 against the Android app as shipped in `0.6.0-beta.5` (PR #112 head; screens in `MainActivity.kt`) and the MCP tools on `main` plus this PR. Status values:
 
 - **MCP**: available to a member who uses only MCP.
