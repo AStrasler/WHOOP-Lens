@@ -37,7 +37,7 @@ One MCP endpoint serves every client: `https://whooplens.tech/mcp`, using OAuth 
 | Life Schedule preference | `set_life_schedule`; read via `get_life_schedule_insights` / `get_account_data_summary` | ✅ | ✅ | ✅ | ✅ | Explicit member request + confirmation; `LIFE_SCHEDULE_ENABLED` (on); table 0024 (applied) | Website editing: #128 | No |
 | Life Schedule insights | `get_life_schedule_insights` | ✅ | ✅ | ✅ | ✅ | WHOOP connection | — | No |
 | Account & data options (what is stored, how to remove it) | **`get_account_data_summary`** (new) | ✅ | ✅ | ✅ | ✅ | Counts and states only, caller only | — | No |
-| Self-service deletion / revocation | `disconnect_whoop`, `withdraw_health_connect_import`, `revoke_…_token`, `pause_companion_sync`, `withdraw_flare_journal`, `delete_flare_entry`, `disconnect_notion` | ✅ | ✅ | ✅ | ✅ | Each has its own confirmation or explicit action | Samsung Health, medical context and issue reports have no MCP deletion: privacy request page | No |
+| Self-service deletion / revocation | `disconnect_whoop`, `withdraw_health_connect_import`, `revoke_…_token`, `pause_companion_sync`, `withdraw_flare_journal`, `delete_flare_entry`, `disconnect_notion`, **`delete_my_samsung_health_records`**, **`delete_my_issue_reports`** (#138) | ✅ | ✅ | ✅ | ✅ | Each has its own exact confirmation or explicit action. Issue reports submitted today (UTC) are kept until the next day so the daily limit cannot be reset | Medical context has no MCP deletion by owner policy (reviewed data): privacy request page | No |
 | Consent management | `set_flare_consent`, `pause_flare_analysis`, consent constants on HC tools, `pause_companion_sync` | ✅ | ✅ | ✅ | ✅ | Per-member consent rows | — | No |
 | WHOOP connect / disconnect | `connect_whoop`, `disconnect_whoop` | ✅ | ✅ | ✅ | ✅ | Browser binding on (`WHOOP_CONNECT_BROWSER_BINDING`) | — | No |
 | Sources & freshness | Source labels and dates on every read; `get_capabilities` | ✅ | ✅ | ✅ | ✅ | — | — | No |
@@ -46,7 +46,7 @@ One MCP endpoint serves every client: `https://whooplens.tech/mcp`, using OAuth 
 | Flare journal (MCP-only feature) | `set_flare_consent` … `analyze_flare_patterns` (8 tools) | ✅ | ✅ | ✅ | ✅ | Storage and analysis consent; `FLARE_JOURNAL_ENABLED` (on) | — | No |
 | Notion daily log (MCP-only feature) | 9 Notion tools | ✅ | ✅ | ✅ | ✅ | Per-member Notion OAuth; `NOTION_ENABLED` (on) | — | No |
 | Issue and error reports | `report_issue`, `report_error` | ✅ | ✅ | ✅ | ✅ | Member preview + approval; `ISSUE_REPORTS_ENABLED` (on) | — | No |
-| Service notices | `list_service_announcements` | ✅ | ✅ | **No** | When on | `ANNOUNCEMENTS_ENABLED` is **off**; production lacks migration `0020_service_announcements` | Owner approval for an additive production migration and the flag | No |
+| Service notices | `list_service_announcements` | ✅ | ✅ | ✅ | ✅ | `ANNOUNCEMENTS_ENABLED` on; migration `0020` applied Nov 1, 2026 (#136) | — | No |
 
 ## Android-only (intentionally excluded)
 
@@ -68,5 +68,6 @@ These need the phone's operating system or hardware. MCP does not simulate them.
 
 ## Counts (all features on)
 
-- Registered tools: **50** = 44 member + 6 owner-only.
-- With production flags (announcements off): owner **46** (43 member + 3 owner), member **43**.
+- Registered tools: **52** = 46 member + 6 owner-only.
+- Production flags (all on since #136): owner **52**, member **46**.
+- History: 46/43 at release R-MCP; 50/44 after announcements (#136); 52/46 with self-service deletion (#138).

@@ -59,19 +59,24 @@ test("MCP is entirely inert until its third switch is enabled",async()=>{
   assert.match(cfg,/"preview_urls"\s*:\s*false/);
 });
 
-test("MCP 2026 protocol discovers eighteen bounded account tools",async()=>{
+test("MCP 2026 protocol discovers nineteen bounded account tools",async()=>{
   const route=router();
   const result=await route(req(payload("tools/list")),enabled(db()));
   assert.equal(result.status,200);
   const body=await result.json();
   assert.equal(body.result.resultType,"complete");
   assert.equal(body.result.cacheScope,"private");
-  assert.equal(body.result.tools.length,18);
+  assert.equal(body.result.tools.length,19);
   assert.deepEqual(body.result.tools.map(x=>x.name),mcpTools.map(x=>x.name));
-  const writes=new Set(['connect_whoop','disconnect_whoop','import_health_connect_file','withdraw_health_connect_import','issue_health_connect_ingest_token','revoke_health_connect_ingest_token']);
-  const destructive=new Set(['disconnect_whoop','withdraw_health_connect_import','revoke_health_connect_ingest_token']);
+  const writes=new Set(['connect_whoop','disconnect_whoop','import_health_connect_file','withdraw_health_connect_import','issue_health_connect_ingest_token','revoke_health_connect_ingest_token','delete_my_samsung_health_records']);
+  const destructive=new Set(['disconnect_whoop','withdraw_health_connect_import','revoke_health_connect_ingest_token','delete_my_samsung_health_records']);
   assert.ok(body.result.tools.every(t=>t.annotations.readOnlyHint===!writes.has(t.name)&&t.annotations.destructiveHint===destructive.has(t.name)));
-  assert.doesNotMatch(JSON.stringify(body.result.tools),/delete_|write_|admin_sql/);
+  // Only the owner-approved, caller-scoped, confirmation-gated deletion (#138) may appear; no other
+  // delete/write/admin operation is allowed in the base catalog.
+  const approvedDeletion='delete_my_samsung_health_records';
+  assert.doesNotMatch(JSON.stringify(body.result.tools).split(approvedDeletion).join(''),/delete_|write_|admin_sql/);
+  assert.deepEqual(body.result.tools.find(t=>t.name===approvedDeletion).inputSchema,
+    {type:'object',properties:{confirm:{type:'string',const:'delete-my-samsung-health-records'}},required:['confirm'],additionalProperties:false});
   const discover=await route(req(payload("server/discover")),enabled(db()));
   const discovery=(await discover.json()).result;
   assert.equal(discovery.serverInfo.name,"whoop-lens");
@@ -129,7 +134,7 @@ test("Legacy initialization and tools/list continue without exposing arbitrary m
   assert.match(onText,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
   const result=await route(req(payload("tools/list"),{version:legacy}),enabled(db()));
   const list=(await result.json()).result;
-  assert.equal(list.tools.length,18);assert.equal(Object.hasOwn(list,"resultType"),false);
+  assert.equal(list.tools.length,19);assert.equal(Object.hasOwn(list,"resultType"),false);
   const forbidden=await route(req(payload("resources/read"),{version:legacy}),enabled(db()));
   assert.equal((await forbidden.json()).error.code,-32601);
   const notification={jsonrpc:"2.0",method:"notifications/initialized",params:{}};
@@ -149,7 +154,7 @@ test("ChatGPT protocol versions initialize with the same host instructions",asyn
     assert.match(body.result.instructions,/WHOOP Stress Monitor history is not in the official WHOOP developer API/);
     const listed=await route(req(payload("tools/list"),{version}),enabled(db()));
     assert.equal(listed.status,200);
-    assert.equal((await listed.json()).result.tools.length,18);
+    assert.equal((await listed.json()).result.tools.length,19);
   }
   const modernInit=await route(req(payload("initialize",1,{protocolVersion:"2026-07-28",capabilities:{},
     clientInfo:{name:"test",version:"1"}})),enabled(db()));
