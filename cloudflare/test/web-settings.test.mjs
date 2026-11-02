@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createHash,webcrypto} from 'node:crypto';
 import {readFileSync} from 'node:fs';
-import {webSettingsPage,clientScript,authorizeUrl,pkceChallenge,readCallback,scheduleBody,settingsApp,
-  WEB_CLIENT_ID,REDIRECT_URI,RESOURCE,AUTH_ORIGIN} from '../src/web-settings.mjs';
+import {webSettingsPage,clientScript,clientHelpers,WEB_CLIENT_ID,REDIRECT_URI,RESOURCE,AUTH_ORIGIN} from '../src/web-settings.mjs';
+// The helpers come from evaluating the exact served source string.
+const {authorizeUrl,pkceChallenge,readCallback,scheduleBody,settingsApp}=clientHelpers();
 
 const sha=t=>createHash('sha256').update(t).digest('base64');
 const get=(env,method='GET')=>webSettingsPage(new Request('https://whooplens.tech/settings/',{method}),env);
@@ -170,4 +171,15 @@ test('inactive members, disabled feature and ended sessions get clear states',as
   const rev=w.calls.at(-1);
   assert.equal(rev.init.keepalive,true);
   assert.deepEqual(Object.fromEntries(new URLSearchParams(rev.init.body)),{token:'AT9',token_type_hint:'access_token',client_id:WEB_CLIENT_ID});
+});
+
+test('the served script is a plain source string, so bundling cannot rewrite it', ()=>{
+  // Building it with Function.toString() broke the page in production: the bundler injected
+  // esbuild's __name() helper, which does not exist in browsers.
+  const src=readFileSync(new URL('../src/web-settings.mjs',import.meta.url),'utf8');
+  assert.doesNotMatch(src,/f=>f\.toString\(\)|Function\.prototype\.toString/);
+  assert.match(src,/export const clientScript=CLIENT_SOURCE\+/);
+  assert.match(src,/export const CLIENT_SOURCE=String\.raw`/);
+  assert.doesNotMatch(clientScript,/__name|__defProp|require\(|import\(/);
+  assert.ok(clientScript.endsWith('window).start();'));
 });
