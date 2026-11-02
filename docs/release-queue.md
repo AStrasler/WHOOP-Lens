@@ -99,3 +99,20 @@ Never plain `wrangler deploy`. No migration, secret, binding, route or DNS chang
   - As the owner, after refreshing the connector: `tools/list` shows 46 tools; `get_dashboard_overview` and `get_account_data_summary` run; `review_issue_reports` runs.
   - As a member: 43 tools, no owner tools, and `review_issue_reports` returns `Unknown tool`.
 - **Rollback:** `wrangler rollback fa7bef7a-cb35-41b8-8edc-c1fe69c34b55 --name whoop-lens`, then repeat steps 6–7.
+- **Released Nov 1, 2026 (21:4x CT)** from the owner's PC, at `main` @ `4db1418` (code identical to `9359b4f`; #135 changed only this file).
+  - `release-worker-content.mjs --apply`: `rollbackVersion fa7bef7a-cb35-41b8-8edc-c1fe69c34b55`, bundle sha256 `0145712650cae841c70cd3546b5811aa8b6835442ee4e35dcfa74bb4054e2cbb` (matches the planned hash), `bindingCount 40`, `deployedVersion a9fc473d-7de2-4713-8b41-1fd7929350e3`.
+  - **Post-release checks:**
+    - The deployment serves `a9fc473d` at 100%.
+    - 40 bindings, with the same plain-text flags and owner setting as before.
+    - Schedules `17 9 * * *`. Compatibility date `2026-10-11`.
+    - The deployed script contains the five new tools and the central owner guard.
+  - **Live endpoint checks:**
+    - `POST /mcp` without a token returns 401, and its `WWW-Authenticate` names `resource_metadata=…/.well-known/oauth-protected-resource/mcp`.
+    - That metadata URL returns 200.
+    - `assetlinks.json` returns 200 with both fingerprints.
+  - **Live as owner:**
+    - `get_capabilities.tool_permissions` lists exactly 46 tools. Of these, the six owner tools have `owner_only: true`, and three of them (the announcement tools) stay off.
+    - `get_reportable_links` runs and returns only the owner's own link.
+    - The connector that was already open still cached the 41-tool list. The five new tools appear only after reconnecting, or in a new chat.
+  - **Not yet verified live:** a call to `get_dashboard_overview` or `get_account_data_summary` through a reconnected client, and the ordinary-member catalog (#137).
+  - The temporary snapshots and release script on the PC were deleted. No API token remained in the environment.
