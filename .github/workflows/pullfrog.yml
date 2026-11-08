@@ -1,5 +1,5 @@
 # Crimson Gremlin / Pullfrog on-demand pilot.
-# Account-wide GitHub $0 budgets apply. No automatic triggers until verified.
+# Account-wide GitHub $0 budgets apply.
 name: Pullfrog
 run-name: ${{ inputs.name || github.workflow }}
 
@@ -37,10 +37,13 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 1
-      - name: Run Pullfrog coding agent
+      - name: Run native Codex through Pullfrog
         uses: pullfrog/pullfrog@v0
+        env:
+          PULLFROG_AGENT: codex
         with:
           prompt: ${{ inputs.prompt }}
+          model: openai/gpt-sol
           timeout: 8m
           push: enabled
           shell: restricted
