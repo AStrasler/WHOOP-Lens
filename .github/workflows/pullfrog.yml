@@ -1,0 +1,46 @@
+# Crimson Gremlin / Pullfrog on-demand pilot.
+# Account-wide GitHub $0 budgets apply. No automatic triggers until verified.
+name: Pullfrog
+run-name: ${{ inputs.name || github.workflow }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: Agent prompt
+        type: string
+        required: true
+      name:
+        description: Run name
+        type: string
+        required: false
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+  checks: read
+
+concurrency:
+  group: pullfrog-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  pullfrog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Run Pullfrog coding agent
+        uses: pullfrog/pullfrog@v0
+        with:
+          prompt: ${{ inputs.prompt }}
+          timeout: 8m
+          push: enabled
+          shell: restricted
