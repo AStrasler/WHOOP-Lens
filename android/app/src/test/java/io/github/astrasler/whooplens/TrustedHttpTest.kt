@@ -9,26 +9,28 @@ class TrustedHttpTest {
     fun acceptsOnlyTheExpectedHttpsHost() {
         assertEquals(
             "https://whooplens.tech/v1/announcements",
-            "https://whooplens.tech:443/v1/announcements",
             trustedHttpsUrl("https://whooplens.tech/v1/announcements", "whooplens.tech"),
+        )
+        assertEquals(
+            "https://whooplens.tech:443/v1/announcements",
+            trustedHttpsUrl("https://whooplens.tech:443/v1/announcements", "whooplens.tech"),
         )
         for (url in listOf(
             "http://whooplens.tech/v1/announcements",
             "https://evil.example/v1/announcements",
-            "https://whooplens.tech:443/v1/announcements",
-            "https://user:pass@whooplens.tech/v1/announcements",
+            "******whooplens.tech/v1/announcements",
             "https://whooplens.tech/v1/announcements#fragment",
         )) {
             assertThrows(IllegalArgumentException::class.java) {
                 trustedHttpsUrl(url, "whooplens.tech")
             }
         }
+    }
 
-        @Test
-        fun announcementTransportRejectsUntrustedUrlBeforeConnecting() {
-            assertThrows(IllegalArgumentException::class.java) {
-                httpAnnouncementTransport().get("https://evil.example/v1/announcements", "Bearer test")
-            }
+    @Test
+    fun announcementTransportRejectsUntrustedUrlBeforeConnecting() {
+        assertThrows(IllegalArgumentException::class.java) {
+            httpAnnouncementTransport().get("https://evil.example/v1/announcements", "******")
         }
     }
 }
