@@ -157,7 +157,7 @@ internal class AnnouncementClient(
 
 internal fun httpAnnouncementTransport(): AnnouncementTransport =
     AnnouncementTransport { url, authorization ->
-        val connection = URL(url).openConnection() as HttpURLConnection
+        val connection = URL(trustedHttpsUrl(url, "whooplens.tech")).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
             connection.instanceFollowRedirects = false
