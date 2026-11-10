@@ -125,7 +125,7 @@ internal class CloudSyncClient(private val auth: PrivateSession, private val acc
 }
 internal fun httpCloudSyncTransport()=CloudSyncTransport { method,path,authorization,body ->
     require(path in setOf("/v1/health-connect/sync-status","/v1/health-connect/sync","/v1/health-connect/pause","/v1/health-connect"))
-    val connection=URL("https://whooplens.tech$path").openConnection() as HttpURLConnection
+    val connection=URL(trustedHttpsUrl("https://whooplens.tech$path", "whooplens.tech")).openConnection() as HttpURLConnection
     try {
         connection.requestMethod=method;connection.instanceFollowRedirects=false
         connection.connectTimeout=10000;connection.readTimeout=20000

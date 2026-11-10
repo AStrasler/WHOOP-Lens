@@ -56,7 +56,7 @@ internal class LifeScheduleClient(
     companion object { const val ENDPOINT = "https://whooplens.tech/v1/preferences/life-schedule" }
 }
 internal fun httpLifeScheduleTransport() = LifeScheduleTransport { method, authorization, body ->
-    val connection = URL(LifeScheduleClient.ENDPOINT).openConnection() as HttpURLConnection
+    val connection = URL(trustedHttpsUrl(LifeScheduleClient.ENDPOINT, "whooplens.tech")).openConnection() as HttpURLConnection
     try {
         connection.requestMethod = method
         connection.instanceFollowRedirects = false

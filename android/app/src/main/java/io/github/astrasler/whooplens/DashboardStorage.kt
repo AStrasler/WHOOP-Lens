@@ -204,7 +204,7 @@ internal class WhoopReadClient(
         check(allowed() && auth.accountKey() == account)
         val token = auth.accessToken() ?: error("Sign in required")
         check(auth.accountKey() == account)
-        val connection = URL(PrivateSession.RESOURCE).openConnection() as HttpURLConnection
+        val connection = URL(trustedHttpsUrl(PrivateSession.RESOURCE, "whooplens.tech")).openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "POST"
             connection.instanceFollowRedirects = false
