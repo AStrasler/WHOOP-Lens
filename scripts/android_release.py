@@ -49,13 +49,17 @@ def verify_signing(apksigner, apk, allow_debug=False):
         )
         jar = next((candidate for candidate in jars if candidate.is_file()), jars[-1])
         command = [java, "-Xmx1024M", "-Xss1m", "-jar", str(jar)]
-    certs = subprocess.check_output([*command, "verify", "--print-certs", str(apk)], text=True)
+    certs = subprocess.check_output(
+        [*command, "verify", "--print-certs", str(apk)], text=True, shell=False
+    )
     signers = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-f]{64})$", certs, re.M)
     if allow_debug and signers == [OLD_CERT]:
         return {"certificate_sha256": OLD_CERT, "lineage": []}
     if signers != [CERT]:
         raise ValueError("APK certificate does not match established App Links/install identity")
-    lineage = subprocess.check_output([*command, "lineage", "--in", str(apk), "--print-certs"], text=True)
+    lineage = subprocess.check_output(
+        [*command, "lineage", "--in", str(apk), "--print-certs"], text=True, shell=False
+    )
     chain = re.findall(r"^Signer #\d+ in lineage certificate SHA-256 digest: ([0-9a-f]{64})$", lineage, re.M)
     if chain != LINEAGE:
         raise ValueError("APK signing lineage must be exactly the original key followed by the release key")

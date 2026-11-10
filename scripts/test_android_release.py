@@ -103,6 +103,7 @@ class ReleaseGateTests(unittest.TestCase):
             [*command, "verify", "--print-certs", str(apk)],
             [*command, "lineage", "--in", str(apk), "--print-certs"],
         ])
+        self.assertEqual([call.kwargs["shell"] for call in run.call_args_list], [False, False])
         self.assertEqual(result, {"certificate_sha256": release.CERT, "lineage": release.LINEAGE})
 
     def test_release_signed_only_by_the_old_key_is_rejected(self):
