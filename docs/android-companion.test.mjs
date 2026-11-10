@@ -8,11 +8,12 @@ test('Normal Android screens allow capture independently of private recents prev
   const rationale = read('../android/app/src/main/java/io/github/astrasler/whooplens/PermissionsRationaleActivity.kt');
   const policy = read('../android/app/src/main/java/io/github/astrasler/whooplens/ScreenCapturePrivacy.kt');
   for (const method of ['onCreate', 'onResume', 'render']) {
-    assert.ok(
-      (activity.includes(`override fun ${method}(`) || activity.includes(`private fun ${method}(`)) &&
-      activity.includes('applyScreenCapturePrivacy(this)'),
-      method
+    const declaration = Math.max(
+      activity.indexOf(`override fun ${method}(`),
+      activity.indexOf(`private fun ${method}(`)
     );
+    assert.ok(declaration >= 0, method);
+    assert.ok(activity.indexOf('applyScreenCapturePrivacy(this)', declaration) >= 0, method);
   }
   assert.doesNotMatch(activity + rationale, /addFlags\(WindowManager\.LayoutParams\.FLAG_SECURE\)/);
   assert.match(rationale, /applyScreenCapturePrivacy\(this\)/);
