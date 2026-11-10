@@ -8,7 +8,11 @@ test('Normal Android screens allow capture independently of private recents prev
   const rationale = read('../android/app/src/main/java/io/github/astrasler/whooplens/PermissionsRationaleActivity.kt');
   const policy = read('../android/app/src/main/java/io/github/astrasler/whooplens/ScreenCapturePrivacy.kt');
   for (const method of ['onCreate', 'onResume', 'render']) {
-    assert.match(activity, new RegExp('(?:override|private) fun ' + method + '\\([^]*?applyScreenCapturePrivacy\\(this\\)'));
+    assert.ok(
+      (activity.includes(`override fun ${method}(`) || activity.includes(`private fun ${method}(`)) &&
+      activity.includes('applyScreenCapturePrivacy(this)'),
+      method
+    );
   }
   assert.doesNotMatch(activity + rationale, /addFlags\(WindowManager\.LayoutParams\.FLAG_SECURE\)/);
   assert.match(rationale, /applyScreenCapturePrivacy\(this\)/);
@@ -92,8 +96,8 @@ test('All six home widgets declare compact picker previews and bounded two-axis 
   for (const name of ['daily', 'recovery', 'steps', 'sleep', 'vitals', 'expanded']) {
     const xml = read('../android/app/src/main/res/xml/widget_' + name + '.xml');
     const v36 = read('../android/app/src/main/res/xml-v36/widget_' + name + '.xml');
-    for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.match(xml, new RegExp('android:' + attr + '="1"'));
-    for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.match(xml, new RegExp('android:' + attr + '="40dp"'));
+    for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.ok(xml.includes(`android:${attr}="1"`), attr);
+    for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.ok(xml.includes(`android:${attr}="40dp"`), attr);
     assert.match(xml, /maxResizeWidth="284dp"/);
     assert.match(xml, /maxResizeHeight="180dp"/);
     assert.match(xml, /resizeMode="horizontal\|vertical"/);
@@ -119,8 +123,8 @@ test('The status widget follows the same 1x1 minimum and resize bounds as the si
   // #102: it previously declared 180x80dp minimums (about three cells) and no maximum.
   const xml = read('../android/app/src/main/res/xml/widget_private_lock.xml');
   const v36 = read('../android/app/src/main/res/xml-v36/widget_private_lock.xml');
-  for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.match(xml, new RegExp('android:' + attr + '="1"'));
-  for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.match(xml, new RegExp('android:' + attr + '="40dp"'));
+  for (const attr of ['targetCellWidth', 'targetCellHeight']) assert.ok(xml.includes(`android:${attr}="1"`), attr);
+  for (const attr of ['minWidth', 'minHeight', 'minResizeWidth', 'minResizeHeight']) assert.ok(xml.includes(`android:${attr}="40dp"`), attr);
   assert.match(xml, /maxResizeWidth="284dp"/);
   assert.match(xml, /maxResizeHeight="180dp"/);
   assert.match(xml, /previewLayout="@layout\/lens_widget_preview"/);
@@ -182,8 +186,12 @@ test("Widget layouts declare valid autosize ranges for native inflation", () => 
       // A dp minimum (not scaled by the font) keeps the primary fitting at 200% text.
       // Check max > min across the font-scale range Android offers.
       const size = attr => {
-        const m = view.match(new RegExp(`android:${attr}="([\\d.]+)(sp|dp)"`));
-        return m ? { value: Number(m[1]), unit: m[2] } : null;
+        const prefix = `android:${attr}="`;
+        const start = view.indexOf(prefix);
+        if (start < 0) return null;
+        const value = view.slice(start + prefix.length).split('"')[0];
+        const match = value.match(/^([\d.]+)(sp|dp)$/);
+        return match ? { value: Number(match[1]), unit: match[2] } : null;
       };
       const min = size('autoSizeMinTextSize'), max = size('autoSizeMaxTextSize');
       assert.ok(min && max && min.value > 0, `${name}: missing autosize bounds`);

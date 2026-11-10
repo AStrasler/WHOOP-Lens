@@ -186,9 +186,9 @@ test("summary is additive, isolated, and the model never receives record text",a
     assert.equal(metric.latest,60);assert.equal(metric.change,20);
     const prompt=seen.input.messages[1].content;
     assert.equal(seen.input.messages[0].role,"system");
-    assert.doesNotMatch(prompt,new RegExp(injection.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")));
+    assert.equal(prompt.includes(injection),false);
     assert.doesNotMatch(prompt,/99999/);
-    assert.doesNotMatch(prompt,new RegExp(A));
+    assert.equal(prompt.includes(A),false);
     assert.doesNotMatch(prompt,/"records"/);
     assert.doesNotMatch(JSON.stringify(summary),/99999/);
     assert.doesNotMatch(lines.join("\n"),/99999|40|60/);
@@ -862,11 +862,11 @@ test("chart series and insights are factual on both the model and template paths
     assert.match(modeled.summary.insights.join("\n"),/Recovery score rose from 40 to 60 across 4 records/);
     assert.match(modeled.summary.insights.join("\n"),/Resting heart rate fell from 50 to 47/);
     assert.doesNotMatch(prompt,/chart_data|"points"|99999|custom_metric|Ignore previous/);
-    assert.doesNotMatch(prompt,new RegExp(A));
+    assert.equal(prompt.includes(A),false);
     assert.equal(prompt.includes("55"),false);
     const packed=JSON.stringify(modeled.summary.chart_data)+modeled.summary.insights.join("\n");
     assert.doesNotMatch(packed,/99999|custom_metric|Ignore previous/);
-    assert.doesNotMatch(packed,new RegExp(A));
+    assert.equal(packed.includes(A),false);
     const templated=await attachSummary(hidden,{
       db,userId:A,tool:"get_recovery",now:Date.parse("2026-10-13T00:00:00Z"),
       env:{AI_SUMMARY_ENABLED:"true",AI:{async run(){calls++;throw Error("should not run");}}}

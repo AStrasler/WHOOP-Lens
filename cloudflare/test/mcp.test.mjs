@@ -54,7 +54,7 @@ test("MCP is entirely inert until its third switch is enabled",async()=>{
   assert.equal(response.status,503);
   assert.equal(checked,0);assert.equal(called,0);assert.equal(database.count(),0);
   for(const key of ["MIGRATION_API_ENABLED","WHOOP_READS_ENABLED","WHOOP_OAUTH_ENABLED","MCP_ENABLED","WEB_HEALTH_IMPORT_ENABLED","HEALTH_CONNECT_WEBHOOK_ENABLED"])
-    assert.match(cfg,new RegExp('"'+key+'"\\s*:\\s*"false"'));
+    assert.ok(cfg.includes(`"${key}": "false"`),key);
   assert.match(cfg,/"workers_dev"\s*:\s*false/);
   assert.match(cfg,/"preview_urls"\s*:\s*false/);
 });
