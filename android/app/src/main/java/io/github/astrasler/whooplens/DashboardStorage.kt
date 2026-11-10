@@ -197,8 +197,8 @@ internal class DashboardCache(context: Context) {
 internal class WhoopReadClient(
     private val auth: PrivateSession,
     private val account: String,
-    private val allowed: () -> Boolean = { true },
     private val openConnection: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
+    private val allowed: () -> Boolean = { true },
 ) {
     fun call(tool: String, args: JSONObject): JSONObject {
         require(tool in WhoopDashboard.tools)
