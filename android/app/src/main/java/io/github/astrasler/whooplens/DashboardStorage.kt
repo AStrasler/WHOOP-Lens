@@ -198,13 +198,14 @@ internal class WhoopReadClient(
     private val auth: PrivateSession,
     private val account: String,
     private val allowed: () -> Boolean = { true },
+    private val openConnection: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
 ) {
     fun call(tool: String, args: JSONObject): JSONObject {
         require(tool in WhoopDashboard.tools)
         check(allowed() && auth.accountKey() == account)
         val token = auth.accessToken() ?: error("Sign in required")
         check(auth.accountKey() == account)
-        val connection = URL(trustedHttpsUrl(PrivateSession.RESOURCE, "whooplens.tech")).openConnection() as HttpURLConnection
+        val connection = openConnection(URL(trustedHttpsUrl(PrivateSession.RESOURCE, "whooplens.tech")))
         try {
             connection.requestMethod = "POST"
             connection.instanceFollowRedirects = false
