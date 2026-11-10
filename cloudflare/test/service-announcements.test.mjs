@@ -92,7 +92,7 @@ test('flag off returns an empty inbox and refuses management without reading not
     const listed=await http(db,AMY,'GET','/v1/announcements',undefined,OFF);
     assert.equal(listed.status,200);
     assert.deepEqual(listed.body,{enabled:false,announcements:[]});
-    assert.doesNotMatch(listed.text,new RegExp(created.title));
+    assert.equal(listed.text.includes(created.title),false);
     const denied=await http(db,OWNER,'POST','/v1/announcements',notice(),OFF);
     assert.equal(denied.status,403);
     assert.match(denied.body.error,/turned off/);
