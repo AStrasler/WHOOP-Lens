@@ -20,12 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Install JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v4
         with:
           distribution: temurin
           java-version: '17'
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
         with:
           gradle-version: '8.11.1'
       - name: Test, lint and compile debug APK (not a beta release)
@@ -35,7 +35,7 @@ jobs:
 
       - name: Build acceptance instrumentation APK
         run: gradle -p android --no-daemon -PlensTestRunner=io.github.astrasler.whooplens.GlassyAcceptanceInstrumentation :app:assembleDebugAndroidTest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: android-debug-owner-testing
           path: |
@@ -52,11 +52,11 @@ jobs:
         density: [560, 640]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
         with:
           gradle-version: '8.11.1'
       - name: Enable KVM
@@ -64,7 +64,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - uses: reactivecircus/android-emulator-runner@v2
+      - uses: reactivecircus/android-emulator-runner@4c44018e59b437e86cdfc41da381398f93ed8808 # v2
         with:
           api-level: ${{ matrix.api }}
           arch: x86_64
@@ -81,7 +81,7 @@ jobs:
             adb logcat -d -v brief AndroidRuntime:E '*:S' | tee /tmp/glassy-logcat.txt
             grep -q 'PASS: 18 synthetic' /tmp/glassy-results.txt
             adb pull /sdcard/Android/data/io.github.astrasler.whooplens/files/glassy-acceptance /tmp/glassy-acceptance
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: glassy-evidence-api-${{ matrix.api }}-density-${{ matrix.density }}

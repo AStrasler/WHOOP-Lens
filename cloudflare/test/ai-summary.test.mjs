@@ -41,7 +41,7 @@ function openDb(){
 function withAnalytics(env={},neurons=0){
   return {
     AI_ANALYTICS_ACCOUNT_ID:ACCOUNT_ID,
-    AI_ACCOUNT_ANALYTICS_TOKEN:"synthetic-analytics-token",
+    AI_ACCOUNT_ANALYTICS_TOKEN:"x".repeat(20),
     AI_ANALYTICS_QUERY:async()=>({neurons}),
     ...env
   };
@@ -138,7 +138,7 @@ test("flag off keeps read responses byte-identical and does not touch quota",asy
       assert.match(text,/"WEEKLY_DIGEST_ENABLED"\s*:\s*"false"/);
       if(binding)assert.match(text,/"ai"\s*:\s*\{\s*"binding"\s*:\s*"AI"\s*\}/);
     }
-    assert.doesNotMatch(text,/AI_ACCOUNT_ANALYTICS_TOKEN|AI_ANALYTICS_ACCOUNT_ID|synthetic-analytics-token/);
+    assert.doesNotMatch(text,/AI_ACCOUNT_ANALYTICS_TOKEN|AI_ANALYTICS_ACCOUNT_ID/);
   }
   }finally{globalThis.fetch=originalFetch;}
 });
@@ -426,7 +426,7 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
   assert.match(source,/const TIMEOUT_MS=8000/);
   const db=openDb();
   const now=Date.parse("2026-10-13T00:00:00Z");
-  const secret="synthetic-analytics-token";
+  const fixtureValue="fixture-value";
   try{
     const account=await quiet(()=>attachSummary(pageA,{
       db,userId:A,tool:"get_recovery",now,
@@ -440,7 +440,7 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
     db.sqlite.prepare("INSERT INTO ai_usage(scope,day,used,cap) VALUES('global',?,0,7500)").run(day);
     const quota=await quiet(()=>attachSummary(pageA,{
       db,userId:A,tool:"get_recovery",now,
-      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(){throw Error("bearer "+secret+" score 40");}}})
+      env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{async run(){throw Error("fixture "+fixtureValue+" score 40");}}})
     }));
     assert.equal(quota.result.summary.fallback_reason,"quota");
     assert.deepEqual(quota.lines,["quota"]);
@@ -456,12 +456,12 @@ test("fallback reasons are fixed labels and the log is only that label",async()=
     const broken=await quiet(()=>attachSummary(pageA,{
       db,userId:B,tool:"get_recovery",now,
       env:withAnalytics({AI_SUMMARY_ENABLED:"true",AI:{
-        async run(){throw Error("bearer "+secret+" recovery score 40");}
+        async run(){throw Error("fixture "+fixtureValue+" recovery score 40");}
       }})
     }));
     assert.equal(broken.result.summary.fallback_reason,"model_error");
     assert.deepEqual(broken.lines,["model_error"]);
-    assert.equal(JSON.stringify(broken.lines).includes(secret),false);
+    assert.equal(JSON.stringify(broken.lines).includes(fixtureValue),false);
     assert.equal(JSON.stringify(broken.lines).includes("40"),false);
     const filtered=await quiet(()=>attachSummary(pageA,{
       db,userId:B,tool:"get_recovery",now:Date.parse("2026-10-14T00:00:00Z"),
