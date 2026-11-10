@@ -59,6 +59,7 @@ jobs:
             echo "pr_head_sha must be a full 40-character commit SHA" >&2
             exit 1
           }
+          PR_HEAD_SHA="${PR_HEAD_SHA,,}"
           EXPECTED_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
           test "$PR_HEAD_SHA" = "$EXPECTED_SHA"
           test "$WORKFLOW_SHA" = "$PR_HEAD_SHA" || {
