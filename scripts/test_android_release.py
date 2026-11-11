@@ -87,6 +87,25 @@ class ReleaseGateTests(unittest.TestCase):
         self.assertEqual(result, {"certificate_sha256": release.CERT, "lineage": [release.OLD_CERT, release.CERT]})
         self.assertEqual(run.call_args_list[1].args[0], ["apksigner", "lineage", "--in", "app.apk", "--print-certs"])
 
+    def test_windows_signer_passes_apk_as_one_java_argument(self):
+        tools = Path("@SDK build tools")
+        apk = Path("candidate.apk&echo(UNEXPECTED&rem=tail.apk")
+        java_home = Path("Java installation")
+        jar = tools.absolute() / "lib" / "apksigner.jar"
+        outputs = [verify_output(release.CERT), lineage_output(release.OLD_CERT, release.CERT)]
+        with patch.dict(release.os.environ, {"JAVA_HOME": f'"{java_home}"'}), \
+             patch.object(Path, "is_file", lambda path: path == jar), \
+             patch.object(release.subprocess, "check_output", side_effect=outputs) as run:
+            result = release.verify_signing(tools / "apksigner.bat", apk)
+
+        command = [str(java_home / "bin" / "java.exe"), "-Xmx1024M", "-Xss1m", "-jar", str(jar)]
+        self.assertEqual([call.args[0] for call in run.call_args_list], [
+            [*command, "verify", "--print-certs", str(apk)],
+            [*command, "lineage", "--in", str(apk), "--print-certs"],
+        ])
+        self.assertEqual([call.kwargs["shell"] for call in run.call_args_list], [False, False])
+        self.assertEqual(result, {"certificate_sha256": release.CERT, "lineage": release.LINEAGE})
+
     def test_release_signed_only_by_the_old_key_is_rejected(self):
         with patch.object(release.subprocess, "check_output", return_value=verify_output(release.OLD_CERT)):
             with self.assertRaisesRegex(ValueError, "certificate"):

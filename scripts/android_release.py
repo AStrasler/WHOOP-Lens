@@ -35,13 +35,31 @@ def release_metadata(gradle, sha, tag, channel, minimum_code):
 def verify_signing(apksigner, apk, allow_debug=False):
     """A release must be signed by CERT and carry the exact OLD_CERT -> CERT lineage.
     A local debug build (allow_debug) may instead be signed by OLD_CERT alone."""
-    certs = subprocess.check_output([str(apksigner), "verify", "--print-certs", str(apk)], text=True)
+    command = [str(apksigner)]
+    if apksigner.suffix.lower() == ".bat":
+        # Windows can run a batch file through cmd.exe even with shell=False.
+        # Use the SDK launcher's Java settings without shell parsing of the APK path.
+        java_home = os.environ.get("JAVA_HOME", "").replace('"', "")
+        java = str(Path(java_home) / "bin" / "java.exe") if java_home else "java.exe"
+        apksigner = apksigner.absolute()
+        jars = (
+            apksigner.parent / "apksigner.jar",
+            apksigner.parent / "lib" / "apksigner.jar",
+            apksigner.parent.parent / "framework" / "apksigner.jar",
+        )
+        jar = next((candidate for candidate in jars if candidate.is_file()), jars[-1])
+        command = [java, "-Xmx1024M", "-Xss1m", "-jar", str(jar)]
+    certs = subprocess.check_output(
+        [*command, "verify", "--print-certs", str(apk)], text=True, shell=False
+    )
     signers = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-f]{64})$", certs, re.M)
     if allow_debug and signers == [OLD_CERT]:
         return {"certificate_sha256": OLD_CERT, "lineage": []}
     if signers != [CERT]:
         raise ValueError("APK certificate does not match established App Links/install identity")
-    lineage = subprocess.check_output([str(apksigner), "lineage", "--in", str(apk), "--print-certs"], text=True)
+    lineage = subprocess.check_output(
+        [*command, "lineage", "--in", str(apk), "--print-certs"], text=True, shell=False
+    )
     chain = re.findall(r"^Signer #\d+ in lineage certificate SHA-256 digest: ([0-9a-f]{64})$", lineage, re.M)
     if chain != LINEAGE:
         raise ValueError("APK signing lineage must be exactly the original key followed by the release key")
