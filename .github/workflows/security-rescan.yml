@@ -1,0 +1,115 @@
+name: Security rescan
+run-name: "Security rescan PR #${{ inputs.pr_number }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      scanners:
+        description: Scanners to run
+        type: choice
+        options:
+          - both
+        default: both
+        required: true
+      scope:
+        description: Scan scope
+        type: choice
+        options:
+          - pr
+        default: pr
+        required: true
+      pr_number:
+        description: Pull request number to scan
+        type: string
+        required: true
+      pr_head_sha:
+        description: Exact PR head SHA; dispatch this workflow from the PR head branch
+        type: string
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: read
+  security-events: write
+
+concurrency:
+  group: security-rescan-pr-${{ inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  validate-inputs:
+    name: Validate rescan inputs
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Validate pull request number
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          PR_HEAD_SHA: ${{ inputs.pr_head_sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          case "$PR_NUMBER" in
+            ''|*[!0-9]*) echo "pr_number must be a positive integer" >&2; exit 1 ;;
+          esac
+          test "$PR_NUMBER" -gt 0
+          case "$PR_HEAD_SHA" in
+            ''|*[!0-9a-fA-F]*) echo "pr_head_sha must be a commit SHA" >&2; exit 1 ;;
+          esac
+          test "${#PR_HEAD_SHA}" -eq 40 || {
+            echo "pr_head_sha must be a full 40-character commit SHA" >&2
+            exit 1
+          }
+          PR_HEAD_SHA="${PR_HEAD_SHA,,}"
+          EXPECTED_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          test "$PR_HEAD_SHA" = "$EXPECTED_SHA"
+          test "$WORKFLOW_SHA" = "$PR_HEAD_SHA" || {
+            echo "Dispatch this workflow from the selected PR head branch so Codacy uploads against the PR head SHA." >&2
+            exit 1
+          }
+
+  codacy:
+    name: Codacy PR rescan
+    needs: validate-inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.pr_head_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Run Codacy Analysis CLI
+        uses: codacy/codacy-analysis-cli-action@6f415a0d3790c227a9cff580098545188e0f4e5a # master
+        with:
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          upload: true
+          max-allowed-issues: 2147483647
+
+  aikido:
+    name: Aikido PR rescan
+    needs: validate-inputs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout pull request
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.pr_head_sha }}
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Run Aikido security scan
+        uses: AikidoSec/github-actions-workflow@47d83dbcf3e6635044c4b31cef590c1e095217cc # v1.0.13
+        with:
+          secret-key: ${{ secrets.AIKIDO_SECRET_KEY }}
+          fail-on-timeout: true
+          fail-on-dependency-scan: false
+          fail-on-sast-scan: false
+          fail-on-iac-scan: false
+          minimum-severity: LOW
+          timeout-seconds: 180
+          post-scan-status-comment: 'off'
+          post-sast-review-comments: 'off'
+          github-token: ${{ secrets.GITHUB_TOKEN }}

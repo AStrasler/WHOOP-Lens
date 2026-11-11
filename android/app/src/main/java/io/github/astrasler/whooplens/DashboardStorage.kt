@@ -197,6 +197,7 @@ internal class DashboardCache(context: Context) {
 internal class WhoopReadClient(
     private val auth: PrivateSession,
     private val account: String,
+    private val openConnection: (URL) -> HttpURLConnection = { it.openConnection() as HttpURLConnection },
     private val allowed: () -> Boolean = { true },
 ) {
     fun call(tool: String, args: JSONObject): JSONObject {
@@ -204,7 +205,7 @@ internal class WhoopReadClient(
         check(allowed() && auth.accountKey() == account)
         val token = auth.accessToken() ?: error("Sign in required")
         check(auth.accountKey() == account)
-        val connection = URL(PrivateSession.RESOURCE).openConnection() as HttpURLConnection
+        val connection = openConnection(URL(trustedHttpsUrl(PrivateSession.RESOURCE, "whooplens.tech")))
         try {
             connection.requestMethod = "POST"
             connection.instanceFollowRedirects = false
